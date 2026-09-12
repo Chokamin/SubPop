@@ -1,0 +1,39 @@
+<?xml version='1.0' encoding='utf-8'?>
+<fcpxml version="1.14">
+    <resources>
+        <format id="r1" frameDuration="1/25s" width="640" height="360" colorSpace="1-1-1 (Rec. 709)" />
+        <asset id="r2" name="mandarin" uid="EB757423CC373D1C25ABA22F3E30F499" start="0s" duration="8680/1000s" hasVideo="1" format="r3" hasAudio="1" videoSources="1" audioSources="1" audioChannels="1" audioRate="16000">
+            <media-rep kind="original-media" sig="EB757423CC373D1C25ABA22F3E30F499" src="file:///tmp/subloom-test/mandarin.mp4">
+                </media-rep>
+            </asset>
+        <format id="r3" frameDuration="512/12800s" width="640" height="360" colorSpace="6-1-6 (Rec. 601 (NTSC))" />
+    </resources>
+    <library>
+        <event name="Subloom-Probe" uid="30889C27-F0E5-408C-ABCA-D03897B21641">
+            <project name="Subloom-Original" uid="0D11EC79-ED11-4688-97A9-CB78621857DD" modDate="2026-09-12 14:56:12 +0800">
+                <sequence format="r1" duration="111104/12800s" tcStart="3600s" tcFormat="NDF" audioLayout="stereo" audioRate="48k">
+                    <spine>
+                        <asset-clip ref="r2" offset="3600s" name="mandarin" duration="111104/12800s" tcFormat="NDF" audioRole="dialogue">
+                            <caption lane="1" offset="1s" name="Subloom 简体字幕定位测试" start="3600s" duration="1s" role="SRT?captionFormat=SRT.cmn-Hans">
+                                <text placement="bottom">
+                                    <text-style ref="ts1">Subloom 简体字幕定位测试</text-style>
+                                </text>
+                                <text-style-def id="ts1">
+                                    <text-style font=".AppleSystemUIFont" fontSize="13" fontFace="Regular" fontColor="1 1 1 1" backgroundColor="0 0 0 1" />
+                                </text-style-def>
+                            </caption>
+                            <caption lane="1" offset="4s" name="保留 3.5% 和 USB-C" start="3600s" duration="30/25s" role="SRT?captionFormat=SRT.cmn-Hans">
+                                <text placement="bottom">
+                                    <text-style ref="ts2">保留 3.5% 和 USB-C</text-style>
+                                </text>
+                                <text-style-def id="ts2">
+                                    <text-style font=".AppleSystemUIFont" fontSize="13" fontFace="Regular" fontColor="1 1 1 1" backgroundColor="0 0 0 1" />
+                                </text-style-def>
+                            </caption>
+                        </asset-clip>
+                    </spine>
+                </sequence>
+            </project>
+        </event>
+        </library>
+</fcpxml>
