@@ -1,8 +1,8 @@
 # SubPop
 
-原名 Subloom，当前项目目录及历史验证数据仍保留原路径。
+原名 Subloom，实际仓库现为 `/Users/chokamin/Desktop/SubPop`。旧目录为兼容符号链接；历史验证数据保留原名称。
 
-用于 Final Cut Pro 的本地简体中文字幕工具，当前处于**接入验证阶段**，已有只读 Workflow Extension 探针构建，已安装并在 FCP 打开，时间线读取仍部分失败，尚未完成 MVP。
+用于 Final Cut Pro 的本地简体中文字幕工具，当前处于**接入验证阶段**，已有只读 Workflow Extension 探针构建，已安装并在 FCP 打开，活动项目 UID、容器链和序列时间数据已实测读通，启动稳定性仍待复测，尚未完成 MVP。
 
 请先读 [HANDOFF.md](HANDOFF.md)。完整能力、证据等级和未完成项见 [接入报告](docs/integration-validation.md)。
 

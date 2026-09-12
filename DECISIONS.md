@@ -17,3 +17,8 @@
 - 用户将产品名从 Subloom 改为 SubPop；所有新应用显示名、探针类名、bundle identifier 和日志目录使用 SubPop。
 - 当前代码库物理目录 `/Users/chokamin/Desktop/Subloom`、`.subloom` 构建缓存及历史 FCP 测试资源库暂保留，避免移动正在使用的工作区及破坏历史证据；这些不是产品显示名称。
 - 用户已明确允许安装并启动只读原生探针；此次更名沿用该授权。
+
+## 2026-09-12：仓库目录更名
+
+- 用户要求仓库目录也改名；实际目录已迁移至 `/Users/chokamin/Desktop/SubPop`，保留原 Git 历史，不创建第二份仓库。
+- 旧 Subloom 路径暂为兼容链接，供当前会话及历史测试媒体引用使用。`.subloom` 和历史测试项目名不随此次迁移改写。

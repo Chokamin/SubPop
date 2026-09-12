@@ -16,6 +16,8 @@ class NativeBundleTests(unittest.TestCase):
         self.assertTrue((EXT/'Contents/MacOS'/info['CFBundleExecutable']).is_file())
         with (APP/'Contents/Info.plist').open('rb') as f: container=plistlib.load(f)
         self.assertTrue(info['CFBundleIdentifier'].startswith(container['CFBundleIdentifier']+'.'))
+        self.assertTrue(info['NSAppleEventsUsageDescription'])
+        self.assertTrue(container['NSAppleEventsUsageDescription'])
 
     def test_apple_silicon_and_sdk_entrypoint(self):
         binary=EXT/'Contents/MacOS/SubPopProbeExtension'

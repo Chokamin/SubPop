@@ -59,3 +59,25 @@ class ActualReadbackRegression(unittest.TestCase):
         self.assertEqual(result['captions'][1]['text'],'保留 3.5% 和 USB-C')
 
 if __name__=='__main__':unittest.main()
+
+
+class ActualHostEvidenceTests(unittest.TestCase):
+    def test_host_uid_and_timing_match_independent_xml_export(self):
+        # Recorded host evidence regression, not a new live FCP test.
+        import json
+        root = Path(__file__).resolve().parents[1]
+        records = json.loads((root/'docs/evidence/subpop-host-recovered.json').read_text())
+        xml = E.parse(root/'tests/fixtures/fcp-12.3-caption-readback.fcpxml')
+        project = xml.find('.//project')
+        original = next(x for x in records if x['sequence']['name'] == project.get('name'))
+        container = next(x for x in original['containers'] if x['type'] == 3)
+        self.assertEqual(container['uid'], project.get('uid'))
+        seq = original['sequence']
+        for key, attr in [('start','tcStart'),('duration','duration'),('frameDuration',None)]:
+            t = seq[key]
+            self.assertTrue(t['flags'] & 1)
+            actual = Fraction(t['value'],t['timescale'])
+            expected = seconds(xml.find('.//project/sequence').get(attr)) if attr else Fraction(1,25)
+            self.assertEqual(actual,expected)
+        uids = {next(y['uid'] for y in x['containers'] if y['type']==3) for x in records}
+        self.assertEqual(len(uids),2)

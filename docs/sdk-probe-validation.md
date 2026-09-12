@@ -47,3 +47,11 @@
 ## 更正：选区能力仍待实测
 
 [苹果时间线交互概述](https://developer.apple.com/documentation/professional-video-applications/interacting-with-the-final-cut-pro-timeline) 明确描述 selected time range within the sequence，而属性页只写 sequence range。此前凭属性名称/头文件排除选区能力过早，现撤回该结论。必须在 FCP 内改变时间线范围，比较回调和值，再判断可用性。
+
+## 后续实测：活动项目读取恢复（构建 6）
+
+仓库迁移至 Desktop/SubPop 后，标准版 FCP 重启最初仍出现 nil。增加 PID 定位的公开只读通信诊断，同时查看外层 NSError 和回复 errn：应用名请求 -10004；错误 all 索引 -1700；修正为第一项资源库整数索引后成功。这两项失败仅属于诊断对照，不代表 SDK 内部同样失败。
+
+构建 6 在点击诊断按钮前已收到活动序列对象，不能将恢复归功于诊断按钮。原项目 UID 与先前 XML 一致；切换副本再切回、重开面板均正确读到项目和容器链。证据见 `evidence/subpop-host-recovered.json`（资源库路径脱敏），直接读取证据见 `evidence/subpop-library-diagnostic.json`。
+
+旧 -600（Apple MacErrors.h 的 procNotFound）本轮重启后未复现。恢复期间包含容器用途说明更新、重启与重载等多项变化，根因尚未单独验证。结论为“当前宿主实测已读通，冷启动稳定性待复测”，不再将 activeSequence nil 列为持续阻塞；仍不代表字幕闭环通过。

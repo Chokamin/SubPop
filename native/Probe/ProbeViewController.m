@@ -46,6 +46,9 @@ static NSDictionary *Time(CMTime t) {
     NSButton *refresh = [NSButton buttonWithTitle:@"记录当前状态" target:self action:@selector(refresh:)];
     refresh.frame = NSMakeRect(16,325,160,30); refresh.autoresizingMask = NSViewMinYMargin;
     [view addSubview:refresh];
+    NSButton *diagnose = [NSButton buttonWithTitle:@"诊断只读通信" target:self action:@selector(diagnose:)];
+    diagnose.frame = NSMakeRect(190,325,160,30); diagnose.autoresizingMask = NSViewMinYMargin;
+    [view addSubview:diagnose];
     NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(16,16,588,296)];
     scroll.autoresizingMask = NSViewWidthSizable|NSViewHeightSizable; scroll.hasVerticalScroller = YES;
     self.output = [[NSTextView alloc] initWithFrame:scroll.bounds]; self.output.editable = NO;
@@ -65,6 +68,24 @@ static NSDictionary *Time(CMTime t) {
     [super viewWillDisappear];
 }
 - (void)refresh:(id)sender { [self snapshot:@"manual"]; }
+// Read only the application's public libraries collection; never modifies the timeline.
+- (void)diagnose:(id)sender {
+    NSArray<NSRunningApplication *> *apps = [NSRunningApplication runningApplicationsWithBundleIdentifier:self.host.bundleIdentifier];
+    NSMutableArray *results = [NSMutableArray new];
+    for (NSRunningApplication *app in apps) {
+        NSAppleEventDescriptor *spec = [NSAppleEventDescriptor recordDescriptor];
+        [spec setDescriptor:[NSAppleEventDescriptor descriptorWithTypeCode:'fxlb'] forKeyword:'want'];
+        [spec setDescriptor:[NSAppleEventDescriptor descriptorWithEnumCode:'indx'] forKeyword:'form'];
+        [spec setDescriptor:[NSAppleEventDescriptor descriptorWithInt32:1] forKeyword:'seld'];
+        [spec setDescriptor:[NSAppleEventDescriptor nullDescriptor] forKeyword:'from'];
+        NSAppleEventDescriptor *event = [NSAppleEventDescriptor appleEventWithEventClass:'core' eventID:'getd' targetDescriptor:[NSAppleEventDescriptor descriptorWithProcessIdentifier:app.processIdentifier] returnID:-1 transactionID:0];
+        [event setParamDescriptor:[spec coerceToDescriptorType:'obj '] forKeyword:'----'];
+        NSError *error = nil;
+        NSAppleEventDescriptor *reply = [event sendEventWithOptions:NSAppleEventSendWaitForReply timeout:5 error:&error];
+        [results addObject:@{@"pid":@(app.processIdentifier), @"bundle":app.bundleIdentifier ?: @"", @"path":app.bundleURL.path ?: @"", @"errorDomain":error.domain ?: @"", @"errorCode":@(error.code), @"replyError":@([[reply paramDescriptorForKeyword:'errn'] int32Value]), @"reply":reply.description ?: @"nil"}];
+    }
+    [self record:@{@"reason":@"public-library-read-diagnostic", @"runningHosts":results}];
+}
 - (void)snapshot:(NSString *)reason {
     if (!self.observed) { [self record:@{@"status":@"observer has not delivered state", @"reason":reason}]; return; }
     FCPXSequence *sequence = self.timeline.activeSequence;
