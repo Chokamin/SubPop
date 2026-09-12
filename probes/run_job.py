@@ -32,7 +32,8 @@ def preflight(xml, asr, aligner):
     snapshot=inspect(xml)
     if not snapshot['uid']:raise ValueError('Project UID required')
     for model in (asr,aligner):
-        if not model.resolve().is_relative_to(ROOT/'.subloom/models') or not (model/'config.json').is_file():
+        if model is None:continue
+        if not model.resolve().is_relative_to(ROOT/'.subloom/models') or not any((model/name).is_file() for name in ('config.json','config.yaml')):
             raise ValueError('Use an independent SubPop model directory')
         if any(p.is_symlink() for p in model.rglob('*')):raise ValueError('Model files must not link to another project')
     return snapshot
@@ -73,6 +74,7 @@ def cached_recognition(state, snapshot):
             if hashlib.sha256(paths[0].read_bytes()).hexdigest()!=state['snapshotSHA256']:continue
             result=json.loads(paths[1].read_text())
             if result.get('modelID')!=state['modelID'] or result.get('snapshot')!=snapshot:continue
+            if model_spec(state['modelID']).get('engine') and result.get('backendVersion')!=1:continue
             created=datetime.fromisoformat(old['createdAt']).timestamp()
             if any(Path(segment['media']).stat().st_mtime>created for segment in snapshot.get('segments',[])):continue
             if paths[2].stat().st_size!=snapshot['sampleCount']*4:continue
@@ -118,7 +120,7 @@ def run(xml,asr,aligner,model_id=DEFAULT_MODEL_ID,audio_mode='dialogue',vocabula
         if pcm.parent!=directory or not pcm.is_file():raise ValueError('Invalid PCM output')
         progress('recognize')
         from .recognize_fixture import run as recognize
-        result=recognize(audioXML,asr,aligner,directory/'asr.json',pcm,device='cpu',verbose=False,audio_mode=audio_mode,vocabulary=vocabulary)
+        result=recognize(audioXML,asr,aligner,directory/'asr.json',pcm,device='cpu',verbose=False,audio_mode=audio_mode,vocabulary=vocabulary,engine=model_spec(model_id).get("engine"))
         result['modelID']=model_id;save(directory/'asr.json',result)
         progress('generate-titles')
         return finalize(directory,state,result,existing)

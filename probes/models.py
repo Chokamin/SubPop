@@ -25,7 +25,7 @@ def check_files(spec, root=ROOT):
         path = directory / name
         if path.is_symlink() or not path.is_file() or path.stat().st_size != size:
             raise ValueError('Model is missing or incomplete: ' + spec['directory'])
-    config = json.loads((directory / 'config.json').read_text())
+    config = json.loads((directory / 'config.json').read_text()) if (directory/'config.json').exists() else {}
     if 'hiddenSize' in spec and (config.get('model_type') != 'qwen3_asr' or
             config.get('thinker_config', {}).get('text_config', {}).get('hidden_size') != spec['hiddenSize']):
         raise ValueError('Model configuration does not match selected model')
@@ -34,7 +34,7 @@ def check_files(spec, root=ROOT):
 
 def resolve_model(model_id, root=ROOT):
     spec = model_spec(model_id)
-    return check_files(spec, root), check_files(CATALOG['aligner'], root)
+    return check_files(spec, root), (None if spec.get('engine') else check_files(CATALOG['aligner'], root))
 
 
 def availability(root=ROOT):

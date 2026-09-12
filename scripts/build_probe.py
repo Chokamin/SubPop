@@ -18,9 +18,9 @@ def run(*args):subprocess.run([str(a) for a in args],check=True)
 def build():
     if not (SDK/'usr/lib/libProExtension.a').exists():raise SystemExit('Extract official SDK first; see HANDOFF.md')
     for bundle in (APP,EXT):(bundle/'Contents/MacOS').mkdir(parents=True,exist_ok=True)
-    base=dict(CFBundleVersion='25',CFBundleShortVersionString='0.1.0',LSMinimumSystemVersion='13.0')
-    plist(APP/'Contents/Info.plist',dict(base,LSUIElement=True,CFBundleURLTypes=[dict(CFBundleURLName='com.chokamin.SubPopProbe.start',CFBundleURLSchemes=['subpop-probe'])],SubPopWorkspace=str(ROOT),CFBundleIdentifier='com.chokamin.SubPopProbe',CFBundleName='SubPop Probe',CFBundleExecutable='SubPopProbe',CFBundlePackageType='APPL',NSPrincipalClass='NSApplication',NSAppleEventsUsageDescription='SubPop 只读探针需要读取 Final Cut Pro 的当前项目和时间线信息。'))
-    plist(EXT/'Contents/Info.plist',dict(base,SubPopWorkspace=str(ROOT),CFBundleIdentifier='com.chokamin.SubPopProbe.Extension',CFBundleName='SubPop Probe',CFBundleDisplayName='SubPop Probe',CFBundleExecutable='SubPopProbeExtension',CFBundlePackageType='XPC!',NSAppleEventsUsageDescription='SubPop 只读探针需要读取 Final Cut Pro 的当前项目和时间线信息。',NSExtension=dict(NSExtensionPointIdentifier='com.apple.FinalCut.WorkflowExtension',ProExtensionPrincipalViewControllerClass='SubPopProbeViewController'),ProExtensionAttributes=dict(ContentViewMinimumWidth=580,ContentViewMinimumHeight=680)))
+    base=dict(CFBundleVersion='26',CFBundleShortVersionString='0.1.0',LSMinimumSystemVersion='13.0')
+    plist(APP/'Contents/Info.plist',dict(base,LSUIElement=True,CFBundleURLTypes=[dict(CFBundleURLName='com.chokamin.SubPopProbe.start',CFBundleURLSchemes=['subpop-probe'])],SubPopWorkspace=str(ROOT),CFBundleIdentifier='com.chokamin.SubPopProbe',CFBundleName='SubPop',CFBundleIconFile='SubPop',CFBundleExecutable='SubPopProbe',CFBundlePackageType='APPL',NSPrincipalClass='NSApplication',NSAppleEventsUsageDescription='SubPop 需要读取 Final Cut Pro 的当前项目和时间线信息。'))
+    plist(EXT/'Contents/Info.plist',dict(base,SubPopWorkspace=str(ROOT),CFBundleIdentifier='com.chokamin.SubPopProbe.Extension',CFBundleName='SubPop',CFBundleIconFile='SubPop',CFBundleDisplayName='SubPop',CFBundleExecutable='SubPopProbeExtension',CFBundlePackageType='XPC!',NSAppleEventsUsageDescription='SubPop 需要读取 Final Cut Pro 的当前项目和时间线信息。',NSExtension=dict(NSExtensionPointIdentifier='com.apple.FinalCut.WorkflowExtension',ProExtensionPrincipalViewControllerClass='SubPopProbeViewController'),ProExtensionAttributes=dict(ContentViewMinimumWidth=580,ContentViewMinimumHeight=680)))
     mac_sdk=subprocess.check_output(['xcrun','--sdk','macosx','--show-sdk-path'],text=True).strip()
     flags=['-isysroot',mac_sdk,'-fobjc-arc','-Wall','-Wextra','-Werror','-Wno-unused-parameter','-arch','arm64','-mmacosx-version-min=13.0','-framework','Cocoa','-framework','QuartzCore']
     run('xcrun','clang',*flags,ROOT/'native/Probe/Container.m','-o',APP/'Contents/MacOS/SubPopProbe')
@@ -30,6 +30,9 @@ def build():
     run('xcrun','clang',*flags,'-I'+str(SDK/'usr/include'),'-F'+str(SDK/'Library/Frameworks'),'-L'+str(SDK/'usr/lib'),'-lProExtension','-framework','CoreMedia','-framework','AVFoundation',ROOT/'native/Probe/StudioTests.m',ROOT/'native/Probe/ProbePresentation.m',ROOT/'native/Probe/AudioProbe.m','-o',ROOT/'.subloom/build/SubPopStudioTests')
     resources=EXT/'Contents/Resources'
     resources.mkdir(parents=True,exist_ok=True)
+    for bundle in (APP,EXT):
+        (bundle/'Contents/Resources').mkdir(parents=True,exist_ok=True)
+        shutil.copy2(ROOT/'native/Probe/Assets/SubPop.icns',bundle/'Contents/Resources/SubPop.icns')
     shutil.copy2(ROOT/'config/models.json',resources/'models.json')
     for fixture in (ROOT/'native/Probe/Fixtures').glob('*.fcpxml'):shutil.copy2(fixture,resources/fixture.name)
     ent=ROOT/'.subloom/build/probe.entitlements'

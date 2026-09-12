@@ -281,3 +281,12 @@ run_job提取共用finalize，失败在generate-titles的完全相同snapshotSHA
 用户反馈完成后拖回条埋在预览下方，要求降低预览优先级并加入FCP图标。结果卡片移至品牌标题正下方，高120；紫色渐变、从已安装FCP读取AppIcon.icns、悬停反馈、抓手光标、整卡拖拽，明确时间线起点落点与“片段→将片段项分开”。图标优先系统定位，标准安装路径兜底，无图标时用系统符号。字幕预览/字体字号默认折叠，可随时展开编辑，新结果重置折叠；完成时滚动结果卡片进入视口。拖出payload及识别逻辑不变。
 
 构建25使用26.5SDK构建、安装、深度签名通过，FCP重开新版空闲面板且本机就绪。93项.venv回归全部通过（沙箱AVFoundation失败后普通本机权限重跑通过）；AppKit实际616行结果的580/800/1100宽、680高度首屏卡片可见性与折叠/展开、进度取消/波形、三版本XML编辑样式时间保持验证通过。离屏真实AppKit完成态截图检查通过，含FCP图标。未新跑ASR/实际拖出，不宣称新的落轨验证；用户已有字幕保留。本次UI查看见用户已拖入的SubPop包装仍在时间线，未修改它。
+
+
+## 2026-09-12：构建26新增ASR后端与菜单身份
+
+接入Whisper Large v3 Turbo（MLX，mlx-community固定版本a4aaeec0636e6fef84abdcbe3544cb2bf7e9f6fb，约1.61GB）和SenseVoiceSmall（FunAudioLLM固定版本3847d57b6bdf2dd8875cb1508d2af43d80a16bf7，约0.94GB）。config/models.json固定尺寸/SHA；新模型原生时间戳，无需Qwen对齐模型。model_download/resolve/preflight支持无外部aligner。asr_backends.py适配词时间、SenseVoice毫秒转换/事件标签/独立标点，沿用25秒分块、完整项目时钟、OpenCC及editorial整理。Whisper支持词库提示；SenseVoice词库只用于断句保护，UI已注明。失败缓存增加新后端版本保护。模型面板按4行动态增高，正确显示MLX/CPU。
+
+独立.venv安装mlx-whisper0.4.3、funasr1.4.14、kaldi-native-fbank1.22.3及依赖，完整lock更新；numpy/librosa/scipy按兼容约束调整，原Qwen0.6实际识别回归通过。两模型权重已下载SHA校验，worker已重启，四模型均installed。中文8.68s分别生成3/4条；86.8s多剪切四分块分别38/40条，全部走独立解码→识别→整理→Title输出。证据docs/evidence/subpop-alternate-models.json。98项测试通过，AppKit三XML编辑/样式/时间保持与布局测试通过；FCP实际模型表显示4模型，Whisper/SenseVoice切换均通过。未对新模型进行22分钟真实素材准确率评估，未新写FCP时间线。
+
+用户要求去掉Probe显示名并设计扩展菜单图标。多版图标被用户否定，最终明确偏好Mew Cut式简洁实心轮廓，无字母/拟人/复杂装饰。本轮打包透明单色实心字幕片段图标Assets/SubPop.png及多尺寸icns，设置app/extension CFBundleIconFile、显示名SubPop。保留旧安装文件路径与bundle ID以兼容数据。构建26已安装深度签名通过，FCP扩展加载新版；当前宿主仍缓存旧窗口/菜单名SubPop Probe，新名称与菜单图标实际刷新仍待下次FCP重启核对，未为此打断用户剪辑。新图标尚无用户最终认可结论。

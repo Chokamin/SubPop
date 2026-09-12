@@ -292,7 +292,7 @@ static NSDictionary *Time(CMTime t) {
     if ([state isEqual:@"error"] && self.visibleError.length) self.statusDetail.stringValue=self.visibleError;
     if ([state isEqual:@"recognize"] && self.jobProgress) self.statusTitle.stringValue=[NSString stringWithFormat:@"正在识别语音 · %.0f%%",100*self.jobProgress.doubleValue];
     self.serviceLabel.stringValue=connected ? @"● 本机就绪" : @"本机未连接";
-    self.modelDetail.stringValue=[NSString stringWithFormat:@"%@ · %@ · 本机 CPU",[self selectedModel][@"description"] ?: @"",[self selectedModelAvailable] ? @"已安装" : @"模型未就绪"];
+    self.modelDetail.stringValue=[NSString stringWithFormat:@"%@ · %@ · %@",[self selectedModel][@"description"] ?: @"",[self selectedModelAvailable] ? @"已安装" : @"模型未就绪",[[self selectedModel][@"engine"] isEqual:@"mlx-whisper"] ? @"本机 MLX" : @"本机 CPU"];
     self.serviceLabel.textColor=connected ? NSColor.systemGreenColor : NSColor.secondaryLabelColor;
     self.dropTitle.stringValue=fresh ? (self.dropName ?: @"项目已导入") : @"把项目拖到这里";
     self.dropDetail.stringValue=fresh ? [NSString stringWithFormat:@"%02ld:%02ld · 整个项目 · 修改时间线后请重新拖入",(long)(CMTimeGetSeconds(self.dropDuration)/60),(long)CMTimeGetSeconds(self.dropDuration)%60] : @"从 Final Cut Pro 浏览器拖入整个项目";

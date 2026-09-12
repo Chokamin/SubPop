@@ -11,10 +11,10 @@ class RecoveryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);job=root/'old';job.mkdir()
             pcm=b'\0'*8;xml=b'<fcpxml/>'
-            state=dict(jobID='new',snapshotSHA256=hashlib.sha256(xml).hexdigest(),projectUID='p',modelID='m',audioMode='dialogue',vocabulary=[])
+            state=dict(jobID='new',snapshotSHA256=hashlib.sha256(xml).hexdigest(),projectUID='p',modelID='qwen3-asr-0.6b',audioMode='dialogue',vocabulary=[])
             old={**state,'jobID':'old','status':'failed','stage':'generate-titles','createdAt':'2026-09-12T00:00:00+00:00'}
             snapshot={'sampleCount':2}
-            result=dict(snapshot=snapshot,modelID='m',pcm_sha256=hashlib.sha256(pcm).hexdigest())
+            result=dict(snapshot=snapshot,modelID='qwen3-asr-0.6b',pcm_sha256=hashlib.sha256(pcm).hexdigest())
             (job/'status.json').write_text(json.dumps(old));(job/'input.fcpxml').write_bytes(xml)
             (job/'asr.json').write_text(json.dumps(result));(job/'timeline.f32le').write_bytes(pcm)
             with patch('probes.run_job.WORK',root):

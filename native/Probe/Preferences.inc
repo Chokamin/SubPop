@@ -42,11 +42,11 @@
 - (void)showModels:(id)sender {
     if (self.modelAlert) return;
     self.modelAlert=[NSAlert new];self.modelAlert.messageText=@"本机模型";
-    self.modelAlert.informativeText=@"首次下载还需要约 1.84 GB 的共用时间对齐模型，之后不重复下载。\n下载来自 Qwen 官方仓库；识别时不需要联网。";
-    NSView *view=[[NSView alloc] initWithFrame:NSMakeRect(0,0,520,300)];self.modelRows=[NSMutableDictionary new];
+    self.modelAlert.informativeText=@"Qwen 首次下载含共用对齐模型；其他模型自带时间对齐。\n固定版本与完整性校验 · 下载后离线识别。";
+    NSView *view=[[NSView alloc] initWithFrame:NSMakeRect(0,0,520,100+self.modelCatalog.count*100)];self.modelRows=[NSMutableDictionary new];
     NSUInteger index=0;
     for (NSDictionary *spec in self.modelCatalog) {
-        CGFloat y=204-index*100;
+        CGFloat y=104+(self.modelCatalog.count-1-index)*100;
         NSView *card=[[NSView alloc] initWithFrame:NSMakeRect(0,y-3,520,92)];card.wantsLayer=YES;card.layer.cornerRadius=12;card.layer.backgroundColor=[NSColor colorWithCalibratedWhite:.105 alpha:1].CGColor;card.layer.borderColor=[NSColor colorWithCalibratedWhite:1 alpha:.065].CGColor;card.layer.borderWidth=1;[view addSubview:card];
         NSTextField *name=[self label:spec[@"name"] size:16 weight:NSFontWeightSemibold];name.frame=NSMakeRect(14,y+54,330,26);[view addSubview:name];
         NSTextField *detail=[self label:spec[@"description"] size:12 weight:NSFontWeightRegular];detail.frame=NSMakeRect(14,y+28,330,24);detail.textColor=NSColor.secondaryLabelColor;[view addSubview:detail];

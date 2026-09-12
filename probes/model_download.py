@@ -61,7 +61,8 @@ def transfer(url,path,size,digest,cancel,progress,opener=urllib.request.urlopen)
     partial.replace(path)
 
 def install(model_id,root=ROOT,cancel=lambda:False,emit=lambda value:None,opener=urllib.request.urlopen):
-    specs=[model_spec(model_id),CATALOG['aligner']]
+    spec=model_spec(model_id)
+    specs=[spec] if spec.get('engine') else [spec,CATALOG['aligner']]
     total=sum(sum(s['files'].values()) for s in specs);done=0;started=time.monotonic();network=0;last_emit=0
     base=root/'.subloom/models'
     missing=sum(size for spec in specs for name,size in spec['files'].items() if not (base/spec['directory']/name).is_file())
