@@ -19,11 +19,19 @@ int main(int argc,const char *argv[]) {
         [c loadView];NSWindow *window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,660,740) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];window.contentView=c.view;
         NSDictionary *m=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:[@(argv[2]) stringByAppendingPathComponent:@"captions.json"]] options:0 error:nil];
         for (NSNumber *width in @[@580,@800,@1100]) {
-            [window setContentSize:NSMakeSize(width.doubleValue,900)];[c.view layoutSubtreeIfNeeded];
+            [window setContentSize:NSMakeSize(width.doubleValue,680)];[c.view layoutSubtreeIfNeeded];
             NSRect model=[c.modelPicker convertRect:c.modelPicker.bounds toView:c.view],audio=[c.audioPicker convertRect:c.audioPicker.bounds toView:c.view];
             if (model.size.width<100 || audio.size.width<100 || NSMaxX(model)>NSMinX(audio) || NSMaxX(audio)>width.doubleValue) return 2;
             c.resultManifest=m;c.captionRows=[m[@"captions"] mutableCopy];c.titlePayloads=@{@"1.14":[NSData data]};c.displayState=@"ready";[c updateInterface];[c.captionTable reloadData];[c.view layoutSubtreeIfNeeded];
-            if (c.captionScroll.hidden || c.resultView.hidden || c.captionTable.numberOfRows!=(NSInteger)[m[@"captions"] count]) return 3;
+            if (!c.captionScroll.hidden || c.resultView.hidden || c.captionTable.numberOfRows!=(NSInteger)[m[@"captions"] count]) return 3;
+            if (width.intValue==580) {
+                NSBitmapImageRep *image=[c.view bitmapImageRepForCachingDisplayInRect:c.view.bounds];[c.view cacheDisplayInRect:c.view.bounds toBitmapImageRep:image];
+                [[image representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:@"/tmp/subpop-ready-preview.png" atomically:YES];
+            }
+            NSRect result=[c.resultView convertRect:c.resultView.bounds toView:c.view];
+            if (NSMinY(result)<0 || NSMaxY(result)>c.view.bounds.size.height) return 7;
+            [c toggleReview:nil];if (c.captionScroll.hidden || c.editorControls.hidden) return 8;
+            [c toggleReview:nil];if (!c.captionScroll.hidden || !c.editorControls.hidden) return 9;
             c.requestID=@"preview";c.displayState=@"recognize";c.jobProgress=@.42;[c updateInterface];
             if (c.jobBar.hidden || fabs(c.jobBar.doubleValue-.42)>.001 || c.cancelButton.hidden || c.generateButton.enabled) return 4;
             if (!NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion && ![c.signal.bars[0] animationForKey:@"working"]) return 5;

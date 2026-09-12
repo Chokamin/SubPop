@@ -20,6 +20,9 @@ static NSDictionary *Time(CMTime t) {
 @property BOOL dragHover;
 @end
 @interface SubPopTitleDragView : NSView
+@property NSImage *hostIcon;
+@property NSTrackingArea *hoverArea;
+@property BOOL hovered;
 @property (weak) SubPopProbeViewController *controller;
 @end
 @interface SubPopProbeViewController : NSViewController <FCPXTimelineObserver, NSDraggingSource, NSPasteboardItemDataProvider, NSTableViewDataSource, NSTableViewDelegate>
@@ -50,6 +53,8 @@ static NSDictionary *Time(CMTime t) {
 @property SubPopSignalView *signal;
 @property NSProgressIndicator *jobBar;
 @property NSStackView *reviewHeader;
+@property NSButton *reviewToggle;
+@property BOOL reviewExpanded;
 @property NSTextField *captionCount;
 @property NSString *lastVisualState;
 @property NSProgressIndicator *spinner;
@@ -116,12 +121,34 @@ static NSDictionary *Time(CMTime t) {
 }
 @end
 @implementation SubPopTitleDragView
+- (instancetype)initWithFrame:(NSRect)frame {
+    if ((self=[super initWithFrame:frame])) {
+        NSURL *url=[NSWorkspace.sharedWorkspace URLForApplicationWithBundleIdentifier:@"com.apple.FinalCut"];
+        NSString *appPath=url.path ?: @"/Applications/Final Cut Pro.app";
+        self.hostIcon=[[NSImage alloc] initWithContentsOfFile:[appPath stringByAppendingPathComponent:@"Contents/Resources/AppIcon.icns"]];
+        if (!self.hostIcon) self.hostIcon=[NSImage imageWithSystemSymbolName:@"film.stack" accessibilityDescription:nil];
+        self.toolTip=@"按住整张卡片，拖到原项目时间线起点的视频上方。落轨后选择“片段 → 将片段项分开”即可逐句编辑。";
+    } return self;
+}
+- (void)updateTrackingAreas {
+    [super updateTrackingAreas];if (self.hoverArea) [self removeTrackingArea:self.hoverArea];
+    self.hoverArea=[[NSTrackingArea alloc] initWithRect:NSZeroRect options:NSTrackingMouseEnteredAndExited|NSTrackingActiveInKeyWindow|NSTrackingInVisibleRect owner:self userInfo:nil];[self addTrackingArea:self.hoverArea];
+}
+- (void)mouseEntered:(NSEvent *)event { self.hovered=YES;[self setNeedsDisplay:YES]; }
+- (void)mouseExited:(NSEvent *)event { self.hovered=NO;[self setNeedsDisplay:YES]; }
+- (void)resetCursorRects { if ([self.controller canDragResult]) [self addCursorRect:self.bounds cursor:NSCursor.openHandCursor]; }
 - (void)drawRect:(NSRect)rect {
     BOOL enabled=[self.controller canDragResult];
-    [(enabled ? [SubPopAccent() colorWithAlphaComponent:0.17] : NSColor.controlBackgroundColor) setFill];
-    [[NSBezierPath bezierPathWithRoundedRect:self.bounds xRadius:12 yRadius:12] fill];
-    NSString *text=enabled ? @"↗  拖回字幕到 Final Cut Pro" : @"识别完成后，在这里拖回字幕";
-    [text drawAtPoint:NSMakePoint(18,16) withAttributes:@{NSForegroundColorAttributeName:enabled ? SubPopAccent() : NSColor.secondaryLabelColor,NSFontAttributeName:[NSFont systemFontOfSize:13 weight:NSFontWeightMedium]}];
+    NSBezierPath *shape=[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds,1,1) xRadius:16 yRadius:16];
+    NSColor *base=enabled ? [NSColor colorWithCalibratedRed:.32 green:.26 blue:.64 alpha:1] : NSColor.controlBackgroundColor;
+    NSGradient *gradient=[[NSGradient alloc] initWithStartingColor:enabled ? [NSColor colorWithCalibratedRed:.43 green:.35 blue:(self.hovered ? .86 : .78) alpha:1] : base endingColor:base];[gradient drawInBezierPath:shape angle:-20];
+    [[NSColor colorWithCalibratedWhite:1 alpha:self.hovered ? .32 : .16] setStroke];[shape stroke];
+    [self.hostIcon drawInRect:NSMakeRect(20,35,50,50) fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:enabled ? 1 : .4];
+    NSString *title=enabled ? @"拖回字幕到 Final Cut Pro" : @"请先打开原项目，再拖回字幕";
+    [title drawAtPoint:NSMakePoint(86,73) withAttributes:@{NSForegroundColorAttributeName:NSColor.whiteColor,NSFontAttributeName:[NSFont systemFontOfSize:17 weight:NSFontWeightSemibold]}];
+    NSString *detail=[NSString stringWithFormat:@"%lu 条字幕已准备好 · 按住卡片拖到时间线起点上方",(unsigned long)self.controller.captionRows.count];
+    [detail drawAtPoint:NSMakePoint(86,48) withAttributes:@{NSForegroundColorAttributeName:[NSColor colorWithCalibratedWhite:1 alpha:.85],NSFontAttributeName:[NSFont systemFontOfSize:11]}];
+    [@"落轨后：片段 → 将片段项分开，即可逐句编辑" drawAtPoint:NSMakePoint(86,24) withAttributes:@{NSForegroundColorAttributeName:[NSColor colorWithCalibratedWhite:1 alpha:.72],NSFontAttributeName:[NSFont systemFontOfSize:10]}];
 }
 - (void)mouseDown:(NSEvent *)event { if ([self.controller canDragResult]) [self.controller beginTitleDrag:event fromView:self]; }
 @end
@@ -276,10 +303,12 @@ static NSDictionary *Time(CMTime t) {
     self.vocabularyButton.enabled=!busy;self.vocabularyButton.title=[NSString stringWithFormat:@"词库 · %lu",(unsigned long)[self effectiveVocabulary].count];
     self.modelPicker.enabled=!busy && !managing;self.audioPicker.enabled=!busy;self.cancelButton.hidden=!busy;
     BOOL hasRows=self.titlePayloads && self.captionRows.count;
-    BOOL newlyReady=hasRows && self.captionScroll.hidden;
-    self.captionScroll.hidden=!hasRows;self.editorControls.hidden=!hasRows;self.resultView.hidden=!hasRows;self.reviewHeader.hidden=!hasRows;
+    BOOL newlyReady=hasRows && self.resultView.hidden;
+    if (newlyReady || !hasRows) self.reviewExpanded=NO;
+    self.captionScroll.hidden=!hasRows || !self.reviewExpanded;self.editorControls.hidden=!hasRows || !self.reviewExpanded;self.resultView.hidden=!hasRows;self.reviewHeader.hidden=!hasRows;
     self.captionCount.stringValue=[NSString stringWithFormat:@"字幕预览  ·  %lu 条",(unsigned long)self.captionRows.count];
-    if (newlyReady) {SubPopReveal(self.captionScroll);SubPopReveal(self.resultView);}
+    self.reviewToggle.title=self.reviewExpanded ? @"收起预览与样式 ▴" : @"展开预览与样式 ▾";
+    if (newlyReady) {SubPopReveal(self.resultView);[self.view layoutSubtreeIfNeeded];[self.resultView scrollRectToVisible:self.resultView.bounds];}
     self.jobBar.hidden=!(busy && [state isEqual:@"recognize"] && self.jobProgress);
     if (!self.jobBar.hidden) self.jobBar.doubleValue=self.jobProgress.doubleValue;
     [self.signal setWorking:busy || preparing || managing];
@@ -290,6 +319,7 @@ static NSDictionary *Time(CMTime t) {
     if (busy || preparing) [self.spinner startAnimation:nil]; else [self.spinner stopAnimation:nil];
     BOOL ready=[self canDragResult]; [self.resultView setAccessibilityLabel:ready ? @"拖回字幕到 Final Cut Pro" : @"字幕拖出区，识别完成后可用"]; [self.resultView setNeedsDisplay:YES];
 }
+- (void)toggleReview:(id)sender { self.reviewExpanded=!self.reviewExpanded;[self updateInterface]; }
 - (NSDictionary *)readJSON:(NSURL *)url {
     NSData *data=[NSData dataWithContentsOfURL:url];
     if (!data || data.length>32*1024*1024) return nil;
