@@ -1,0 +1,58 @@
+{
+  "defaultModelID": "qwen3-asr-0.6b",
+  "models": [
+    {
+      "id": "qwen3-asr-0.6b",
+      "name": "Qwen3-ASR-0.6B",
+      "directory": "asr",
+      "hiddenSize": 1024,
+      "repository": "Qwen/Qwen3-ASR-0.6B",
+      "revision": "5eb144179a02acc5e5ba31e748d22b0cf3e303b0",
+      "description": "轻量 · 适合快速初稿",
+      "files": {
+        "model.safetensors": 1876091704,
+        "tokenizer_config.json": 12487,
+        "chat_template.json": 1161,
+        "config.json": 6193,
+        "generation_config.json": 142,
+        "merges.txt": 1671853,
+        "vocab.json": 2776833,
+        "preprocessor_config.json": 330
+      }
+    },
+    {
+      "id": "qwen3-asr-1.7b",
+      "name": "Qwen3-ASR-1.7B",
+      "directory": "asr-1.7b",
+      "hiddenSize": 2048,
+      "repository": "Qwen/Qwen3-ASR-1.7B",
+      "revision": "7278e1e70fe206f11671096ffdd38061171dd6e5",
+      "description": "标准 · 更大的识别模型",
+      "files": {
+        "tokenizer_config.json": 12487,
+        "chat_template.json": 1161,
+        "config.json": 6194,
+        "generation_config.json": 142,
+        "merges.txt": 1671853,
+        "vocab.json": 2776833,
+        "preprocessor_config.json": 330,
+        "model-00001-of-00002.safetensors": 4220320824,
+        "model-00002-of-00002.safetensors": 478200688,
+        "model.safetensors.index.json": 64821
+      }
+    }
+  ],
+  "aligner": {
+    "directory": "aligner",
+    "files": {
+      "model.safetensors": 1835544544,
+      "tokenizer_config.json": 12666,
+      "chat_template.json": 1161,
+      "config.json": 5982,
+      "generation_config.json": 115,
+      "merges.txt": 1671853,
+      "vocab.json": 2776833,
+      "preprocessor_config.json": 330
+    }
+  }
+}

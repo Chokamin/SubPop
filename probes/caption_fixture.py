@@ -11,10 +11,11 @@ def spoken(text):
     return ''.join(c for c in text if not c.isspace() and not unicodedata.category(c).startswith('P'))
 
 
-def captions(data, fps=25):
-    if not isinstance(fps,int) or fps<=0:raise ValueError('Positive integer frame rate required')
+def captions(data, fps=25, generic=False):
+    fps=Fraction(fps)
+    if fps<=0:raise ValueError('Positive frame rate required')
     duration = Fraction(data['snapshot']['duration'])
-    if data['snapshot']['project'] != 'Subloom-Original' or Fraction(data['snapshot']['relative_start']) != 0:
+    if (not generic and data['snapshot']['project'] != 'Subloom-Original') or Fraction(data['snapshot']['relative_start']) != 0:
         raise ValueError('Only the complete isolated original project is supported')
     rows=[]
     for part in data['results']:
@@ -53,9 +54,8 @@ def captions(data, fps=25):
 
 def srt(rows,fps=25):
     def time(frame):
-        value=Fraction(frame*1000,fps)
-        if value.denominator!=1:raise ValueError('Fixture requires exact millisecond frame boundaries')
-        ms=int(value);hours,ms=divmod(ms,3600000);minutes,ms=divmod(ms,60000);seconds,ms=divmod(ms,1000)
+        value=Fraction(frame*1000)/Fraction(fps)
+        ms=round(value);hours,ms=divmod(ms,3600000);minutes,ms=divmod(ms,60000);seconds,ms=divmod(ms,1000)
         return f'{hours:02}:{minutes:02}:{seconds:02},{ms:03}'
     return ''.join(f"{i}\n{time(row['start_frame'])} --> {time(row['end_frame'])}\n{row['text']}\n\n" for i,row in enumerate(rows,1))
 

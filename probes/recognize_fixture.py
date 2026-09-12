@@ -7,16 +7,14 @@ import subprocess
 import hashlib
 from fractions import Fraction
 try:
-    from .timeline_audio import inspect
+    from .project import inspect
 except ImportError:
-    from timeline_audio import inspect
+    from project import inspect
 
 
-def run(xml, asr, aligner, output, pcm_path=None, device="cpu", verbose=True):
-    snapshot = inspect(xml)
-    expected = Path(__file__).resolve().parents[1] / '.subloom/verification/mandarin.mp4'
-    if any(s['media'] and Path(s['media']).resolve() != expected for s in snapshot['segments']) or snapshot['project'] != 'Subloom-Original':
-        raise ValueError('Only the isolated fixture is allowed')
+def run(xml, asr, aligner, output, pcm_path=None, device="cpu", verbose=True, audio_mode="dialogue"):
+    snapshot = inspect(xml,audio_mode)
+    expected = Path(__file__).resolve().parents[1] / '.subloom/verification'
     for key in ('HF_HUB_OFFLINE', 'TRANSFORMERS_OFFLINE', 'HF_HUB_DISABLE_TELEMETRY'):
         os.environ[key] = '1'
     os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
@@ -26,10 +24,10 @@ def run(xml, asr, aligner, output, pcm_path=None, device="cpu", verbose=True):
     from opencc import OpenCC
     from qwen_asr import Qwen3ASRModel
     if pcm_path is not None:
-        if not pcm_path.resolve().is_relative_to(expected.parent):
+        if not pcm_path.resolve().is_relative_to(expected):
             raise ValueError('PCM must be a copy in the isolated verification directory')
         pcm = pcm_path.read_bytes()
-        if len(pcm) != Fraction(snapshot['duration'])*16000*4:
+        if len(pcm) != snapshot['sampleCount']*4:
             raise ValueError('PCM length must cover the complete fixture at 16kHz float32 mono')
     else:
         raise ValueError('Timeline recognition requires rendered PCM; source-file fallback removed')
@@ -41,12 +39,27 @@ def run(xml, asr, aligner, output, pcm_path=None, device="cpu", verbose=True):
     model = Qwen3ASRModel.from_pretrained(str(asr), dtype=torch.float32, device_map=device,
         attn_implementation='eager', max_inference_batch_size=1, max_new_tokens=512,
         forced_aligner=str(aligner), forced_aligner_kwargs=dict(dtype=torch.float32, device_map=device, attn_implementation='eager'))
-    result = model.transcribe(audio=(samples,16000), language='Chinese', return_time_stamps=True)
     converter = OpenCC('t2s')
     rows = []
-    for part in result:
-        rows.append(dict(text=converter.convert(part.text), words=[dict(text=converter.convert(w.text), start=w.start_time, end=w.end_time) for w in part.time_stamps]))
-    evidence = 'ASR of native-extension PCM via external test process; not automatic plugin workflow' if pcm_path else 'offline ASR of FCP export; not live Workflow Extension'
+    cursor=0;chunk_index=0
+    while cursor<len(samples):
+        end=min(cursor+25*16000,len(samples))
+        if end<len(samples):
+            # Prefer a low-energy boundary in the last five seconds; no speech
+            # is dropped, and alignment is offset back to the project clock.
+            search=cursor+20*16000
+            candidates=range(search,end-1600+1,1600)
+            end=min(candidates,key=lambda i:float(np.mean(samples[i:i+1600]**2)))+800
+        chunk=samples[cursor:end]
+        chunk_index+=1
+        print(json.dumps({'stage':'recognize','progress':round(end/len(samples),4),'chunk':chunk_index}),flush=True)
+        if np.max(np.abs(chunk),initial=0)>1e-7:
+            parts=model.transcribe(audio=(chunk,16000),language='Chinese',return_time_stamps=True)
+            for part in parts:
+                if not part.text.strip():continue
+                rows.append(dict(text=converter.convert(part.text),words=[dict(text=converter.convert(w.text),start=w.start_time+cursor/16000,end=min(w.end_time+cursor/16000,len(samples)/16000)) for w in part.time_stamps]))
+        cursor=end
+    evidence = 'Offline recognition of rendered project PCM; chunk timestamps mapped to full project'
     output.write_text(json.dumps(dict(evidence=evidence, snapshot=snapshot, pcm_sha256=hashlib.sha256(pcm).hexdigest(), device=device, results=rows), ensure_ascii=False, indent=2))
     if verbose:print(output.read_text())
     return json.loads(output.read_text())

@@ -13,7 +13,7 @@ class WorkerTests(unittest.TestCase):
 
     def test_request_checksum_identity_and_symlink_guard(self):
         with tempfile.TemporaryDirectory() as temp:
-            d=Path(temp)/str(uuid.uuid4());d.mkdir();xml=d/'input.fcpxml';xml.write_text('<fcpxml/>')
+            d=Path(temp)/str(uuid.uuid4());d.mkdir();xml=d/'input.fcpxml';xml.write_text(f'<fcpxml><project uid="{UID}"/></fcpxml>')
             manifest={'requestID':d.name,'projectUID':UID,'xmlSHA256':hashlib.sha256(xml.read_bytes()).hexdigest()}
             (d/'request.json').write_text(json.dumps(manifest))
             self.assertEqual(request_input(d),xml)
@@ -21,6 +21,12 @@ class WorkerTests(unittest.TestCase):
             with self.assertRaises(ValueError):request_input(d)
             xml.unlink();xml.symlink_to(Path(temp)/'elsewhere')
             with self.assertRaises(ValueError):request_input(d)
+
+    def test_request_project_mismatch_is_rejected_before_model_or_media_load(self):
+        with tempfile.TemporaryDirectory() as temp:
+            d=Path(temp)/str(uuid.uuid4());d.mkdir();xml=d/'input.fcpxml';xml.write_text('<fcpxml><project uid="OTHER"/></fcpxml>')
+            (d/'request.json').write_text(json.dumps({'requestID':d.name,'projectUID':UID,'xmlSHA256':hashlib.sha256(xml.read_bytes()).hexdigest()}))
+            with self.assertRaisesRegex(ValueError,'Snapshot project'):request_input(d)
 
     def test_result_cannot_read_arbitrary_directory(self):
         with tempfile.TemporaryDirectory() as temp:

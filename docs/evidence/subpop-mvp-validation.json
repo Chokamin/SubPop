@@ -1,0 +1,115 @@
+{
+  "build": 17,
+  "target": "30 minute talking-head/tutorial projects with cuts and music roles",
+  "models": [
+    {
+      "id": "qwen3-asr-1.7b",
+      "jobID": "0cc5dce9-53f8-4455-8627-548569f4cfee",
+      "status": "ready",
+      "titleCount": 3,
+      "reportedModelID": "qwen3-asr-1.7b",
+      "device": "cpu",
+      "text": [
+        "大家好，欢迎使用中文字幕工具。今天我们测试语音识别，并把生成的字幕导入达芬奇。"
+      ]
+    },
+    {
+      "id": "qwen3-asr-0.6b",
+      "jobID": "c3189209-7752-42cb-a932-53e9f3260888",
+      "status": "ready",
+      "titleCount": 3,
+      "reportedModelID": "qwen3-asr-0.6b",
+      "device": "cpu",
+      "text": [
+        "大家好，欢迎使用中文字幕工具。今天我们测试语音识别，并把生成的字幕导入达芬奇。"
+      ]
+    }
+  ],
+  "checks": {
+    "thirtyMinutePCM": {
+      "kind": "derived 30 min timeline; 1791.32 s silence then real 8.68 s speech",
+      "duration": 1800,
+      "pcmBytes": 115200000,
+      "trailingSpeechMatchesBaseline": true,
+      "renderSeconds": 1.22
+    },
+    "stereoBackgroundMusic": {
+      "fixture": "derived project plus stereo 330Hz music WAV",
+      "dialogueMatchesBaselineBytes": true,
+      "allAudioIncludesMusic": true,
+      "mixedMinusDialogueRMS": 0.022196758441877122,
+      "excludedMusicClips": 1,
+      "mixedSegmentCount": 2
+    },
+    "cancel": {
+      "requestID": "aae57a0c-685c-4589-928c-86bc649c715d",
+      "status": "cancelled",
+      "stage": "worker",
+      "error": "已取消识别"
+    },
+    "thirtyMinuteJob": {
+      "requestID": "2035a46f-6abb-4a37-b27a-a2bbd5493ec9",
+      "modelID": "qwen3-asr-0.6b",
+      "status": "ready",
+      "stage": "ready",
+      "projectUID": "3279C4B5-9E10-477A-B2BB-7C45BD0B041D",
+      "jobID": "de2603dc-7375-4fe3-b05a-1c170d709e0b",
+      "titleCount": 3,
+      "snapshotSHA256": "b01af0e788f3fd52df471d5c71948f7ad1dd7d4beb62af6776137036c4eb4442",
+      "pcmSHA256": "43f6e4a59d9dab65d9dee7b76aa002fa4c4444fa9926f5a39f563391a1d99ebb",
+      "captions": [
+        {
+          "text": "大家好，欢迎使用中文字幕工具。",
+          "start_frame": 44781,
+          "end_frame": 44864
+        },
+        {
+          "text": "今天我们测试语音识别，",
+          "start_frame": 44867,
+          "end_frame": 44924
+        },
+        {
+          "text": "并把生成的字幕导入达芬奇。",
+          "start_frame": 44927,
+          "end_frame": 44998
+        }
+      ]
+    },
+    "multipleCutsAndChunks": {
+      "kind": "derived 86.8 s, 10 repeated speech clips, 4 ASR chunks",
+      "jobID": "30c623f2-38f5-4e57-aa3c-a24158a4bf1d",
+      "status": "ready",
+      "titleCount": 31
+    },
+    "appKitProofreading": {
+      "realControllerEditingCode": true,
+      "textEscaping": true,
+      "allThreeXMLVersionsUpdated": true,
+      "frameTimesPreserved": true,
+      "font": "PingFang SC",
+      "fontSize": 48,
+      "FCPHost": false
+    },
+    "lowerThirdDTD": {
+      "passed": true,
+      "version": "1.14",
+      "regressionAdded": true
+    }
+  },
+  "host": {
+    "model_menu_switch": true,
+    "selected_model_restored_after_extension_restart": "qwen3-asr-1.7b",
+    "first_authorization_repeated": false,
+    "new_project_drop_pending": true,
+    "proofread_result_reopen_pending": true,
+    "new_title_writeback_pending": true
+  },
+  "regressionTests": 67,
+  "limitations": [
+    "30 min case has 1791.32 seconds of silence, then 8.68 seconds of speech; not a continuous-speech quality benchmark",
+    "Connected music fixture is derived XML with actual stereo WAV, not a fresh FCP drag",
+    "New FCP UI input/edit/restore/writeback acceptance still requires user drag",
+    "No GPU acceleration, complex audio effects, compounds, multicam, or retimes",
+    "Local install remains dependent on this workspace and its standalone runtime"
+  ]
+}

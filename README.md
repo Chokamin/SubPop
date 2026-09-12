@@ -1,35 +1,36 @@
 # SubPop
 
-原名 Subloom，实际仓库现为 `/Users/chokamin/Desktop/SubPop`。旧目录为兼容符号链接；历史验证数据保留原名称。
+用于 Final Cut Pro 的本机中文字幕插件。当前目标是 **30 分钟内口播／教程，支持普通剪切和背景音乐角色**。单面板完成项目拖入、模型选择、整段识别、字幕校对和 Title 拖回原时间线。
 
-用于 Final Cut Pro 的本地简体中文字幕工具，当前处于**接入验证阶段**，已有只读 Workflow Extension 探针构建，已安装并在 FCP 打开，活动项目 UID、容器链和序列时间数据已实测读通，启动稳定性仍待复测，尚未完成 MVP。
+目前为本机 MVP 候选版，**宿主完整验收尚未全部完成**。已通过的功能和剩余项目见 [MVP 计划与验收](docs/MVP_PLAN.md)，历史证据见 [HANDOFF.md](HANDOFF.md)。
 
-当前版本采用**整个活动项目识别**：处理已剪辑时间线从头到尾的音频，不需要选区。已在隔离单片段项目验证拖入项目、原生扩展解码完整音频和外部本地识别；本轮又验证了 ASR 字幕经 FCP 原生 SRT 导入回到原项目并保留旧字幕。插件自动识别与自动写回仍未实现。
+## 当前功能
 
-请先读 [HANDOFF.md](HANDOFF.md)。完整能力、证据等级和未完成项见 [接入报告](docs/integration-validation.md)。
+- Qwen3-ASR 0.6B／1.7B 实际本机切换，记住选择；文件缺失时明确提示，不自动回退。
+- 默认识别对白角色，可选择全部音频；单声道、立体声、剪切、空隙和连接音频，按时间线位置渲染。
+- 最长 30 分钟，常见整数／分数帧率；ASR 分段、时间回映射、进度与取消。
+- 字幕表格校对、字体／字号、草稿及任务恢复；三版本 Title 拖出，保留已有字幕冲突保护。
+- 后台自动准备，记住首次目录授权。识别不上传音频，不调用 FCP“共享／导出”。
 
-## 本轮交付
+项目修改后必须重新拖入。暂不支持变速、复合片段、多机位、J/L 音频、音频效果、对白音量关键帧或多通道映射；这些结构会报错。背景音乐若已经混在对白源文件中，角色过滤无法将其分离。
 
-- 独立 FCP 12.3 测试资源库、25fps／01:00:00:00 起点项目。
-- 原生 SRT 插入当前时间线及 XML 导出回读实测。
-- 同 UID XML 修改导入：替换/保留两者对话框；保留两者新增项目。
-- FCP 导出快照 → 本地源音频内存解码 → Qwen 0.6B CPU 转写/词级对齐离线探针。
-- [原生整项目音频实测](docs/native-audio-validation.md)：完整 8.68 秒 PCM 与本地识别结果，保留权限/最终混音限制。
-- [真实 ASR 字幕写回与校对回读](docs/writeback-validation.md)：原项目 UID、旧字幕及精确帧位置已核对；使用原生 SRT 导入，非插件自动写入。
-- 有理数时间和拒绝超出探针范围的回归测试。
+## 本机安装与更新
 
-这些不是“一键生成到原时间线”验收。测试中的导出和导入是验证操作，未选为产品流程。
+当前机器已安装 `/Applications/SubPop Probe.app`，独立运行环境、模型和缓存位于此仓库。不能移动或删除仓库后继续运行；跨机器独立安装包尚未制作。
 
-## 测试
+维护更新：关闭 SubPop 面板后执行 `python3 scripts/install_local.py`，再从 FCP“窗口 → 扩展 → SubPop Probe”重开。更新保留模型和授权；若旧进程仍被 FCP 缓存，需要重新启动该扩展。普通使用无需终端或手动启动后台。
 
-先 `python3 scripts/build_probe.py`，再 `python3 -B -m unittest discover -s tests -v`。
+模型缺失时可用独立环境补齐：
 
-构建使用项目 `.subloom/sdk-expanded` 中的官方 SDK，首次通过 `pkgutil --expand-full` 解包（不会执行安装脚本）。原生 bundle 测试要求已构建，不会自动安装应用。详情见 [SDK 探针记录](docs/sdk-probe-validation.md)。
+```sh
+.venv/bin/python scripts/install_models.py qwen3-asr-0.6b
+.venv/bin/python scripts/install_models.py qwen3-asr-1.7b
+```
 
-`probes/make_fixture.py` 生成测试 XML/SRT，要求 `.subloom/verification/mandarin.mp4` 已存在。该媒体是从 VinciSub 测试媒体复制的独立副本。
+仅下载官方固定版本文件。识别运行强制离线。公共模型清单在 `config/models.json`；私有任务、媒体、模型和授权不提交 Git。
 
-`probes/readback.py` 只解析一个普通 dialogue asset-clip 的实验项目，拒绝组件、变速、嵌套和效果；不推断角色独奏或最终混音。
+## 开发验证
 
-`probes/recognize_fixture.py --xml … --asr … --aligner … --output …` 使用已安装 qwen-asr、torch、numpy、opencc 与 ffmpeg，仅允许本项目隔离样本；离线模型路径必须显式传入。输出词级时间，不实现产品级断句或写回。
+先 `python3 scripts/build_probe.py`，再 `python3 -B -m unittest discover -s tests -v`。原生音频测试需要系统媒体服务权限。
 
-`--pcm .subloom/verification/native-audio.f32le` 可让识别探针直接消费原生扩展产出的完整 16kHz 单声道 float32 PCM；仍为独立测试进程，不是插件自动工作流。AVFoundation 解码回归需系统媒体服务权限，受终端沙箱阻止时不可记作通过。
+构建使用本项目解包的苹果 Workflow Extension SDK。`SubPopPresentationTests` 是无 FCP 宿主、无窗口的 AppKit 校对回归程序，不能替代 FCP 落轨验收。所有 FCP 工程验证只使用 `.subloom/verification/` 独立资源库，不修改用户其他工程。

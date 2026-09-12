@@ -9,6 +9,11 @@ static NSDictionary *Time(CMTime t) {
     return @{ @"value": @(t.value), @"timescale": @(t.timescale), @"flags": @(t.flags), @"epoch": @(t.epoch) };
 }
 @class SubPopProbeViewController;
+@interface SubPopDocumentView : NSView
+@end
+@implementation SubPopDocumentView
+- (BOOL)isFlipped { return YES; }
+@end
 @interface SubPopDropView : NSView <NSDraggingDestination>
 @property (weak) SubPopProbeViewController *controller;
 @property BOOL dragHover;
@@ -16,7 +21,7 @@ static NSDictionary *Time(CMTime t) {
 @interface SubPopTitleDragView : NSView
 @property (weak) SubPopProbeViewController *controller;
 @end
-@interface SubPopProbeViewController : NSViewController <FCPXTimelineObserver, NSDraggingSource, NSPasteboardItemDataProvider>
+@interface SubPopProbeViewController : NSViewController <FCPXTimelineObserver, NSDraggingSource, NSPasteboardItemDataProvider, NSTableViewDataSource, NSTableViewDelegate>
 @property id<FCPXHost> host;
 @property FCPXTimeline *timeline;
 @property NSTextView *output;
@@ -47,6 +52,27 @@ static NSDictionary *Time(CMTime t) {
 @property NSString *dropName;
 @property NSDate *engineLaunchDate;
 @property NSButton *engineSettings;
+@property NSArray *modelCatalog;
+@property NSString *selectedModelID;
+@property NSString *requestModelID;
+@property NSString *dropUID;
+@property CMTime dropDuration;
+@property NSPopUpButton *modelPicker;
+@property NSPopUpButton *audioPicker;
+@property NSPopUpButton *fontPicker;
+@property NSPopUpButton *sizePicker;
+@property NSTextField *modelDetail;
+@property NSTextField *scopeLabel;
+@property NSButton *cancelButton;
+@property NSTableView *captionTable;
+@property NSScrollView *captionScroll;
+@property NSStackView *editorControls;
+@property NSMutableArray *captionRows;
+@property NSDictionary *resultManifest;
+@property NSString *visibleError;
+@property NSNumber *jobProgress;
+@property NSString *resultRequestID;
+@property BOOL restoringSession;
 @property NSPopover *diagnostics;
 @property NSButton *diagnosticsButton;
 - (void)updateInterface;
@@ -104,46 +130,133 @@ static NSDictionary *Time(CMTime t) {
     label.font=[NSFont systemFontOfSize:size weight:weight]; return label;
 }
 - (void)loadView {
-    NSView *view=[[NSView alloc] initWithFrame:NSMakeRect(0,0,620,460)]; self.view=view;
-    NSStackView *stack=[NSStackView new]; stack.orientation=NSUserInterfaceLayoutOrientationVertical;
-    stack.alignment=NSLayoutAttributeLeading; stack.spacing=10; stack.translatesAutoresizingMaskIntoConstraints=NO;
-    [view addSubview:stack];
-    [NSLayoutConstraint activateConstraints:@[[stack.leadingAnchor constraintEqualToAnchor:view.leadingAnchor constant:24],
-        [stack.trailingAnchor constraintEqualToAnchor:view.trailingAnchor constant:-24],
-        [stack.topAnchor constraintEqualToAnchor:view.topAnchor constant:20]]];
-    NSView *header=[[NSView alloc] initWithFrame:NSMakeRect(0,0,572,46)];
-    NSTextField *brand=[self label:@"SubPop" size:25 weight:NSFontWeightSemibold]; brand.frame=NSMakeRect(0,14,240,32); [header addSubview:brand];
-    NSTextField *tagline=[self label:@"为完整视频生成中文字幕" size:12 weight:NSFontWeightRegular]; tagline.textColor=NSColor.secondaryLabelColor; tagline.frame=NSMakeRect(0,0,280,18); [header addSubview:tagline];
-    NSButton *connect=[NSButton buttonWithTitle:@"模型与设置…" target:self action:@selector(showModelSettings:)]; self.engineSettings=connect;
-    connect.bezelStyle=NSBezelStyleRounded; connect.frame=NSMakeRect(452,20,120,26); connect.autoresizingMask=NSViewMinXMargin; [header addSubview:connect];
-    self.serviceLabel=[self label:@"Qwen3-ASR 0.6B · 本机" size:11 weight:NSFontWeightRegular]; self.serviceLabel.alignment=NSTextAlignmentRight;
-    self.serviceLabel.frame=NSMakeRect(352,0,220,18); self.serviceLabel.autoresizingMask=NSViewMinXMargin; [header addSubview:self.serviceLabel];
-    [stack addArrangedSubview:header]; [header.heightAnchor constraintEqualToConstant:46].active=YES;
-    self.steps=[self label:@"1  导入项目       →       2  整段识别       →       3  拖回字幕" size:12 weight:NSFontWeightMedium];
-    self.steps.textColor=NSColor.secondaryLabelColor; [stack addArrangedSubview:self.steps];
-    SubPopDropView *drop=[[SubPopDropView alloc] initWithFrame:NSMakeRect(0,0,572,96)]; drop.controller=self;
+    self.view=[[NSView alloc] initWithFrame:NSMakeRect(0,0,620,620)];
+    NSDictionary *catalog=[self readJSON:[[NSBundle bundleForClass:self.class] URLForResource:@"models" withExtension:@"json"]];
+    self.modelCatalog=catalog[@"models"] ?: @[];
+    self.selectedModelID=[NSUserDefaults.standardUserDefaults stringForKey:@"selectedModelID"] ?: catalog[@"defaultModelID"];
+    if (![self.modelCatalog filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"id == %@",self.selectedModelID]].count) self.selectedModelID=catalog[@"defaultModelID"];
+    NSStackView *stack=[NSStackView new]; stack.orientation=NSUserInterfaceLayoutOrientationVertical; stack.alignment=NSLayoutAttributeLeading; stack.spacing=16; stack.translatesAutoresizingMaskIntoConstraints=NO;
+    NSScrollView *page=[[NSScrollView alloc] initWithFrame:self.view.bounds];page.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;page.hasVerticalScroller=YES;page.drawsBackground=NO;[self.view addSubview:page];
+    SubPopDocumentView *document=[SubPopDocumentView new];document.translatesAutoresizingMaskIntoConstraints=NO;page.documentView=document;
+    [document.widthAnchor constraintEqualToAnchor:page.contentView.widthAnchor].active=YES;
+    [document addSubview:stack];
+    [NSLayoutConstraint activateConstraints:@[[stack.leadingAnchor constraintEqualToAnchor:document.leadingAnchor constant:24],[stack.trailingAnchor constraintEqualToAnchor:document.trailingAnchor constant:-24],[stack.topAnchor constraintEqualToAnchor:document.topAnchor constant:20]]];
+    NSView *header=[[NSView alloc] initWithFrame:NSMakeRect(0,0,572,34)];
+    NSTextField *brand=[self label:@"SubPop" size:24 weight:NSFontWeightSemibold];brand.frame=NSMakeRect(0,0,160,34);[header addSubview:brand];
+    self.serviceLabel=[self label:@"正在连接" size:12 weight:NSFontWeightRegular];self.serviceLabel.frame=NSMakeRect(360,8,212,18);self.serviceLabel.alignment=NSTextAlignmentRight;self.serviceLabel.autoresizingMask=NSViewMinXMargin;[header addSubview:self.serviceLabel];
+    [stack addArrangedSubview:header];[header.heightAnchor constraintEqualToConstant:34].active=YES;
+    SubPopDropView *drop=[[SubPopDropView alloc] initWithFrame:NSMakeRect(0,0,572,80)];drop.controller=self;
     [drop registerForDraggedTypes:@[@"com.apple.finalcutpro.xml.v1-14",@"com.apple.finalcutpro.xml.v1-13",@"com.apple.finalcutpro.xml.v1-12",@"com.apple.finalcutpro.xml"]];
-    [drop setAccessibilityElement:YES]; [drop setAccessibilityRole:NSAccessibilityGroupRole]; [drop setAccessibilityLabel:@"导入项目拖放区"];
-    self.dropTitle=[self label:@"将项目拖到这里" size:17 weight:NSFontWeightSemibold]; self.dropTitle.frame=NSMakeRect(20,52,532,26); self.dropTitle.autoresizingMask=NSViewWidthSizable; [drop addSubview:self.dropTitle];
-    self.dropDetail=[self label:@"从 Final Cut Pro 浏览器拖入当前项目。\n识别整个视频，无需选择片段。" size:12 weight:NSFontWeightRegular]; self.dropDetail.textColor=NSColor.secondaryLabelColor;
-    self.dropDetail.frame=NSMakeRect(20,12,532,34); self.dropDetail.autoresizingMask=NSViewWidthSizable; [drop addSubview:self.dropDetail];
-    [stack addArrangedSubview:drop]; [drop.heightAnchor constraintEqualToConstant:96].active=YES;
-    NSView *status=[[NSView alloc] initWithFrame:NSMakeRect(0,0,572,106)];
-    self.statusTitle=[self label:@"等待导入项目" size:17 weight:NSFontWeightSemibold]; self.statusTitle.frame=NSMakeRect(0,82,530,24); self.statusTitle.autoresizingMask=NSViewWidthSizable; [status addSubview:self.statusTitle];
-    self.spinner=[[NSProgressIndicator alloc] initWithFrame:NSMakeRect(544,85,18,18)]; self.spinner.style=NSProgressIndicatorStyleSpinning; self.spinner.displayedWhenStopped=NO; self.spinner.autoresizingMask=NSViewMinXMargin; [status addSubview:self.spinner];
-    self.statusDetail=[self label:@"" size:12 weight:NSFontWeightRegular]; self.statusDetail.textColor=NSColor.secondaryLabelColor;
-    self.statusDetail.frame=NSMakeRect(0,40,572,34); self.statusDetail.autoresizingMask=NSViewWidthSizable; [status addSubview:self.statusDetail];
-    self.resultView=[[SubPopTitleDragView alloc] initWithFrame:NSMakeRect(0,0,572,34)]; self.resultView.controller=self; self.resultView.autoresizingMask=NSViewWidthSizable;
-    [self.resultView setAccessibilityElement:YES]; [self.resultView setAccessibilityRole:NSAccessibilityGroupRole]; [self.resultView setAccessibilityLabel:@"字幕拖出区，识别完成后可用"]; [status addSubview:self.resultView];
-    [stack addArrangedSubview:status]; [status.heightAnchor constraintEqualToConstant:106].active=YES;
-    self.generateButton=[NSButton buttonWithTitle:@"准备本机识别" target:self action:@selector(primaryAction:)]; self.generateButton.bezelStyle=NSBezelStyleRounded;
-    self.generateButton.controlSize=NSControlSizeLarge; self.generateButton.keyEquivalent=@"\r"; self.generateButton.bezelColor=NSColor.controlAccentColor;
-    [stack addArrangedSubview:self.generateButton]; [self.generateButton.heightAnchor constraintEqualToConstant:34].active=YES;
-    NSTextField *scope=[self label:@"测试版 · 当前仅支持 Subloom-Original（8.68 秒）" size:11 weight:NSFontWeightRegular]; scope.textColor=NSColor.tertiaryLabelColor; [stack addArrangedSubview:scope];
-    self.diagnosticsButton=[NSButton buttonWithTitle:@"诊断…" target:self action:@selector(showDiagnostics:)]; self.diagnosticsButton.bordered=NO; self.diagnosticsButton.font=[NSFont systemFontOfSize:11]; [stack addArrangedSubview:self.diagnosticsButton];
-    for (NSView *row in stack.arrangedSubviews) if (row!=self.diagnosticsButton) [row.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active=YES;
-    self.output=[[NSTextView alloc] initWithFrame:NSMakeRect(0,0,520,300)]; self.output.editable=NO; self.output.font=[NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightRegular];
-    self.displayState=@"idle"; [self updateInterface];
+    [drop setAccessibilityElement:YES];[drop setAccessibilityRole:NSAccessibilityGroupRole];[drop setAccessibilityLabel:@"导入项目拖放区"];
+    self.dropTitle=[self label:@"拖入你的项目" size:17 weight:NSFontWeightSemibold];self.dropTitle.frame=NSMakeRect(18,41,536,24);self.dropTitle.autoresizingMask=NSViewWidthSizable;[drop addSubview:self.dropTitle];
+    self.dropDetail=[self label:@"从 FCP 浏览器拖入 · 识别整段视频" size:12 weight:NSFontWeightRegular];self.dropDetail.textColor=NSColor.secondaryLabelColor;self.dropDetail.frame=NSMakeRect(18,12,536,22);self.dropDetail.autoresizingMask=NSViewWidthSizable;[drop addSubview:self.dropDetail];
+
+    [stack addArrangedSubview:drop];[drop.heightAnchor constraintEqualToConstant:80].active=YES;
+    NSView *options=[[NSView alloc] initWithFrame:NSMakeRect(0,0,572,74)];
+    NSTextField *modelLabel=[self label:@"识别模型" size:12 weight:NSFontWeightMedium];modelLabel.frame=NSMakeRect(0,55,240,18);[options addSubview:modelLabel];
+    self.modelPicker=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(0,24,300,28) pullsDown:NO];self.modelPicker.target=self;self.modelPicker.action=@selector(modelChanged:);[self.modelPicker setAccessibilityLabel:@"识别模型"];
+    for (NSDictionary *model in self.modelCatalog) { [self.modelPicker addItemWithTitle:model[@"name"]];self.modelPicker.lastItem.representedObject=model[@"id"]; }
+    [self.modelPicker selectItemAtIndex:[self.modelCatalog indexOfObjectPassingTest:^BOOL(NSDictionary *m,NSUInteger i,BOOL *stop){return [m[@"id"] isEqual:self.selectedModelID];}]];[options addSubview:self.modelPicker];
+    NSTextField *audioLabel=[self label:@"音频范围" size:12 weight:NSFontWeightMedium];audioLabel.frame=NSMakeRect(324,55,240,18);audioLabel.autoresizingMask=NSViewMinXMargin;[options addSubview:audioLabel];
+    self.audioPicker=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(324,24,248,28) pullsDown:NO];[self.audioPicker addItemsWithTitles:@[@"仅对白 · 排除音乐角色",@"所有音频 · 按时间线混合"]];self.audioPicker.autoresizingMask=NSViewMinXMargin;self.audioPicker.target=self;self.audioPicker.action=@selector(audioChanged:);[self.audioPicker setAccessibilityLabel:@"音频范围"];[options addSubview:self.audioPicker];
+    self.modelDetail=[self label:@"" size:11 weight:NSFontWeightRegular];self.modelDetail.textColor=NSColor.secondaryLabelColor;self.modelDetail.frame=NSMakeRect(0,0,572,18);self.modelDetail.autoresizingMask=NSViewWidthSizable;[options addSubview:self.modelDetail];
+    [stack addArrangedSubview:options];[options.heightAnchor constraintEqualToConstant:74].active=YES;
+    NSView *status=[[NSView alloc] initWithFrame:NSMakeRect(0,0,572,54)];
+    self.statusTitle=[self label:@"等待项目" size:14 weight:NSFontWeightSemibold];self.statusTitle.frame=NSMakeRect(0,31,534,21);self.statusTitle.autoresizingMask=NSViewWidthSizable;[status addSubview:self.statusTitle];
+    self.statusDetail=[self label:@"" size:12 weight:NSFontWeightRegular];self.statusDetail.textColor=NSColor.secondaryLabelColor;self.statusDetail.frame=NSMakeRect(0,0,572,28);self.statusDetail.autoresizingMask=NSViewWidthSizable;[status addSubview:self.statusDetail];
+    self.spinner=[[NSProgressIndicator alloc] initWithFrame:NSMakeRect(550,33,16,16)];self.spinner.style=NSProgressIndicatorStyleSpinning;self.spinner.displayedWhenStopped=NO;self.spinner.autoresizingMask=NSViewMinXMargin;[status addSubview:self.spinner];
+    [stack addArrangedSubview:status];[status.heightAnchor constraintEqualToConstant:54].active=YES;
+    self.captionTable=[NSTableView new];self.captionTable.rowHeight=32;self.captionTable.usesAlternatingRowBackgroundColors=YES;self.captionTable.dataSource=self;self.captionTable.delegate=self;
+    NSTableColumn *time=[[NSTableColumn alloc] initWithIdentifier:@"time"];time.title=@"开始";time.width=82;time.editable=NO;[self.captionTable addTableColumn:time];
+    NSTableColumn *text=[[NSTableColumn alloc] initWithIdentifier:@"text"];text.title=@"字幕 · 双击校对";text.width=440;text.editable=YES;[self.captionTable addTableColumn:text];
+    self.captionScroll=[NSScrollView new];self.captionScroll.documentView=self.captionTable;self.captionScroll.hasVerticalScroller=YES;self.captionScroll.borderType=NSBezelBorder;[stack addArrangedSubview:self.captionScroll];[self.captionScroll.heightAnchor constraintEqualToConstant:150].active=YES;self.captionScroll.hidden=YES;
+    self.fontPicker=[[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];[self.fontPicker addItemsWithTitles:@[@"Helvetica",@"PingFang SC",@"Arial"]];self.fontPicker.target=self;self.fontPicker.action=@selector(styleChanged:);[self.fontPicker setAccessibilityLabel:@"字幕字体"];
+    self.sizePicker=[[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];[self.sizePicker addItemsWithTitles:@[@"28",@"36",@"48",@"64",@"80"]];self.sizePicker.target=self;self.sizePicker.action=@selector(styleChanged:);[self.sizePicker setAccessibilityLabel:@"字幕字号"];
+    self.editorControls=[NSStackView stackViewWithViews:@[[self label:@"字幕样式" size:12 weight:NSFontWeightMedium],self.fontPicker,self.sizePicker]];self.editorControls.spacing=10;[stack addArrangedSubview:self.editorControls];self.editorControls.hidden=YES;
+    self.resultView=[[SubPopTitleDragView alloc] initWithFrame:NSMakeRect(0,0,572,36)];self.resultView.controller=self;[self.resultView setAccessibilityElement:YES];[self.resultView setAccessibilityRole:NSAccessibilityGroupRole];[stack addArrangedSubview:self.resultView];[self.resultView.heightAnchor constraintEqualToConstant:36].active=YES;self.resultView.hidden=YES;
+    NSView *actions=[[NSView alloc] initWithFrame:NSMakeRect(0,0,572,36)];
+    self.engineSettings=[NSButton buttonWithTitle:@"设置" target:self action:@selector(showModelSettings:)];self.engineSettings.bezelStyle=NSBezelStyleRounded;self.engineSettings.frame=NSMakeRect(0,2,64,30);[actions addSubview:self.engineSettings];
+    self.diagnosticsButton=[NSButton buttonWithTitle:@"诊断" target:self action:@selector(showDiagnostics:)];self.diagnosticsButton.bordered=NO;self.diagnosticsButton.frame=NSMakeRect(68,2,60,30);[actions addSubview:self.diagnosticsButton];
+    self.cancelButton=[NSButton buttonWithTitle:@"取消" target:self action:@selector(cancelJob:)];self.cancelButton.bezelStyle=NSBezelStyleRounded;self.cancelButton.frame=NSMakeRect(298,2,90,30);self.cancelButton.autoresizingMask=NSViewMinXMargin;[actions addSubview:self.cancelButton];
+    self.generateButton=[NSButton buttonWithTitle:@"开始识别" target:self action:@selector(primaryAction:)];self.generateButton.bezelStyle=NSBezelStyleRounded;self.generateButton.controlSize=NSControlSizeLarge;self.generateButton.keyEquivalent=@"\r";self.generateButton.frame=NSMakeRect(400,0,172,34);self.generateButton.autoresizingMask=NSViewMinXMargin;[actions addSubview:self.generateButton];
+    [stack addArrangedSubview:actions];[actions.heightAnchor constraintEqualToConstant:36].active=YES;
+    self.scopeLabel=[self label:@"30 分钟内口播／教程 · 本机识别 · Title 字幕" size:11 weight:NSFontWeightRegular];self.scopeLabel.textColor=NSColor.secondaryLabelColor;[stack addArrangedSubview:self.scopeLabel];
+    for (NSView *row in stack.arrangedSubviews) [row.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active=YES;
+    self.output=[[NSTextView alloc] initWithFrame:NSMakeRect(0,0,520,300)];self.output.editable=NO;self.output.font=[NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightRegular];self.displayState=@"idle";[document.bottomAnchor constraintEqualToAnchor:stack.bottomAnchor constant:20].active=YES;[self updateInterface];
+}
+- (void)restoreSession {
+    if (self.restoringSession || self.requestID || self.titlePayloads || !self.bridgeURL || !self.timeline || ![self workerAvailable]) return;
+    NSDictionary *saved=[NSUserDefaults.standardUserDefaults dictionaryForKey:@"pendingSession"];
+    FCPXSequence *sequence=self.timeline.activeSequence;FCPXObject *container=sequence.container;
+    if (!saved || container.objectType!=kFCPXObjectType_Project || ![((FCPXProject *)container).UID isEqual:saved[@"projectUID"]] || !CMTIME_IS_NUMERIC(sequence.duration)) return;
+    CMTime duration=CMTimeMake([saved[@"durationValue"] longLongValue],[saved[@"durationScale"] intValue]);
+    if (!CMTIME_IS_NUMERIC(duration) || CMTimeCompare(sequence.duration,duration)!=0) return;
+    self.restoringSession=YES;self.dropUID=saved[@"projectUID"];self.dropDuration=duration;self.dropName=saved[@"projectName"];
+    NSString *file=saved[@"inputFile"];
+    if ([file hasPrefix:@"drop-"] && [file.lastPathComponent isEqual:file]) { self.freshDropURL=[[self evidenceDirectory] URLByAppendingPathComponent:file];self.freshDropDate=NSDate.date; }
+    self.requestID=saved[@"requestID"];self.requestSHA=saved[@"snapshotSHA"];self.requestModelID=saved[@"modelID"];self.requestGeneration=self.dropGeneration;self.displayState=@"validate";
+    self.selectedModelID=self.requestModelID;
+    for (NSMenuItem *item in self.modelPicker.itemArray) if ([item.representedObject isEqual:self.selectedModelID]) [self.modelPicker selectItem:item];
+    self.restoringSession=NO;
+}
+- (void)saveDraft {
+    if (!self.resultRequestID || !self.titlePayloads || !self.captionRows) return;
+    NSDictionary *draft=@{@"requestID":self.resultRequestID,@"snapshotSHA":self.requestSHA ?: @"",@"modelID":self.requestModelID ?: @"",@"captions":self.captionRows,@"font":self.fontPicker.titleOfSelectedItem,@"fontSize":self.sizePicker.titleOfSelectedItem};
+    NSData *data=[NSJSONSerialization dataWithJSONObject:draft options:0 error:nil];[data writeToURL:[[self evidenceDirectory] URLByAppendingPathComponent:[@"draft-" stringByAppendingString:self.resultRequestID]] atomically:YES];
+}
+- (NSDictionary *)selectedModel {
+    for (NSDictionary *model in self.modelCatalog) if ([model[@"id"] isEqual:self.selectedModelID]) return model;
+    return @{};
+}
+- (BOOL)selectedModelAvailable {
+    NSDictionary *service=[self readJSON:[self.bridgeURL URLByAppendingPathComponent:@"service.json"]];
+    for (NSDictionary *model in service[@"models"]) if ([model[@"id"] isEqual:self.selectedModelID]) return [model[@"installed"] boolValue];
+    return NO;
+}
+- (void)modelChanged:(id)sender {
+    if (self.requestID) return;
+    self.selectedModelID=self.modelPicker.selectedItem.representedObject;
+    [NSUserDefaults.standardUserDefaults setObject:self.selectedModelID forKey:@"selectedModelID"];
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.titlePayloads=nil;self.captionRows=nil;self.displayState=self.freshDropURL ? @"input" : @"idle";
+    [self record:@{@"reason":@"model-selected",@"modelID":self.selectedModelID}];
+}
+- (void)audioChanged:(id)sender { if (!self.requestID) { [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.titlePayloads=nil;self.captionRows=nil;self.displayState=self.freshDropURL ? @"input" : @"idle";[self updateInterface]; } }
+- (void)cancelJob:(id)sender {
+    if (!self.requestID) return;
+    NSURL *url=[[self.bridgeURL URLByAppendingPathComponent:self.requestID] URLByAppendingPathComponent:@"cancel.json"];
+    [@"{}" writeToURL:url atomically:YES encoding:NSUTF8StringEncoding error:nil];self.cancelButton.enabled=NO;self.statusTitle.stringValue=@"正在取消…";
+}
+- (NSInteger)numberOfRowsInTableView:(NSTableView *)tableView { return self.captionRows.count; }
+- (id)tableView:(NSTableView *)tableView objectValueForTableColumn:(NSTableColumn *)column row:(NSInteger)row {
+    NSDictionary *caption=self.captionRows[row];if ([column.identifier isEqual:@"text"]) return caption[@"text"];
+    NSArray *parts=[self.resultManifest[@"frameDuration"] componentsSeparatedByString:@"/"];
+    double frame=[parts[0] doubleValue]/(parts.count==2 ? [parts[1] doubleValue] : 1);double value=[caption[@"start_frame"] doubleValue]*frame;
+    return [NSString stringWithFormat:@"%02ld:%05.2f",(long)(value/60),fmod(value,60)];
+}
+- (void)tableView:(NSTableView *)tableView setObjectValue:(id)value forTableColumn:(NSTableColumn *)column row:(NSInteger)row {
+    NSString *text=[value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (!text.length || text.length>500) { NSBeep();return; }
+    self.captionRows[row][@"text"]=text;[self rebuildTitles];
+}
+- (void)styleChanged:(id)sender { [self rebuildTitles]; }
+- (void)rebuildTitles {
+    if (!self.titlePayloads) return;
+    NSMutableDictionary *updated=[NSMutableDictionary new];
+    for (NSString *version in self.titlePayloads) {
+        NSXMLDocument *doc=[[NSXMLDocument alloc] initWithData:self.titlePayloads[version] options:NSXMLNodeLoadExternalEntitiesNever error:nil];
+        NSArray *titles=[doc nodesForXPath:@"/fcpxml/clip/spine/title" error:nil];
+        if (titles.count!=self.captionRows.count) return;
+        for (NSUInteger i=0;i<titles.count;i++) {
+            NSXMLElement *title=titles[i];NSString *text=self.captionRows[i][@"text"];
+            [title attributeForName:@"name"].stringValue=text;
+            NSXMLNode *node=[title nodesForXPath:@"text/text-style" error:nil].firstObject;node.stringValue=text;
+            NSXMLElement *style=[title nodesForXPath:@"text-style-def/text-style" error:nil].firstObject;
+            [style attributeForName:@"font"].stringValue=self.fontPicker.titleOfSelectedItem;
+            [style attributeForName:@"fontSize"].stringValue=self.sizePicker.titleOfSelectedItem;
+        }
+        updated[version]=[doc XMLDataWithOptions:NSXMLNodePrettyPrint];
+    }
+    self.titlePayloads=updated;[self.captionTable reloadData];[self saveDraft];
 }
 - (void)primaryAction:(id)sender { if (![self workerAvailable]) [self connectWorker:sender]; else [self startWorkerJob:sender]; }
 - (void)showDiagnostics:(id)sender {
@@ -157,9 +270,10 @@ static NSDictionary *Time(CMTime t) {
     }
     [self.diagnostics showRelativeToRect:[sender bounds] ofView:sender preferredEdge:NSRectEdgeMaxY];
 }
-- (BOOL)canDragResult { return self.titlePayloads && self.resultDate && -self.resultDate.timeIntervalSinceNow<=300 && [self isolatedProjectActive]; }
+- (BOOL)canDragResult { return self.titlePayloads && self.resultDate && [self isolatedProjectActive]; }
 - (void)consumeUIEvent:(NSDictionary *)event {
     NSString *reason=event[@"reason"], *status=event[@"status"];
+    if ([event[@"error"] isKindOfClass:NSString.class]) self.visibleError=event[@"error"];
     if ([reason isEqual:@"drop"]) self.displayState=self.freshDropURL ? @"input" : @"invalid-input";
     else if ([reason isEqual:@"activeSequenceChanged"]) self.displayState=@"idle";
     else if ([reason isEqual:@"worker-connect"]) self.displayState=[status isEqual:@"connected"] ? (self.freshDropURL ? @"input" : @"idle") : ([status isEqual:@"wrong-directory"] ? @"wrong-directory" : @"disconnected");
@@ -175,7 +289,8 @@ static NSDictionary *Time(CMTime t) {
     [self updateInterface];
 }
 - (void)updateInterface {
-    BOOL connected=[self workerAvailable], fresh=self.freshDropURL && self.freshDropDate && -self.freshDropDate.timeIntervalSinceNow<=300;
+    [self restoreSession];
+    BOOL connected=[self workerAvailable], fresh=self.freshDropURL && self.freshDropDate;
     NSString *state=self.displayState ?: @"idle";
     if (([state isEqual:@"input"] && !fresh) || ([state isEqual:@"ready"] && ![self canDragResult])) state=@"expired";
     if ([state isEqual:@"preparing"] && connected) { self.engineLaunchDate=nil; self.displayState=fresh ? @"input" : @"idle"; state=self.displayState; }
@@ -184,20 +299,27 @@ static NSDictionary *Time(CMTime t) {
     if ([state isEqual:@"idle"] && !connected) state=@"disconnected";
     if (fresh && !self.requestID && ![self isolatedProjectActive]) state=@"inactive";
     NSDictionary *copy=SubPopPresentation(state); self.statusTitle.stringValue=copy[@"title"]; self.statusDetail.stringValue=copy[@"detail"];
-    self.serviceLabel.stringValue=connected ? @"● Qwen3-ASR 0.6B · 本机就绪" : @"Qwen3-ASR 0.6B · 本机";
+    if ([state isEqual:@"error"] && self.visibleError.length) self.statusDetail.stringValue=self.visibleError;
+    if ([state isEqual:@"recognize"] && self.jobProgress) self.statusTitle.stringValue=[NSString stringWithFormat:@"正在识别语音 · %.0f%%",100*self.jobProgress.doubleValue];
+    self.serviceLabel.stringValue=connected ? @"● 本机已连接" : @"本机未连接";
+    self.modelDetail.stringValue=[NSString stringWithFormat:@"%@ · %@ · 本机 CPU",[self selectedModel][@"description"] ?: @"",[self selectedModelAvailable] ? @"已安装" : @"模型未就绪"];
     self.serviceLabel.textColor=connected ? NSColor.systemGreenColor : NSColor.secondaryLabelColor;
-    self.dropTitle.stringValue=fresh ? (self.dropName ?: @"项目已导入") : @"将项目拖到这里";
-    self.dropDetail.stringValue=fresh ? @"完整视频 · 8.68 秒 · 中文字幕\n如已修改时间线，请重新拖入项目。" : @"从 Final Cut Pro 浏览器拖入当前项目。\n识别整个视频，无需选择片段。";
+    self.dropTitle.stringValue=fresh ? (self.dropName ?: @"项目已导入") : @"拖入你的项目";
+    self.dropDetail.stringValue=fresh ? [NSString stringWithFormat:@"整段 %.1f 秒 · 修改时间线后请重新拖入",CMTimeGetSeconds(self.dropDuration)] : @"从 FCP 浏览器拖入 · 识别整段视频";
     BOOL busy=self.requestID!=nil;
     BOOL preparing=[state isEqual:@"preparing"];
     self.generateButton.title=preparing ? @"正在准备…" : (busy ? @"正在处理…" : (connected ? @"开始识别" : @"准备本机识别"));
-    self.generateButton.enabled=!preparing && !busy && (!connected || (fresh && [self isolatedProjectActive]));
+    self.generateButton.enabled=!preparing && !busy && (!connected || (fresh && [self isolatedProjectActive] && [self selectedModelAvailable]));
+    self.modelPicker.enabled=!busy;self.audioPicker.enabled=!busy;self.cancelButton.hidden=!busy;
+    BOOL hasRows=self.titlePayloads && self.captionRows.count;
+    self.captionScroll.hidden=!hasRows;self.editorControls.hidden=!hasRows;self.resultView.hidden=!hasRows;
+    if (connected && ![self selectedModelAvailable] && !busy) { self.statusTitle.stringValue=@"所选模型尚未就绪";self.statusDetail.stringValue=@"请选择已安装的模型；模型文件缺失时不会自动切换模型。"; }
     if (busy || preparing) [self.spinner startAnimation:nil]; else [self.spinner stopAnimation:nil];
     BOOL ready=[self canDragResult]; [self.resultView setAccessibilityLabel:ready ? @"拖回字幕到 Final Cut Pro" : @"字幕拖出区，识别完成后可用"]; [self.resultView setNeedsDisplay:YES];
 }
 - (NSDictionary *)readJSON:(NSURL *)url {
     NSData *data=[NSData dataWithContentsOfURL:url];
-    if (!data || data.length>2*1024*1024) return nil;
+    if (!data || data.length>32*1024*1024) return nil;
     id value=[NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
     return [value isKindOfClass:NSDictionary.class] ? value : nil;
 }
@@ -207,20 +329,17 @@ static NSDictionary *Time(CMTime t) {
     return sha;
 }
 - (BOOL)isolatedProjectActive {
-    FCPXSequence *sequence=self.timeline.activeSequence;
-    FCPXObject *container=sequence.container;
-    return container.objectType==kFCPXObjectType_Project &&
-        [((FCPXProject *)container).UID isEqual:@"0D11EC79-ED11-4688-97A9-CB78621857DD"] &&
-        CMTIME_IS_NUMERIC(sequence.duration) && CMTimeCompare(sequence.duration,CMTimeMake(217,25))==0;
+    FCPXSequence *sequence=self.timeline.activeSequence;FCPXObject *container=sequence.container;
+    return self.dropUID.length && container.objectType==kFCPXObjectType_Project && [((FCPXProject *)container).UID isEqual:self.dropUID] && CMTIME_IS_NUMERIC(sequence.duration) && CMTimeCompare(sequence.duration,self.dropDuration)==0;
 }
 - (BOOL)workerAvailable {
     NSDictionary *service=[self readJSON:[self.bridgeURL URLByAppendingPathComponent:@"service.json"]];
     NSNumber *heartbeat=service[@"heartbeat"];
-    return [heartbeat isKindOfClass:NSNumber.class] && fabs(NSDate.date.timeIntervalSince1970-heartbeat.doubleValue)<10 && [service[@"protocol"] isEqual:@1];
+    return [heartbeat isKindOfClass:NSNumber.class] && fabs(NSDate.date.timeIntervalSince1970-heartbeat.doubleValue)<10 && [service[@"protocol"] isEqual:@2];
 }
 - (void)showModelSettings:(id)sender {
     NSAlert *alert=[NSAlert new]; alert.messageText=@"识别模型";
-    alert.informativeText=@"当前：Qwen3-ASR 0.6B（已安装）\n运行方式：本机 CPU\n\n目前只接入了这一款识别模型，尚不能切换到其他模型。时间对齐模型会自动配合运行。";
+    alert.informativeText=@"在主面板选择 Qwen3-ASR 0.6B 或 1.7B。选择会被记住，每次任务使用所选模型。\n\n默认仅识别对白角色。请在 FCP 将背景音乐设为“音乐”角色；需要保留全部声音时选择“所有音频”。\n\n支持 30 分钟内普通剪切、单声道／立体声及连接音频。暂不支持变速、多机位、复合片段、音频效果或音量关键帧。";
     [alert addButtonWithTitle:@"完成"]; [alert addButtonWithTitle:@"重新准备识别"];
     [alert beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse result) { if (result==NSAlertSecondButtonReturn) [self connectWorker:nil]; }];
 }
@@ -268,15 +387,16 @@ static NSDictionary *Time(CMTime t) {
     if (!self.bridgeURL || ![self workerAvailable] || ![self isolatedProjectActive]) {
         [self record:@{@"reason":@"worker-submit",@"status":@"connect-service-and-open-isolated-project-first"}]; return;
     }
-    if (!self.freshDropURL || !self.freshDropDate || -self.freshDropDate.timeIntervalSinceNow>300) {
+    if (!self.freshDropURL || !self.freshDropDate) {
         self.titlePayloads=nil;
         [self record:@{@"reason":@"worker-submit",@"status":@"fresh-project-drop-required",@"message":@"请重新拖入当前项目；旧快照不能重复识别"}]; return;
     }
+    if (![self selectedModelAvailable]) return;
     NSURL *latest=self.freshDropURL; NSDate *latestDate=self.freshDropDate;
     NSData *original=[NSData dataWithContentsOfURL:latest];
     NSXMLDocument *xml=original ? [[NSXMLDocument alloc] initWithData:original options:NSXMLNodeLoadExternalEntitiesNever error:nil] : nil;
     NSArray *projects=[xml nodesForXPath:@"/fcpxml/project | /fcpxml/library/event/project" error:nil];
-    if (projects.count!=1 || ![[projects[0] attributeForName:@"uid"].stringValue isEqual:@"0D11EC79-ED11-4688-97A9-CB78621857DD"]) {
+    if (projects.count!=1 || ![[projects[0] attributeForName:@"uid"].stringValue isEqual:self.dropUID]) {
         [self record:@{@"reason":@"worker-submit",@"status":@"matching-dropped-project-required"}]; return;
     }
     // Credentials from FCP drag are never handed to the unsandboxed worker.
@@ -287,12 +407,13 @@ static NSDictionary *Time(CMTime t) {
     BOOL ok=[[NSFileManager defaultManager] createDirectoryAtURL:directory withIntermediateDirectories:NO attributes:nil error:&error];
     if (ok) ok=[data writeToURL:[directory URLByAppendingPathComponent:@"input.fcpxml"] options:NSDataWritingAtomic error:&error];
     NSString *sha=[self sha256:data];
-    NSDictionary *manifest=@{@"requestID":request,@"projectUID":@"0D11EC79-ED11-4688-97A9-CB78621857DD",@"xmlSHA256":sha};
+    NSDictionary *manifest=@{@"requestID":request,@"projectUID":self.dropUID,@"xmlSHA256":sha,@"modelID":self.selectedModelID,@"audioMode":self.audioPicker.indexOfSelectedItem==0 ? @"dialogue" : @"all"};
     if (ok) ok=[[NSJSONSerialization dataWithJSONObject:manifest options:0 error:nil] writeToURL:[directory URLByAppendingPathComponent:@"request.json"] options:NSDataWritingAtomic error:&error];
     if (!ok) { [self record:@{@"reason":@"worker-submit",@"status":@"write-failed",@"error":error.localizedDescription ?: @""}]; return; }
-    self.requestGeneration=self.dropGeneration; self.freshDropURL=nil;
+    self.jobProgress=nil;self.visibleError=nil;self.requestGeneration=self.dropGeneration; self.requestModelID=self.selectedModelID;self.cancelButton.enabled=YES;
     self.requestID=request; self.requestSHA=sha; self.lastJobStage=nil; self.generateButton.enabled=NO;
     self.resultLoadAttempted=YES; self.titlePayloads=nil;
+    [NSUserDefaults.standardUserDefaults setObject:@{@"requestID":request,@"snapshotSHA":sha,@"modelID":self.selectedModelID,@"projectUID":self.dropUID,@"projectName":self.dropName ?: @"",@"durationValue":@(self.dropDuration.value),@"durationScale":@(self.dropDuration.timescale),@"inputFile":latest.lastPathComponent} forKey:@"pendingSession"];
     [self record:@{@"reason":@"worker-submit",@"status":@"submitted",@"requestID":request,@"snapshotDate":latestDate.description ?: @"",@"source":@"new drop in current session; edits after capture still require another drop"}];
 }
 - (void)pollWorker:(NSTimer *)timer {
@@ -301,14 +422,15 @@ static NSDictionary *Time(CMTime t) {
     NSURL *directory=[self.bridgeURL URLByAppendingPathComponent:self.requestID isDirectory:YES];
     NSDictionary *response=[self readJSON:[directory URLByAppendingPathComponent:@"response.json"]];
     if (!response) {
-        if (![self workerAvailable]) { self.generateButton.enabled=YES; self.requestID=nil; [self record:@{@"reason":@"worker-result",@"status":@"service-disconnected"}]; }
+        if (![self workerAvailable]) { self.generateButton.enabled=YES; [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.requestID=nil; [self record:@{@"reason":@"worker-result",@"status":@"service-disconnected"}]; }
         return;
     }
     if (![response[@"requestID"] isEqual:self.requestID]) return;
+    self.jobProgress=[response[@"progress"] isKindOfClass:NSNumber.class] ? response[@"progress"] : nil;
     if ([response[@"status"] isEqual:@"ready"]) {
         NSMutableDictionary *payloads=[NSMutableDictionary new];
-        BOOL valid=self.requestGeneration==self.dropGeneration && [self isolatedProjectActive] && [response[@"snapshotSHA256"] isEqual:self.requestSHA] &&
-            [response[@"projectUID"] isEqual:@"0D11EC79-ED11-4688-97A9-CB78621857DD"] &&
+        BOOL valid=[response[@"modelID"] isEqual:self.requestModelID] && self.requestGeneration==self.dropGeneration && [self isolatedProjectActive] && [response[@"snapshotSHA256"] isEqual:self.requestSHA] &&
+            [response[@"projectUID"] isEqual:self.dropUID] &&
             [response[@"payloads"] isKindOfClass:NSDictionary.class] && [response[@"outputs"] isKindOfClass:NSDictionary.class];
         if (valid) for (NSString *version in @[@"1.12",@"1.13",@"1.14"]) {
             id text=response[@"payloads"][version]; if (![text isKindOfClass:NSString.class]) { valid=NO; break; }
@@ -317,32 +439,44 @@ static NSDictionary *Time(CMTime t) {
             if (![[self sha256:data] isEqual:response[@"outputs"][name]]) { valid=NO; break; }
             payloads[version]=data;
         }
-        if (valid && payloads.count==3) { self.titlePayloads=payloads; self.resultDate=NSDate.date; }
+        if (valid && payloads.count==3) { self.titlePayloads=payloads; self.resultDate=NSDate.date;self.resultManifest=response[@"manifest"];[self.sizePicker selectItemWithTitle:[self.resultManifest[@"height"] intValue]>=720 ? @"48" : @"28"];self.resultRequestID=self.requestID;self.captionRows=[NSMutableArray new];for (NSDictionary *row in response[@"manifest"][@"captions"]) [self.captionRows addObject:row.mutableCopy];
+            NSDictionary *draft=[self readJSON:[[self evidenceDirectory] URLByAppendingPathComponent:[@"draft-" stringByAppendingString:self.requestID]]];
+            if ([draft[@"snapshotSHA"] isEqual:self.requestSHA] && [draft[@"modelID"] isEqual:self.requestModelID] && [draft[@"captions"] isKindOfClass:NSArray.class] && [draft[@"captions"] count]==self.captionRows.count) {
+                // Restore only text onto fresh, validated timing/payloads.
+                for (NSUInteger i=0;i<self.captionRows.count;i++) { id text=draft[@"captions"][i][@"text"];if ([text isKindOfClass:NSString.class] && [text length]>0 && [text length]<=500) self.captionRows[i][@"text"]=text; }
+                if ([self.fontPicker itemWithTitle:draft[@"font"]]) [self.fontPicker selectItemWithTitle:draft[@"font"]];
+                if ([self.sizePicker itemWithTitle:draft[@"fontSize"]]) [self.sizePicker selectItemWithTitle:draft[@"fontSize"]];
+                [self rebuildTitles];
+            }
+            [self.captionTable reloadData]; }
         [self record:@{@"reason":@"worker-result",@"status":self.titlePayloads ? @"ready-to-drag" : @"result-rejected",@"requestID":self.requestID,@"jobID":response[@"jobID"] ?: @""}];
-        self.requestID=nil; [self updateInterface];
+        if (!self.titlePayloads) [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.requestID=nil; [self updateInterface];
     } else if ([response[@"status"] isEqual:@"blocked-no-audio"]) {
         self.titlePayloads=nil;
         [self record:@{@"reason":@"worker-result",@"status":@"blocked-no-audio",@"message":@"整段音频为静音，未启动识别或生成字幕"}];
-        self.requestID=nil; [self updateInterface];
+        if (!self.titlePayloads) [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.requestID=nil; [self updateInterface];
     } else if ([response[@"status"] isEqual:@"blocked-existing-titles"]) {
         self.titlePayloads=nil;
         [self record:@{@"reason":@"worker-result",@"status":@"blocked-existing-titles",@"stage":response[@"stage"] ?: @"conflict",@"collision":response[@"collision"] ?: @{},@"requestID":self.requestID,@"message":@"已有相同或重叠Title，未生成可拖出内容；保留现有编辑"}];
-        self.requestID=nil; [self updateInterface];
+        if (!self.titlePayloads) [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.requestID=nil; [self updateInterface];
+    } else if ([response[@"status"] isEqual:@"cancelled"]) {
+        [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.requestID=nil;self.displayState=@"cancelled";[self updateInterface];
     } else if ([response[@"status"] isEqual:@"failed"] || ![self workerAvailable]) {
         [self record:@{@"reason":@"worker-result",@"status":@"failed",@"error":response[@"error"] ?: @"service-disconnected"}];
-        self.requestID=nil; [self updateInterface];
+        if (!self.titlePayloads) [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.requestID=nil; [self updateInterface];
     } else if (![self.lastJobStage isEqual:response[@"stage"]]) {
         self.lastJobStage=response[@"stage"];
         [self record:@{@"reason":@"worker-progress",@"status":response[@"stage"] ?: @"running",@"requestID":self.requestID}];
     }
 }
 - (void)beginTitleDrag:(NSEvent *)event fromView:(NSView *)view {
-    if (!self.titlePayloads || !self.resultDate || -self.resultDate.timeIntervalSinceNow>300) { [self record:@{@"reason":@"title-drag-refused",@"status":@"Load a valid completed result first"}]; return; }
+    [self.view.window makeFirstResponder:nil];
+    if (!self.titlePayloads || !self.resultDate) { [self record:@{@"reason":@"title-drag-refused",@"status":@"Load a valid completed result first"}]; return; }
     FCPXSequence *sequence=self.timeline.activeSequence;
     FCPXObject *container=sequence.container;
     if (container.objectType!=kFCPXObjectType_Project ||
-        ![((FCPXProject *)container).UID isEqual:@"0D11EC79-ED11-4688-97A9-CB78621857DD"] ||
-        CMTimeCompare(sequence.duration,CMTimeMake(217,25))!=0) {
+        ![((FCPXProject *)container).UID isEqual:self.dropUID] ||
+        CMTimeCompare(sequence.duration,self.dropDuration)!=0) {
         [self record:@{@"reason":@"title-drag-refused",@"status":@"Open the unchanged isolated 8.68s original project first"}]; return;
     }
     NSPasteboardItem *item=[NSPasteboardItem new];
@@ -363,7 +497,7 @@ static NSDictionary *Time(CMTime t) {
     [self record:@{@"reason":@"title-drag-data",@"type":type,@"version":version,@"bytes":@(data.length)}];
 }
 - (void)draggingSession:(NSDraggingSession *)session endedAtPoint:(NSPoint)point operation:(NSDragOperation)operation {
-    if (operation!=NSDragOperationNone) { self.titlePayloads=nil; self.resultDate=nil; }
+    if (operation!=NSDragOperationNone) { [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.titlePayloads=nil; self.resultDate=nil;self.freshDropURL=nil;self.captionRows=nil; }
     [self record:@{@"reason":@"title-drag-ended",@"operation":@(operation),@"status":@"Host XML readback required; operation alone is not writeback proof"}];
 }
 - (void)viewDidAppear {
@@ -448,6 +582,8 @@ static NSDictionary *Time(CMTime t) {
 - (void)sequenceTimeRangeChanged { self.observed=YES; [self snapshot:@"sequenceTimeRangeChanged"]; }
 - (void)playheadTimeChanged { self.observed=YES; [self snapshot:@"playheadTimeChanged"]; }
 - (BOOL)receivePasteboard:(NSPasteboard *)pasteboard {
+    if (self.requestID) return NO;
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];
     self.freshDropURL=nil; self.freshDropDate=nil; self.titlePayloads=nil; self.resultDate=nil; self.dropGeneration++;
     NSMutableArray *saved = [NSMutableArray new];
     for (NSPasteboardType type in pasteboard.types) {
@@ -465,8 +601,10 @@ static NSDictionary *Time(CMTime t) {
         NSData *data=[NSData dataWithContentsOfURL:self.freshDropURL];
         NSXMLDocument *doc=[[NSXMLDocument alloc] initWithData:data options:NSXMLNodeLoadExternalEntitiesNever error:nil];
         NSArray *projects=[doc nodesForXPath:@"/fcpxml/project | /fcpxml/library/event/project" error:nil];
-        if (projects.count!=1 || ![[projects[0] attributeForName:@"uid"].stringValue isEqual:@"0D11EC79-ED11-4688-97A9-CB78621857DD"]) { self.freshDropURL=nil; self.freshDropDate=nil; }
-        else self.dropName=[projects[0] attributeForName:@"name"].stringValue;
+        FCPXSequence *sequence=self.timeline.activeSequence;FCPXObject *container=sequence.container;
+        NSString *activeUID=container.objectType==kFCPXObjectType_Project ? ((FCPXProject *)container).UID : nil;
+        if (projects.count!=1 || !activeUID.length || ![[projects[0] attributeForName:@"uid"].stringValue isEqual:activeUID] || !CMTIME_IS_NUMERIC(sequence.duration) || CMTimeGetSeconds(sequence.duration)<=0 || CMTimeGetSeconds(sequence.duration)>1800) { self.freshDropURL=nil;self.freshDropDate=nil; }
+        else { self.dropName=[projects[0] attributeForName:@"name"].stringValue;self.dropUID=activeUID;self.dropDuration=sequence.duration; }
     }
     [self record:@{@"reason":@"drop",@"types":pasteboard.types ?: @[],@"xml":saved}];
     return self.freshDropURL!=nil;

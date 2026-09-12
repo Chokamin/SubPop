@@ -103,6 +103,14 @@ NSDictionary *SubPopProbeAudio(NSData *xml, NSString *expectedUID, NSURL *output
         }
         if (reader.status!=AVAssetReaderStatusCompleted || !pcm.length || pcm.length%4) { [result addEntriesFromDictionary:Failure(@"decode",reader.error)]; return result; }
         int64_t expectedSamples=CMTimeConvertScale(duration,16000,kCMTimeRoundingMethod_RoundHalfAwayFromZero).value;
+        int64_t sampleDelta=expectedSamples-(int64_t)(pcm.length/4);
+        // AVFoundation's sample-rate converter can omit a few tail samples
+        // (observed: five at 48kHz stereo WAV -> 16kHz mono). Bound this to
+        // one millisecond; larger shortages still mean incomplete media.
+        if (sampleDelta && llabs(sampleDelta)<=16) {
+            result[@"resampleTailAdjustmentSamples"]=@(sampleDelta);
+            [pcm setLength:(NSUInteger)expectedSamples*4];
+        }
         if ((int64_t)(pcm.length/4)!=expectedSamples) { [result addEntriesFromDictionary:Failure(@"incomplete-project-audio",nil)]; result[@"sampleCount"]=@(pcm.length/4); result[@"expectedSampleCount"]=@(expectedSamples); return result; }
         NSString *name=[NSString stringWithFormat:@"audio-%@.f32le",NSUUID.UUID.UUIDString];
         error=nil;
