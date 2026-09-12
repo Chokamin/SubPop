@@ -1,4 +1,5 @@
 #import <Cocoa/Cocoa.h>
+#import "RuntimePaths.h"
 // Background model runner. The FCP extension is the only regular user window.
 @interface SubPopAppDelegate : NSObject <NSApplicationDelegate>
 @property NSTask *worker;
@@ -13,7 +14,13 @@
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)flag { [self startEngine]; return NO; }
 - (void)startEngine {
     if (self.worker.running || self.choosingFolder) return;
-    NSString *root=[[NSBundle mainBundle] objectForInfoDictionaryKey:@"SubPopWorkspace"];
+    NSString *root=SubPopWorkspace(NSBundle.mainBundle);
+    if ([[NSBundle.mainBundle objectForInfoDictionaryKey:@"SubPopPackagedRuntime"] boolValue]) {
+        NSError *error=nil;
+        NSString *bridge=[root stringByAppendingPathComponent:@".subloom/verification/bridge"];
+        if (![NSFileManager.defaultManager createDirectoryAtPath:bridge withIntermediateDirectories:YES attributes:nil error:&error]) { NSLog(@"SubPop data directory: %@",error);return; }
+        [self launchAtURL:[NSURL fileURLWithPath:root]];return;
+    }
     NSData *bookmark=[NSUserDefaults.standardUserDefaults dataForKey:@"workspaceBookmark"];
     if (bookmark) {
         BOOL stale=NO;
@@ -37,6 +44,14 @@
     if (self.worker.running) return;
     self.workspace=url; [url startAccessingSecurityScopedResource];
     self.worker=[NSTask new]; self.worker.executableURL=[url URLByAppendingPathComponent:@".venv/bin/python"];
+    if ([[NSBundle.mainBundle objectForInfoDictionaryKey:@"SubPopPackagedRuntime"] boolValue]) {
+        NSURL *runtime=[NSBundle.mainBundle.resourceURL URLByAppendingPathComponent:@"Runtime"];
+        self.worker.executableURL=[runtime URLByAppendingPathComponent:@".venv/bin/python3.12"];
+        NSMutableDictionary *env=NSProcessInfo.processInfo.environment.mutableCopy;
+        env[@"SUBPOP_DATA_ROOT"]=url.path;env[@"PYTHONPATH"]=runtime.path;env[@"PYTHONNOUSERSITE"]=@"1";
+        env[@"NUMBA_CACHE_DIR"]=[url.path stringByAppendingPathComponent:@"cache/numba"];
+        self.worker.environment=env;
+    }
     self.worker.currentDirectoryURL=url; self.worker.arguments=@[@"-B",@"-m",@"probes.worker"];
     NSString *path=[url.path stringByAppendingPathComponent:@".subloom/worker.log"];
     [[NSFileManager defaultManager] createFileAtPath:path contents:nil attributes:nil];

@@ -88,6 +88,8 @@ def model_request(directory):
     value=json.loads(path.read_text())
     if value.get('requestID')!=directory.name or value.get('kind')!='model' or value.get('operation') not in ('install','remove'):raise ValueError('Invalid model operation')
     model_spec(value.get('modelID'))
+    from .download_sources import sources
+    sources(value.get('downloadSource','auto'))
     return value
 
 

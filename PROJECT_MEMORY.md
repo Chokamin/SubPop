@@ -290,3 +290,12 @@ run_job提取共用finalize，失败在generate-titles的完全相同snapshotSHA
 独立.venv安装mlx-whisper0.4.3、funasr1.4.14、kaldi-native-fbank1.22.3及依赖，完整lock更新；numpy/librosa/scipy按兼容约束调整，原Qwen0.6实际识别回归通过。两模型权重已下载SHA校验，worker已重启，四模型均installed。中文8.68s分别生成3/4条；86.8s多剪切四分块分别38/40条，全部走独立解码→识别→整理→Title输出。证据docs/evidence/subpop-alternate-models.json。98项测试通过，AppKit三XML编辑/样式/时间保持与布局测试通过；FCP实际模型表显示4模型，Whisper/SenseVoice切换均通过。未对新模型进行22分钟真实素材准确率评估，未新写FCP时间线。
 
 用户要求去掉Probe显示名并设计扩展菜单图标。多版图标被用户否定，最终明确偏好Mew Cut式简洁实心轮廓，无字母/拟人/复杂装饰。本轮打包透明单色实心字幕片段图标Assets/SubPop.png及多尺寸icns，设置app/extension CFBundleIconFile、显示名SubPop。保留旧安装文件路径与bundle ID以兼容数据。构建26已安装深度签名通过，FCP扩展加载新版；当前宿主仍缓存旧窗口/菜单名SubPop Probe，新名称与菜单图标实际刷新仍待下次FCP重启核对，未为此打断用户剪辑。新图标尚无用户最终认可结论。
+
+
+## 2026-09-12：构建29检查更新、公开源码与国内镜像
+
+用户先要求PKG/DMG打包，随后明确暂停打包，先检查更新并上传GitHub；选择源码和安装包全部公开，再要求国内下载源。已停止pkgbuild，未完成或发布安装包。准备中的package_release.py及RuntimePaths.h/probes.paths将发布包代码/便携Python与每用户数据分离，但跨机器安装仍未验收，不能称独立发行包就绪；现有本机应用继续开发目录模式。无Developer ID有效证书，正式分发签名/公证待完成。
+
+新增Updates.h/Updates.inc，顶部检查更新按钮，匿名HTTPS读取Chokamin/SubPop GitHub正式latest Release；比较vMAJOR.MINOR.PATCH.BUILD，排除测试版，有pkg/dmg才提示打开下载页，无发行/失败/最新各有状态，不自动执行安装。新增network.client entitlement仅为显式更新检查；回归更新原“无网络权限”假设。公开仓库由用户授权创建，模型/SDK/运行缓存/测试视频/密钥不入Git。历史凭据模式扫描0命中。
+
+download_sources.py白名单国内HF-Mirror优先失败尝试HF官方，用户可选择仅官方。native Preferences新增源选择与状态来源，随请求冻结；worker校验source值。transfer原固定revision/size/SHA校验及断点续传保留，取消不触发备用下载。镜像是第三方公益源，不称官方；四ASR+aligner配置实测取回SHA均匹配（本机网络，非大陆多运营商实测，未完整重复下载10GB权重）。证据docs/evidence/subpop-mirror-config-check.json。全部99项测试通过，AppKit布局及版本比较测试通过。构建29安装签名通过，空闲容器与扩展重启。打包仍暂停，无正式Release安装包。

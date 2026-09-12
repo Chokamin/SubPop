@@ -62,3 +62,21 @@ class DownloadTests(unittest.TestCase):
             d=root/'request';d.mkdir();(d/'request.json').write_text(json.dumps({'modelID':'qwen3-asr-0.6b','operation':'remove'}))
             execute(d,root);self.assertFalse((base/'asr').exists());self.assertEqual((base/'aligner/weights').read_bytes(),b'aligner')
             self.assertEqual(json.loads((d/'response.json').read_text())['status'],'ready')
+
+    def test_mirror_failure_falls_back_without_changing_digest(self):
+        from unittest.mock import patch
+        from probes import model_download as download
+        from probes.download_sources import sources
+        spec={'id':'test','engine':'sensevoice','directory':'test','repository':'owner/model','revision':'pinned','files':{'config.json':2},'sha256':{'config.json':hashlib.sha256(b'{}').hexdigest()}}
+        urls=[]
+        def opener(req,timeout):
+            urls.append(req.full_url)
+            if 'hf-mirror.com' in req.full_url:raise OSError('unavailable')
+            return Response(b'{}')
+        with tempfile.TemporaryDirectory() as tmp,patch.object(download,'model_spec',return_value=spec):
+            download.install('test',Path(tmp),opener=opener)
+            self.assertEqual((Path(tmp)/'.subloom/models/test/config.json').read_bytes(),b'{}')
+        self.assertEqual(len(urls),2)
+        self.assertIn('hf-mirror.com',urls[0]);self.assertIn('huggingface.co',urls[1])
+        self.assertEqual(len(sources('official')),1)
+        with self.assertRaises(ValueError):sources('https://untrusted.example')

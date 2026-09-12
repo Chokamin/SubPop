@@ -2,8 +2,8 @@
 import json
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-CATALOG = json.loads((ROOT / 'config/models.json').read_text())
+from .paths import ROOT, CODE_ROOT
+CATALOG = json.loads((CODE_ROOT / 'config/models.json').read_text())
 DEFAULT_MODEL_ID = CATALOG['defaultModelID']
 
 

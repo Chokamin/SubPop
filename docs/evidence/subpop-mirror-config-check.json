@@ -1,0 +1,1 @@
+[{"model": "qwen3-asr-0.6b", "status": "ok"}, {"model": "qwen3-asr-1.7b", "status": "ok"}, {"model": "whisper-large-v3-turbo", "status": "ok"}, {"model": "sensevoice-small", "status": "ok"}, {"model": "aligner", "status": "ok"}]

@@ -13,6 +13,10 @@
 @end
 int main(int argc,const char *argv[]) {
     @autoreleasepool {
+        NSDictionary *release=@{@"tag_name":@"v0.1.0.30",@"assets":@[@{@"name":@"SubPop.pkg"}]};
+        if (![SubPopReleaseUpdate(release,@"0.1.0.28",@"owner/repo")[@"newer"] boolValue]) return 10;
+        if ([SubPopReleaseUpdate(release,@"0.1.0.31",@"owner/repo")[@"newer"] boolValue]) return 11;
+        if (SubPopReleaseUpdate(@{@"tag_name":@"v0.1.0-beta"},@"0.1.0.28",@"owner/repo")) return 12;
         if (argc!=3) return 1;[NSApplication sharedApplication];
         SubPopPreviewController *c=[SubPopPreviewController new];
         c.previewCatalog=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:@(argv[1])] options:0 error:nil];

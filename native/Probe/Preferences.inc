@@ -42,8 +42,12 @@
 - (void)showModels:(id)sender {
     if (self.modelAlert) return;
     self.modelAlert=[NSAlert new];self.modelAlert.messageText=@"本机模型";
-    self.modelAlert.informativeText=@"Qwen 首次下载含共用对齐模型；其他模型自带时间对齐。\n固定版本与完整性校验 · 下载后离线识别。";
-    NSView *view=[[NSView alloc] initWithFrame:NSMakeRect(0,0,520,100+self.modelCatalog.count*100)];self.modelRows=[NSMutableDictionary new];
+    self.modelAlert.informativeText=@"Qwen 首次下载含共用对齐模型；其他模型自带时间对齐。\n国内镜像为第三方 HF-Mirror · 所有来源均做 SHA-256 校验。";
+    NSView *view=[[NSView alloc] initWithFrame:NSMakeRect(0,0,520,140+self.modelCatalog.count*100)];self.modelRows=[NSMutableDictionary new];
+    self.downloadSourcePicker=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(0,view.bounds.size.height-34,520,28) pullsDown:NO];
+    [self.downloadSourcePicker addItemsWithTitles:@[@"下载源：国内镜像优先（失败后尝试官方）",@"下载源：仅 Hugging Face 官方"]];
+    [self.downloadSourcePicker selectItemAtIndex:[[NSUserDefaults.standardUserDefaults stringForKey:@"downloadSource"] isEqual:@"official"] ? 1 : 0];
+    self.downloadSourcePicker.target=self;self.downloadSourcePicker.action=@selector(downloadSourceChanged:);[view addSubview:self.downloadSourcePicker];
     NSUInteger index=0;
     for (NSDictionary *spec in self.modelCatalog) {
         CGFloat y=104+(self.modelCatalog.count-1-index)*100;
@@ -75,6 +79,7 @@
     }
     NSString *status=task[@"status"],*stage=task[@"stage"];
     BOOL cancelling=self.modelRequestID && [[NSFileManager defaultManager] fileExistsAtPath:[[[self.bridgeURL URLByAppendingPathComponent:self.modelRequestID] URLByAppendingPathComponent:@"cancel.json"] path]];
+    self.downloadSourcePicker.enabled=!busy;
     self.downloadCancel.hidden=!busy;self.downloadCancel.enabled=busy && !cancelling;self.downloadProgress.hidden=!task.count;
     double value=[task[@"progress"] doubleValue];
     if (!busy || NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion) self.downloadProgress.doubleValue=value;
@@ -83,7 +88,7 @@
     if (busy) {
         [self.downloadSpinner startAnimation:nil];
         if (cancelling) self.downloadLabel.stringValue=@"正在暂停下载…\n已经下载的部分会保留。";
-        else if ([stage isEqual:@"downloading"]) self.downloadLabel.stringValue=[NSString stringWithFormat:@"正在下载 · %.0f%%\n%.2f / %.2f GB · %.1f MB/s",value*100,[task[@"completedBytes"] doubleValue]/1e9,[task[@"totalBytes"] doubleValue]/1e9,[task[@"bytesPerSecond"] doubleValue]/1e6];
+        else if ([stage isEqual:@"downloading"]) self.downloadLabel.stringValue=[NSString stringWithFormat:@"%@ · %.0f%%\n%.2f / %.2f GB · %.1f MB/s",task[@"source"] ?: @"正在下载",value*100,[task[@"completedBytes"] doubleValue]/1e9,[task[@"totalBytes"] doubleValue]/1e9,[task[@"bytesPerSecond"] doubleValue]/1e6];
         else self.downloadLabel.stringValue=[stage isEqual:@"checking"] ? @"正在校验模型文件…\n校验完成后才会标记为可用。" : @"正在准备下载…\n可以关闭此面板，下载会在后台继续。";
     } else {
         [self.downloadSpinner stopAnimation:nil];
@@ -91,11 +96,14 @@
         else if ([status isEqual:@"failed"] || [status isEqual:@"cancelled"]) self.downloadLabel.stringValue=[NSString stringWithFormat:@"%@\n点击“下载模型”可重试，已下载部分会保留。",task[@"error"] ?: @"下载未完成"];
     }
 }
+- (void)downloadSourceChanged:(id)sender {
+    [NSUserDefaults.standardUserDefaults setObject:self.downloadSourcePicker.indexOfSelectedItem==1 ? @"official" : @"auto" forKey:@"downloadSource"];
+}
 - (void)submitModelOperation:(NSString *)operation model:(NSString *)modelID {
     if (self.requestID || [self modelOperationBusy] || ![self workerAvailable]) return;
     NSString *request=NSUUID.UUID.UUIDString.lowercaseString;NSURL *directory=[self.bridgeURL URLByAppendingPathComponent:request];NSError *error=nil;
     BOOL ok=[[NSFileManager defaultManager] createDirectoryAtURL:directory withIntermediateDirectories:NO attributes:nil error:&error];
-    NSDictionary *data=@{@"requestID":request,@"kind":@"model",@"operation":operation,@"modelID":modelID};
+    NSDictionary *data=@{@"requestID":request,@"kind":@"model",@"operation":operation,@"modelID":modelID,@"downloadSource":[NSUserDefaults.standardUserDefaults stringForKey:@"downloadSource"] ?: @"auto"};
     if (ok) ok=[[NSJSONSerialization dataWithJSONObject:data options:0 error:nil] writeToURL:[directory URLByAppendingPathComponent:@"request.json"] options:NSDataWritingAtomic error:&error];
     if (!ok) {self.downloadLabel.stringValue=error.localizedDescription ?: @"无法创建下载任务";return;}
     self.modelRequestID=request;[NSUserDefaults.standardUserDefaults setObject:request forKey:@"modelRequestID"];[self updateInterface];

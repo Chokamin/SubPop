@@ -16,7 +16,8 @@ def run(xml, asr, aligner, output, pcm_path=None, device="cpu", verbose=True, au
     from .vocabulary import context
     hints=context(vocabulary or [])
     snapshot = inspect(xml,audio_mode)
-    expected = Path(__file__).resolve().parents[1] / '.subloom/verification'
+    from .paths import ROOT
+    expected = ROOT / '.subloom/verification'
     for key in ('HF_HUB_OFFLINE', 'TRANSFORMERS_OFFLINE', 'HF_HUB_DISABLE_TELEMETRY'):
         os.environ[key] = '1'
     os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'

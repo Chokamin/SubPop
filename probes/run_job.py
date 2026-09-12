@@ -18,7 +18,7 @@ from .snapshot import prepare, collision
 from .models import DEFAULT_MODEL_ID, model_spec, resolve_model
 from .vocabulary import validate as validate_vocabulary
 
-ROOT=Path(__file__).resolve().parents[1]
+from .paths import ROOT, AUDIO_BINARY
 WORK=ROOT/'.subloom/verification/jobs'
 
 
@@ -109,7 +109,7 @@ def run(xml,asr,aligner,model_id=DEFAULT_MODEL_ID,audio_mode='dialogue',vocabula
             progress('generate-titles')
             return finalize(directory,state,result,existing)
         progress('decode')
-        binary=ROOT/'.subloom/build/SubPopAudioProbeCLI'
+        binary=AUDIO_BINARY
         decoded=render(audioXML,directory,binary,snapshot['uid'],audio_mode);save(directory/'audio.json',decoded)
         if decoded['silent']:
             state.update(status='blocked-no-audio',stage='silent',pcmSHA256=decoded['pcmSHA256'])

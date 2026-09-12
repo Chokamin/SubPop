@@ -5,6 +5,8 @@
 #import "AudioProbe.h"
 #import <CommonCrypto/CommonDigest.h>
 #import "StudioChrome.h"
+#import "RuntimePaths.h"
+#import "Updates.h"
 
 static NSDictionary *Time(CMTime t) {
     return @{ @"value": @(t.value), @"timescale": @(t.timescale), @"flags": @(t.flags), @"epoch": @(t.epoch) };
@@ -88,6 +90,8 @@ static NSDictionary *Time(CMTime t) {
 @property NSPopover *diagnostics;
 @property NSButton *vocabularyButton;
 @property NSButton *modelsButton;
+@property NSAlert *updateAlert;
+@property NSURL *updateURL;
 @property NSArray *requestVocabulary;
 @property NSAlert *modelAlert;
 @property NSMutableDictionary *modelRows;
@@ -95,6 +99,7 @@ static NSDictionary *Time(CMTime t) {
 @property NSProgressIndicator *downloadSpinner;
 @property NSTextField *downloadLabel;
 @property NSButton *downloadCancel;
+@property NSPopUpButton *downloadSourcePicker;
 @property NSString *modelRequestID;
 @property NSString *vocabularyDraft;
 - (void)updateInterface;
@@ -153,6 +158,7 @@ static NSDictionary *Time(CMTime t) {
 - (void)mouseDown:(NSEvent *)event { if ([self.controller canDragResult]) [self.controller beginTitleDrag:event fromView:self]; }
 @end
 @implementation SubPopProbeViewController
+#include "Updates.inc"
 - (NSURL *)evidenceDirectory {
     NSURL *base = [[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject;
     NSURL *folder = [base URLByAppendingPathComponent:@"SubPopProbe"];
@@ -364,7 +370,7 @@ static NSDictionary *Time(CMTime t) {
     NSData *data=[NSUserDefaults.standardUserDefaults dataForKey:@"taskDirectoryBookmark"];
     if (!data) return NO;
     BOOL stale=NO; NSURL *url=[NSURL URLByResolvingBookmarkData:data options:NSURLBookmarkResolutionWithSecurityScope|NSURLBookmarkResolutionWithoutUI relativeToURL:nil bookmarkDataIsStale:&stale error:nil];
-    NSString *root=[[NSBundle bundleForClass:self.class] objectForInfoDictionaryKey:@"SubPopWorkspace"];
+    NSString *root=SubPopWorkspace([NSBundle bundleForClass:self.class]);
     if (!url || stale || ![url.path.stringByStandardizingPath isEqual:[root stringByAppendingPathComponent:@".subloom/verification/bridge"]]) return NO;
     [self attachBridge:url]; return YES;
 }
@@ -373,7 +379,7 @@ static NSDictionary *Time(CMTime t) {
     if ([self restoreBridge]) return;
     NSOpenPanel *panel=[NSOpenPanel openPanel]; panel.canChooseDirectories=YES; panel.canChooseFiles=NO;
     panel.allowsMultipleSelection=NO; panel.prompt=@"允许并继续";
-    NSString *workspace=[[NSBundle bundleForClass:self.class] objectForInfoDictionaryKey:@"SubPopWorkspace"];
+    NSString *workspace=SubPopWorkspace([NSBundle bundleForClass:self.class]);
     NSString *expected=[workspace stringByAppendingPathComponent:@".subloom/verification/bridge"];
     panel.directoryURL=[NSURL fileURLWithPath:expected];
     panel.message=@"首次使用：允许 SubPop 处理本机字幕任务。请使用默认文件夹；之后会自动连接。";

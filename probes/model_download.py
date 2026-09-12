@@ -9,6 +9,7 @@ import urllib.request
 import urllib.error
 from .models import ROOT, CATALOG, model_spec, check_files
 from .run_job import save
+from .download_sources import sources
 
 class Cancelled(Exception):pass
 
@@ -60,7 +61,8 @@ def transfer(url,path,size,digest,cancel,progress,opener=urllib.request.urlopen)
         partial.unlink();raise ValueError('文件校验失败，请重试下载')
     partial.replace(path)
 
-def install(model_id,root=ROOT,cancel=lambda:False,emit=lambda value:None,opener=urllib.request.urlopen):
+def install(model_id,root=ROOT,cancel=lambda:False,emit=lambda value:None,opener=urllib.request.urlopen,source="auto"):
+    endpoints=sources(source)
     spec=model_spec(model_id)
     specs=[spec] if spec.get('engine') else [spec,CATALOG['aligner']]
     total=sum(sum(s['files'].values()) for s in specs);done=0;started=time.monotonic();network=0;last_emit=0
@@ -80,8 +82,16 @@ def install(model_id,root=ROOT,cancel=lambda:False,emit=lambda value:None,opener
                     emit({'stage':stage,'completedBytes':done+value,'totalBytes':total,'progress':(done+value)/total,'bytesPerSecond':network/max(now-started,1),'file':name})
                     last_emit=now
             emit({'stage':'checking','completedBytes':done,'totalBytes':total,'progress':done/total,'file':name})
-            url=f"https://huggingface.co/{spec['repository']}/resolve/{spec['revision']}/{name}"
-            transfer(url,directory/name,size,spec['sha256'][name],cancel,progress,opener)
+            for index,(source_name,endpoint) in enumerate(endpoints):
+                emit({'source':source_name,'stage':'connecting' if index==0 else 'switching-source','completedBytes':done,'totalBytes':total,'progress':done/total})
+                url=f"{endpoint}/{spec['repository']}/resolve/{spec['revision']}/{name}"
+                try:
+                    transfer(url,directory/name,size,spec['sha256'][name],cancel,progress,opener)
+                    break
+                except Cancelled:raise
+                except (OSError,ValueError):
+                    if index+1==len(endpoints):raise
+                    if cancel():raise Cancelled()
             done+=size
         check_files(spec,root)
     emit({'stage':'ready','completedBytes':total,'totalBytes':total,'progress':1})
@@ -92,7 +102,7 @@ def execute(directory,root=ROOT):
     def emit(value):state.update(value);save(directory/'response.json',state)
     try:
         emit({})
-        if request['operation']=='install':install(spec['id'],root,lambda:(directory/'cancel.json').exists(),emit)
+        if request['operation']=='install':install(spec['id'],root,lambda:(directory/'cancel.json').exists(),emit,source=request.get('downloadSource','auto'))
         elif request['operation']=='remove':
             # Shared aligner is retained for the other recognition model.
             base=root/'.subloom/models';path=base/spec['directory']

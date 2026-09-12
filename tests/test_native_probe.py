@@ -42,6 +42,6 @@ class NativeBundleTests(unittest.TestCase):
         self.assertNotIn('com.apple.security.cs.disable-library-validation',ent)
         self.assertIs(ent['com.apple.security.files.user-selected.read-write'],True)
         self.assertNotIn('com.apple.security.network.server',ent)
-        self.assertNotIn('com.apple.security.network.client',ent)
+        self.assertTrue(ent['com.apple.security.network.client'])  # Explicit GitHub update checks.
 
 if __name__=='__main__':unittest.main()

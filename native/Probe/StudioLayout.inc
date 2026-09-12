@@ -25,7 +25,8 @@
     NSStackView *identity=[self column:@[brand,subtitle] spacing:2];NSView *spacer=[NSView new];
     self.vocabularyButton=[self toolbarButton:@"词库" symbol:@"text.book.closed" action:@selector(showVocabulary:)];[self.vocabularyButton setAccessibilityLabel:@"词库"];
     self.modelsButton=[self toolbarButton:@"模型" symbol:@"square.stack.3d.up" action:@selector(showModels:)];[self.modelsButton setAccessibilityLabel:@"模型管理"];
-    NSStackView *header=[NSStackView stackViewWithViews:@[self.signal,identity,spacer,self.vocabularyButton,self.modelsButton]];header.spacing=10;header.alignment=NSLayoutAttributeCenterY;[stack addArrangedSubview:header];
+    NSButton *updates=[self toolbarButton:@"" symbol:@"arrow.triangle.2.circlepath" action:@selector(checkForUpdates:)];updates.toolTip=@"检查更新";[updates setAccessibilityLabel:@"检查更新"];
+    NSStackView *header=[NSStackView stackViewWithViews:@[self.signal,identity,spacer,self.vocabularyButton,self.modelsButton,updates]];header.spacing=10;header.alignment=NSLayoutAttributeCenterY;[stack addArrangedSubview:header];
     self.resultView=[[SubPopTitleDragView alloc] initWithFrame:NSMakeRect(0,0,600,120)];self.resultView.controller=self;[self.resultView setAccessibilityElement:YES];[self.resultView setAccessibilityRole:NSAccessibilityGroupRole];[stack addArrangedSubview:self.resultView];[self.resultView.heightAnchor constraintEqualToConstant:120].active=YES;self.resultView.hidden=YES;
     SubPopDropView *drop=[[SubPopDropView alloc] initWithFrame:NSMakeRect(0,0,600,96)];drop.controller=self;drop.wantsLayer=YES;
     [drop registerForDraggedTypes:@[@"com.apple.finalcutpro.xml.v1-14",@"com.apple.finalcutpro.xml.v1-13",@"com.apple.finalcutpro.xml.v1-12",@"com.apple.finalcutpro.xml"]];[drop setAccessibilityElement:YES];[drop setAccessibilityRole:NSAccessibilityGroupRole];[drop setAccessibilityLabel:@"导入项目拖放区"];
