@@ -1,0 +1,13 @@
+{
+  "status": "decoded",
+  "sampleCount": 21347200,
+  "pcmBytes": 85388800,
+  "pcmSHA256": "5075bd871110093a526924877dbdb5629905932adc6a232a9be153082203b8e5",
+  "rms": 0.16795622767798712,
+  "duration": "6671/5",
+  "frameDuration": "1/30",
+  "segments": 1,
+  "sourceJob": "e3f38972-7e9d-46d8-9108-8c8c44a14bd9",
+  "planUnchanged": true,
+  "scope": "Full actual failed snapshot decode; no FCP writes; no full ASR quality evaluation"
+}

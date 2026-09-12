@@ -93,15 +93,23 @@ NSDictionary *SubPopProbeAudio(NSData *xml, NSString *expectedUID, NSURL *output
             if (CFAbsoluteTimeGetCurrent()>deadline || pcm.length>30*16000*4) { [reader cancelReading]; break; }
             CMSampleBufferRef sample=[out copyNextSampleBuffer];
             if (!sample) break;
+            CMTime presentation=CMSampleBufferGetPresentationTimeStamp(sample);
             CMBlockBufferRef buffer=CMSampleBufferGetDataBuffer(sample);
             size_t length=buffer ? CMBlockBufferGetDataLength(buffer) : 0;
             NSMutableData *chunk=[NSMutableData dataWithLength:length];
             OSStatus status=buffer ? CMBlockBufferCopyDataBytes(buffer,0,length,chunk.mutableBytes) : -1;
             CFRelease(sample);
             if (status!=noErr) { [reader cancelReading]; break; }
-            [pcm appendData:chunk];
+            // Compressed packets may extend past reader.timeRange (AAC observed
+            // 48 extra samples at a 30s boundary). Crop by output timestamps,
+            // rather than treating a complete packet as project audio.
+            if (!CMTIME_IS_NUMERIC(presentation) || length%4) { [reader cancelReading]; break; }
+            int64_t first=CMTimeConvertScale(CMTimeSubtract(sourceStart,presentation),16000,kCMTimeRoundingMethod_RoundHalfAwayFromZero).value;
+            int64_t last=CMTimeConvertScale(CMTimeSubtract(CMTimeAdd(sourceStart,duration),presentation),16000,kCMTimeRoundingMethod_RoundHalfAwayFromZero).value;
+            first=MAX(0,first);last=MIN((int64_t)(length/4),last);
+            if (last>first) [pcm appendBytes:(const char *)chunk.bytes+first*4 length:(NSUInteger)(last-first)*4];
         }
-        if (reader.status!=AVAssetReaderStatusCompleted || !pcm.length || pcm.length%4) { [result addEntriesFromDictionary:Failure(@"decode",reader.error)]; return result; }
+        if (reader.status!=AVAssetReaderStatusCompleted || !pcm.length || pcm.length%4) { [result addEntriesFromDictionary:Failure(@"decode",reader.error)]; result[@"readerStatus"]=@(reader.status);result[@"decodedSamples"]=@(pcm.length/4); return result; }
         int64_t expectedSamples=CMTimeConvertScale(duration,16000,kCMTimeRoundingMethod_RoundHalfAwayFromZero).value;
         int64_t sampleDelta=expectedSamples-(int64_t)(pcm.length/4);
         // AVFoundation's sample-rate converter can omit a few tail samples

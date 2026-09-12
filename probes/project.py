@@ -66,7 +66,15 @@ def inspect(path, audio_mode='dialogue'):
             db=float(amount[:-2])
             if not -96<=db<=12:raise ValueError('音量超出支持范围')
             gain*=10**(db/20)
-        harmless={'caption','adjust-volume','audio-channel-source','adjust-transform','adjust-crop','adjust-conform','adjust-blend','filter-video','metadata','marker','keyword','rating'}
+        conform=node.findall('conform-rate')
+        if len(conform)>1:raise ValueError('帧率适配结构无效')
+        if conform:
+            c=conform[0]
+            # FCPXML defaults scaleEnabled to 1. Only explicit 0 preserves
+            # real-time source audio when source and sequence frame rates differ.
+            if c.get('scaleEnabled')!='0':raise ValueError('暂不支持启用速度缩放的帧率适配')
+            if len(c) or set(c.attrib)-{'scaleEnabled','srcFrameRate','frameSampling'}:raise ValueError('帧率适配结构无效')
+        harmless={'conform-rate','caption','adjust-volume','audio-channel-source','adjust-transform','adjust-crop','adjust-conform','adjust-blend','filter-video','metadata','marker','keyword','rating'}
         if excluded:harmless.add('filter-audio')
         children=[]
         for child in node:

@@ -59,6 +59,23 @@ class ProjectTests(unittest.TestCase):
         plan=self.inspect(root);self.assertEqual(plan['totalFrames'],3000)
         self.assertEqual(Fraction(plan['frameDuration']),Fraction(1001,30000))
 
+    def test_disabled_rate_conform_preserves_audio_clock(self):
+        root,p,seq,clip=basic();before=self.inspect(root)
+        root.find('resources/format').set('frameDuration','1/25s')
+        ET.SubElement(clip,'conform-rate',scaleEnabled='0',srcFrameRate='30',frameSampling='optical-flow')
+        self.assertEqual(self.inspect(root),before)
+
+    def test_rate_conform_scaling_and_malformed_nodes_refused(self):
+        for attrs in ({},{'scaleEnabled':'1'},{'scaleEnabled':'false'},{'scaleEnabled':'0','unknown':'1'}):
+            root,p,seq,clip=basic();ET.SubElement(clip,'conform-rate',**attrs)
+            with self.assertRaises(ValueError):self.inspect(root)
+        for extra in ('duplicate','child','timeMap'):
+            root,p,seq,clip=basic();c=ET.SubElement(clip,'conform-rate',scaleEnabled='0')
+            if extra=='duplicate':ET.SubElement(clip,'conform-rate',scaleEnabled='0')
+            elif extra=='child':ET.SubElement(c,'timept')
+            else:ET.SubElement(clip,'timeMap')
+            with self.assertRaises(ValueError):self.inspect(root)
+
     def test_connected_dialogue_parent_source_offset_and_mute(self):
         root,p,seq,clip=basic();asset=root.find('resources/asset')
         ET.SubElement(clip,'asset-clip',ref=asset.get('id'),offset='2s',start='0s',duration='1s',audioRole='dialogue',lane='-1')

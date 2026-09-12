@@ -63,6 +63,20 @@ class AudioProbeTests(unittest.TestCase):
         # A sample-for-sample comparison catches silently decoding from zero.
         self.assertEqual((self.directory/result['pcmFile']).read_bytes(),whole_bytes[64000*4:])
 
+    def test_aac_packet_boundaries_trim_to_requested_audio_range(self):
+        media=self.directory/'packet-boundary.m4a'
+        subprocess.run(['/opt/homebrew/bin/ffmpeg','-v','error','-nostdin','-y','-f','lavfi','-i',
+                        'sine=frequency=440:sample_rate=48000:duration=31','-c:a','aac',str(media)],check=True)
+        for start,duration in ((0,30),(30,1)):
+            def mutate(tree):
+                tree.find('.//media-rep').set('src',media.as_uri())
+                tree.find('.//sequence').set('duration',f'{duration}s')
+                clip=tree.find('.//asset-clip');clip.set('duration',f'{duration}s');clip.set('start',f'{start}s')
+            result=self.probe(mutate)
+            self.assertEqual(result['status'],'decoded',result)
+            self.assertEqual(result['sampleCount'],duration*16000)
+            self.assertGreater(result['rms'],0.01)
+
     def test_source_audio_attributes_refused(self):
         for key,value in (('srcEnable','video'),('srcEnable','invalid'),('audioStart','1s'),('audioDuration','2s')):
             with self.subTest(key=key,value=value):
