@@ -247,3 +247,12 @@ UI：原生模型下拉、音频范围、较紧凑层次、滚动页面、取消
 真实完整解码进一步发现AAC包超出30秒范围48个样本，旧decoder达到容量保护取消（readerStatus4）。AudioProbe.m按输出sample presentation timestamp裁剪到请求区间，保持完整性检查与最多16采样resample尾差，增加失败采样数/reader状态诊断。实际1334.2秒项目完整解码成功：21347200采样、85388800字节，SHA5075bd871110093a526924877dbdb5629905932adc6a232a9be153082203b8e5；证据docs/evidence/subpop-conform-rate.json。未重跑完整22分钟ASR，不宣称质量/最终字幕验收。
 
 81项回归通过，包括帧率适配白名单/缺省缩放拒绝/真实变速拒绝、合成48k AAC的30秒和后续1秒边界；原生harness通过。构建21使用26.5 SDK构建并安装/签名验证；旧空闲扩展、容器、worker重启。不改用户媒体或FCP时间线，无共享。用户目前使用隔离库内未命名项目，原始Subloom-Original仍受保护。
+
+
+## 2026-09-12：构建22字幕量化边界与失败恢复
+
+用户22分钟真实识别失败Quantized captions overlap。原job164f6cec-10e2-4057-bbdd-bc568f850d09实际已完成1.7B识别（59段5490词），仅generate-titles失败。逐项修复后还发现断句切开aligner词、整条零时长“呜”、跨ASR块70ms对齐重叠。caption_fixture.py在真实token结束处断句；零时长/跨块实测重叠合并保留文字；纯帧取整重叠用实测间隙中点附近的共享边界，保证至少1帧，不够时合并。每段内部真实词重叠、文字不一致、范围错误仍拒绝。未改原始ASR文字/时间。
+
+run_job提取共用finalize，失败在generate-titles的完全相同snapshotSHA/UID/model/audioMode/vocabulary重试可复用ASR；验证输入hash、snapshot相等、PCM长度/hash及源媒体mtime未晚于原任务开始，并拒绝链接文件。仅重新生成输出，不重跑模型。新增test_job_recovery与4项字幕边界测试；86项全套通过，最后增加媒体mtime保护后的专项测试通过。
+
+后台恢复job f04711a8-fc33-498e-a157-91f49d7ca451 ready562；构建22安装/签名后FCP重检实际旧drop并点击开始识别，真实面板新job eb2097e8-bb6a-4720-8796-b68a8e593484复用原job ready562，全部文字拼接逐字相同且无时间重叠。原生562行编辑/三版本样式时间回归通过；1.14输出通过官方1.14DTD（1.12/1.13对应DTD本机未提供，未宣称同版本DTD验收）。证据docs/evidence/subpop-caption-boundaries.json。主面板已显示“字幕已准备好”及拖回条，保留1.7B，用户不需再次拖入/重识别。尚未对562条做实际落轨和逐句质量校对。没有FCP时间线写入或共享。

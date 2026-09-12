@@ -1,0 +1,18 @@
+{
+  "build": 22,
+  "jobID": "eb2097e8-bb6a-4720-8796-b68a8e593484",
+  "requestIDs": [
+    "bf794983-a858-49a6-a451-f4a3ace07c3f"
+  ],
+  "resumedFromJob": "164f6cec-10e2-4057-bbdd-bc568f850d09",
+  "status": "ready",
+  "titleCount": 562,
+  "modelID": "qwen3-asr-1.7b",
+  "textPreserved": true,
+  "textSHA256": "9e6e5e0b6a3854c8dcb6613bf688e139861147e94c00a319bb813a2dc45fb9fc",
+  "overlaps": 0,
+  "tests": 86,
+  "nativeHarness": "562 rows, all 3 versions proofreading/style/timing validation passed",
+  "DTD": "1.14 payload passes official 1.14 DTD; older matching DTD files unavailable",
+  "host": "Actual previous input rechecked, Start clicked, cache reused, ready table and drag output observed; no FCP timeline write"
+}

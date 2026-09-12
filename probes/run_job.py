@@ -37,6 +37,48 @@ def preflight(xml, asr, aligner):
     return snapshot
 
 
+def finalize(directory,state,result,existing):
+    frame=Fraction(result['snapshot']['frameDuration']);fps=1/frame
+    rows=captions(result,fps,generic=True)
+    manifest={**result['snapshot'],'projectUID':state['projectUID'],'pcmSHA256':result['pcm_sha256'],'fps':str(fps),'captions':rows,'modelID':state['modelID'],'vocabulary':state.get('vocabulary',[])}
+    save(directory/'captions.json',manifest)
+    check=collision(rows,existing);save(directory/'collision.json',check)
+    if check['status']!='clear':
+        state.update(status='blocked-existing-titles',stage=check['status'],collision=check,
+                     pcmSHA256=result['pcm_sha256'],titleCount=len(rows),device=result['device'])
+        save(directory/'status.json',state);print(json.dumps({'ready':str(directory),'blocked':check['status']}),flush=True)
+        return directory
+    (directory/'captions.srt').write_text(srt(rows,fps))
+    for version in ('1.12','1.13','1.14'):(directory/f'TitleProbe-{version}.fcpxml').write_bytes(payload(manifest,version))
+    outputs={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in directory.iterdir() if p.name.startswith('TitleProbe-') or p.name in ('captions.json','captions.srt')}
+    state.update(status='ready',stage='ready',outputs=outputs,pcmSHA256=result['pcm_sha256'],titleCount=len(rows),device=result['device'])
+    save(directory/'status.json',state);print(json.dumps({'ready':str(directory),'titleCount':len(rows)}),flush=True)
+    return directory
+
+
+def cached_recognition(state, snapshot):
+    # Retry only the exact frozen input/model/options after output generation
+    # failed. Validate the retained PCM before avoiding costly recognition.
+    for candidate in sorted(WORK.glob('*/status.json'),key=lambda p:p.stat().st_mtime,reverse=True):
+        try:
+            if candidate.parent.name==state['jobID'] or candidate.parent.is_symlink():continue
+            old=json.loads(candidate.read_text())
+            if old.get('status')!='failed' or old.get('stage')!='generate-titles':continue
+            if any(old.get(k)!=state.get(k) for k in ('snapshotSHA256','projectUID','modelID','audioMode','vocabulary')):continue
+            paths=[candidate.parent/n for n in ('input.fcpxml','asr.json','timeline.f32le')]
+            if any(p.is_symlink() or not p.is_file() for p in paths):continue
+            if hashlib.sha256(paths[0].read_bytes()).hexdigest()!=state['snapshotSHA256']:continue
+            result=json.loads(paths[1].read_text())
+            if result.get('modelID')!=state['modelID'] or result.get('snapshot')!=snapshot:continue
+            created=datetime.fromisoformat(old['createdAt']).timestamp()
+            if any(Path(segment['media']).stat().st_mtime>created for segment in snapshot.get('segments',[])):continue
+            if paths[2].stat().st_size!=snapshot['sampleCount']*4:continue
+            if hashlib.sha256(paths[2].read_bytes()).hexdigest()!=result.get('pcm_sha256'):continue
+            return candidate.parent.name,result
+        except (OSError,ValueError,KeyError):continue
+    return None
+
+
 def run(xml,asr,aligner,model_id=DEFAULT_MODEL_ID,audio_mode='dialogue',vocabulary=None):
     # Validate before starting costly work. Each invocation owns a new directory.
     vocabulary=validate_vocabulary(vocabulary or [])
@@ -55,6 +97,12 @@ def run(xml,asr,aligner,model_id=DEFAULT_MODEL_ID,audio_mode='dialogue',vocabula
         audioXML=directory/'audio-input.fcpxml';audioXML.write_bytes(normalized)
         snapshot=preflight(audioXML,asr,aligner)
         state['projectUID']=snapshot['uid']
+        recovered=cached_recognition(state,snapshot)
+        if recovered:
+            state['resumedFromJob'],result=recovered
+            save(directory/'asr.json',result)
+            progress('generate-titles')
+            return finalize(directory,state,result,existing)
         progress('decode')
         binary=ROOT/'.subloom/build/SubPopAudioProbeCLI'
         decoded=render(audioXML,directory,binary,snapshot['uid'],audio_mode);save(directory/'audio.json',decoded)
@@ -70,22 +118,7 @@ def run(xml,asr,aligner,model_id=DEFAULT_MODEL_ID,audio_mode='dialogue',vocabula
         result=recognize(audioXML,asr,aligner,directory/'asr.json',pcm,device='cpu',verbose=False,audio_mode=audio_mode,vocabulary=vocabulary)
         result['modelID']=model_id;save(directory/'asr.json',result)
         progress('generate-titles')
-        frame=Fraction(result['snapshot']['frameDuration']);fps=1/frame
-        rows=captions(result,fps,generic=True)
-        manifest={**result['snapshot'],'projectUID':snapshot['uid'],'pcmSHA256':result['pcm_sha256'],'fps':str(fps),'captions':rows,'modelID':model_id,'vocabulary':vocabulary}
-        save(directory/'captions.json',manifest)
-        check=collision(rows,existing);save(directory/'collision.json',check)
-        if check['status']!='clear':
-            state.update(status='blocked-existing-titles',stage=check['status'],collision=check,
-                         pcmSHA256=result['pcm_sha256'],titleCount=len(rows),device=result['device'])
-            save(directory/'status.json',state);print(json.dumps({'ready':str(directory),'blocked':check['status']}),flush=True)
-            return directory
-        (directory/'captions.srt').write_text(srt(rows,fps))
-        for version in ('1.12','1.13','1.14'):(directory/f'TitleProbe-{version}.fcpxml').write_bytes(payload(manifest,version))
-        outputs={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in directory.iterdir() if p.name.startswith('TitleProbe-') or p.name in ('captions.json','captions.srt')}
-        state.update(status='ready',stage='ready',outputs=outputs,pcmSHA256=result['pcm_sha256'],titleCount=len(rows),device=result['device'])
-        save(directory/'status.json',state);print(json.dumps({'ready':str(directory),'titleCount':len(rows)}),flush=True)
-        return directory
+        return finalize(directory,state,result,existing)
     except BaseException as error:
         state.update(status='failed',error=f'{type(error).__name__}: {error}')
         save(directory/'status.json',state)

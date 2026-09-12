@@ -17,7 +17,7 @@ def captions(data, fps=25, generic=False):
     duration = Fraction(data['snapshot']['duration'])
     if (not generic and data['snapshot']['project'] != 'Subloom-Original') or Fraction(data['snapshot']['relative_start']) != 0:
         raise ValueError('Only the complete isolated original project is supported')
-    rows=[]
+    raw=[]
     for part in data['results']:
         words=part['words']
         if not words or ''.join(spoken(w['text']) for w in words) != spoken(part['text']):
@@ -37,6 +37,17 @@ def captions(data, fps=25, generic=False):
             if segments:segments[-1]+=pending
             else:segments.append(pending)
         if ''.join(segments)!=part['text']:raise ValueError('Unsupported punctuation layout')
+        # Punctuation can split one aligner token (e.g. a number or phrase).
+        # Only emit a sentence boundary where a measured token actually ends.
+        token_ends=set();count=0
+        for word in words:
+            count+=len(spoken(word['text']));token_ends.add(count)
+        safe=[];pending='';count=0
+        for text in segments:
+            pending+=text;count+=len(spoken(text))
+            if count in token_ends:safe.append(pending);pending=''
+        if pending:raise ValueError('Unconsumed sentence text')
+        segments=safe
         cursor=0
         for text in segments:
             first=cursor;matched=''
@@ -44,11 +55,30 @@ def captions(data, fps=25, generic=False):
                 matched+=spoken(words[cursor]['text']);cursor+=1
             if matched!=spoken(text):raise ValueError('A segment cuts an aligned token')
             start=Fraction(str(words[first]['start']));end=Fraction(str(words[cursor-1]['end']))
-            start_frame=(start*fps).__floor__();end_frame=(end*fps).__ceil__()
-            if end_frame<=start_frame or Fraction(end_frame,fps)>duration:raise ValueError('Invalid caption duration')
-            if rows and start_frame<rows[-1]['end_frame']:raise ValueError('Quantized captions overlap')
-            rows.append(dict(text=text,start_frame=start_frame,end_frame=end_frame))
+            if raw and start<raw[-1]['start']:raise ValueError('Caption order is invalid')
+            if raw and (start<raw[-1]['end'] or start==end or raw[-1]['start']==raw[-1]['end']):
+                # Adjacent recognition chunks can have overlapping alignment.
+                # Keep their text together over the measured union, never drop it.
+                raw[-1]['text']+=text;raw[-1]['end']=max(raw[-1]['end'],end)
+            else:raw.append(dict(text=text,start=start,end=end))
         if cursor!=len(words):raise ValueError('Unconsumed alignment')
+    rows=[]
+    for row in raw:
+        start=(row['start']*fps).__floor__();end=(row['end']*fps).__ceil__()
+        if end<=start or Fraction(end,fps)>duration:raise ValueError('Invalid caption duration')
+        if rows and start<rows[-1]['end_frame']:
+            # Outward rounding can make disjoint intervals share one frame.
+            # Use a shared boundary nearest to the measured gap's midpoint.
+            boundary=round((raw_end+row['start'])*fps/2)
+            lower=rows[-1]['start_frame']+1;upper=end-1
+            if lower<=upper:
+                boundary=max(lower,min(upper,boundary))
+                rows[-1]['end_frame']=boundary;start=boundary
+            else:
+                rows[-1]['text']+=row['text'];rows[-1]['end_frame']=end
+                raw_end=row['end'];continue
+        rows.append(dict(text=row['text'],start_frame=start,end_frame=end))
+        raw_end=row['end']
     return rows
 
 

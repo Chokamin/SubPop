@@ -18,7 +18,7 @@ def run(*args):subprocess.run([str(a) for a in args],check=True)
 def build():
     if not (SDK/'usr/lib/libProExtension.a').exists():raise SystemExit('Extract official SDK first; see HANDOFF.md')
     for bundle in (APP,EXT):(bundle/'Contents/MacOS').mkdir(parents=True,exist_ok=True)
-    base=dict(CFBundleVersion='21',CFBundleShortVersionString='0.1.0',LSMinimumSystemVersion='13.0')
+    base=dict(CFBundleVersion='22',CFBundleShortVersionString='0.1.0',LSMinimumSystemVersion='13.0')
     plist(APP/'Contents/Info.plist',dict(base,LSUIElement=True,CFBundleURLTypes=[dict(CFBundleURLName='com.chokamin.SubPopProbe.start',CFBundleURLSchemes=['subpop-probe'])],SubPopWorkspace=str(ROOT),CFBundleIdentifier='com.chokamin.SubPopProbe',CFBundleName='SubPop Probe',CFBundleExecutable='SubPopProbe',CFBundlePackageType='APPL',NSPrincipalClass='NSApplication',NSAppleEventsUsageDescription='SubPop 只读探针需要读取 Final Cut Pro 的当前项目和时间线信息。'))
     plist(EXT/'Contents/Info.plist',dict(base,SubPopWorkspace=str(ROOT),CFBundleIdentifier='com.chokamin.SubPopProbe.Extension',CFBundleName='SubPop Probe',CFBundleDisplayName='SubPop Probe',CFBundleExecutable='SubPopProbeExtension',CFBundlePackageType='XPC!',NSAppleEventsUsageDescription='SubPop 只读探针需要读取 Final Cut Pro 的当前项目和时间线信息。',NSExtension=dict(NSExtensionPointIdentifier='com.apple.FinalCut.WorkflowExtension',ProExtensionPrincipalViewControllerClass='SubPopProbeViewController'),ProExtensionAttributes=dict(ContentViewMinimumWidth=620,ContentViewMinimumHeight=680)))
     mac_sdk=subprocess.check_output(['xcrun','--sdk','macosx','--show-sdk-path'],text=True).strip()
