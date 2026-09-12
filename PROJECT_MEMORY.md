@@ -36,3 +36,13 @@
 - 关键文件：native/Probe/ProbeViewController.m、scripts/build_probe.py、tests/test_native_probe.py、tests/test_probes.py、docs/evidence/subpop-host-recovered.json、docs/evidence/subpop-library-diagnostic.json。
 - 验证：构建及签名通过，12 项测试通过（增加真实宿主 UID/时间与独立 XML 导出对照档案回归）；不是字幕完整闭环。未修改 VinciSub 和测试字幕。当前探针及原测试项目保留打开。
 - 剩余：冷启动稳定性与单一根因；选区语义、角色/片段、音频权限、原时间线 ASR 写回。当前 Codex 工作区绑定旧路径，迁移后普通沙箱不支持符号链接根；后续会话从新路径打开。
+
+## 2026-09-12：时间线选区对照验证
+
+- 需求：读取交接并继续验证选区读取。新工作区路径权限已正常。
+- 实测：在原隔离项目用 R 建立 2–4、3–6、1–5 秒范围，Option-X 清除，再取消浏览器选择重试。UI 范围确实变化；SDK 初始化、手动和后续回调均返回 start=3600、duration=8.68。选区读取未通过，不能据此回退全项目。
+- 限制：SDK 播放头一度与 AX 固定播放头不一致；后续回调又更新，焦点/浏览与时效原因未隔离。不把本轮负结果泛化为 SDK 无选区能力。浏览器两个项目的局部范围操作未生效，媒体范围正对照待测。
+- 改动：保存 21 条宿主日志、6 个独立 UI 对照；更新验证和交接记录，新增有理数与 UID 的证据档案回归。未修改原生代码、安装、字幕内容或 VinciSub。
+- 关键文件：docs/evidence/subpop-selection-comparison.json、docs/sdk-probe-validation.md、tests/test_probes.py。
+- 验证：本轮真实宿主结果为选区未读通；构建/签名及 13 项回归通过，不当作选区宿主通过。
+- 剩余：回调/浏览/固定播放头正对照、浏览器媒体范围、FCP 冷启动、拖放音频及写回闭环。保留原项目 2–4 秒范围和探针供复核。

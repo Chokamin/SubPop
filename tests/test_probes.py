@@ -62,6 +62,36 @@ if __name__=='__main__':unittest.main()
 
 
 class ActualHostEvidenceTests(unittest.TestCase):
+    def test_selection_comparison_preserves_ui_sdk_mismatch(self):
+        # Archive consistency only: never reclassify this as live selection support.
+        import json
+        root = Path(__file__).resolve().parents[1]
+        evidence = json.loads((root/'docs/evidence/subpop-selection-comparison.json').read_text())
+        records = {r['sourceFile']: r for r in evidence['records']}
+        xml = E.parse(root/'tests/fixtures/fcp-12.3-caption-readback.fcpxml')
+        project = xml.find('.//project')
+        sequence = project.find('sequence')
+        expected = (seconds(sequence.get('tcStart')), seconds(sequence.get('duration')))
+        selected = cleared = 0
+        for case in evidence['cases']:
+            record = records[case['snapshotSourceFile']]
+            self.assertEqual(record['recordedAt'], case['snapshotAt'])
+            self.assertEqual(record['reason'], case['reason'])
+            self.assertEqual(next(c['uid'] for c in record['containers'] if c['type']==3), project.get('uid'))
+            times = [record['sequenceRange'][k] for k in ('start','duration')]
+            self.assertTrue(all(t['flags'] & 1 for t in times))
+            actual = tuple(Fraction(t['value'], t['timescale']) for t in times)
+            self.assertEqual(actual, expected)
+            ui = case['ui']['timelineRange']
+            if ui:
+                selected += 1
+                self.assertNotEqual(actual, tuple(Fraction(ui[k]) for k in ('start','duration')))
+            else:
+                cleared += 1
+        self.assertGreaterEqual(selected, 3)
+        self.assertGreaterEqual(cleared, 1)
+        self.assertEqual(evidence['conclusion'], 'selection_reading_not_validated')
+
     def test_host_uid_and_timing_match_independent_xml_export(self):
         # Recorded host evidence regression, not a new live FCP test.
         import json

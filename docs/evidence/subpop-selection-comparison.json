@@ -1,0 +1,1378 @@
+{
+  "environment": {
+    "host": "Final Cut Pro",
+    "version": "12.3",
+    "sdk": "1.0.3",
+    "probeBuild": "6",
+    "fps": 25
+  },
+  "conclusion": "selection_reading_not_validated",
+  "uiEvidenceMethod": "CUA native accessibility observations; excerpts transcribed from returned AX trees, not SDK fields",
+  "limitations": [
+    "Some SDK playhead values did not match the timeline AX playhead; freshness/skimmer/focus cause not isolated.",
+    "Later playhead callbacks changed, while sequenceRange remained full project.",
+    "Browser project range setValue and R-drag attempts left its range unchanged; browser media range comparison remains untested.",
+    "No cold restart of FCP; extension close/reopen only."
+  ],
+  "cases": [
+    {
+      "id": "baseline",
+      "ui": {
+        "timelineRange": null,
+        "projectDuration": "217/25"
+      },
+      "snapshotAt": "2026-09-12T08:02:10Z",
+      "reason": "playheadTimeChanged",
+      "snapshotSourceFile": "784DCC01-C3DB-41C2-B5B2-937E5BACAD4C.json"
+    },
+    {
+      "id": "range_2_4_reopen",
+      "ui": {
+        "timelineRange": {
+          "start": "3602",
+          "duration": "2"
+        },
+        "axExcerpt": "范围选择 00:00:02:00; 范围开头 01:00:02:00; 范围结尾 01:00:04:00"
+      },
+      "snapshotAt": "2026-09-12T08:02:51Z",
+      "reason": "playheadTimeChanged",
+      "snapshotSourceFile": "37A9B76C-BDB2-4E55-AFAF-56EAFF5135B0.json"
+    },
+    {
+      "id": "range_3_6_manual",
+      "ui": {
+        "timelineRange": {
+          "start": "3603",
+          "duration": "3"
+        },
+        "axExcerpt": "范围选择 00:00:03:00; 范围开头 01:00:03:00; 范围结尾 01:00:06:00"
+      },
+      "snapshotAt": "2026-09-12T08:04:15Z",
+      "reason": "manual",
+      "snapshotSourceFile": "65E9CEF5-35F4-46AE-94A3-A7DC88F4BDD8.json"
+    },
+    {
+      "id": "clear_range",
+      "ui": {
+        "timelineRange": null,
+        "axExcerpt": "项目时间线无范围选择节点; 项目信息 08:17"
+      },
+      "snapshotAt": "2026-09-12T08:04:40Z",
+      "reason": "manual",
+      "snapshotSourceFile": "5F05DAEE-55A3-4F01-8952-F5D30FC3A616.json"
+    },
+    {
+      "id": "range_1_5_stale_playhead",
+      "ui": {
+        "timelineRange": {
+          "start": "3601",
+          "duration": "4"
+        },
+        "playhead": "90126/25",
+        "axExcerpt": "范围开头 01:00:01:00; 范围结尾 01:00:05:00; 播放头 01:00:05:01"
+      },
+      "snapshotAt": "2026-09-12T08:06:11Z",
+      "reason": "manual",
+      "snapshotSourceFile": "4105BD28-CC26-4AA5-8C8A-9E55DFE6410B.json"
+    },
+    {
+      "id": "range_2_4_browser_deselected",
+      "ui": {
+        "timelineRange": {
+          "start": "3602",
+          "duration": "2"
+        },
+        "axExcerpt": "范围开头 01:00:02:00; 范围结尾 01:00:04:00; 项目信息 02:00 / 08:17"
+      },
+      "snapshotAt": "2026-09-12T08:07:47Z",
+      "reason": "manual",
+      "snapshotSourceFile": "B4571B63-E866-4629-8B1F-BFF29B4C5DB9.json"
+    }
+  ],
+  "records": [
+    {
+      "sourceFile": "E7320CBB-77C6-4D5B-99BE-036874814D36.json",
+      "bundle": "com.apple.FinalCut",
+      "host": "Final Cut Pro",
+      "recordedAt": "2026-09-12T08:02:10Z",
+      "status": "waiting for timeline observer",
+      "version": "12.3"
+    },
+    {
+      "sourceFile": "9FD90420-16F3-4A34-9F57-BFA37D26C8F9.json",
+      "bundle": "com.apple.FinalCut",
+      "captionWriteAPI": "not exposed by SDK 1.0.3",
+      "clipEnumerationAPI": "not exposed by SDK 1.0.3",
+      "containers": [
+        {
+          "name": "Subloom-Original",
+          "type": 3,
+          "uid": "0D11EC79-ED11-4688-97A9-CB78621857DD"
+        },
+        {
+          "name": "Subloom-Probe",
+          "type": 2,
+          "uid": "30889C27-F0E5-408C-ABCA-D03897B21641"
+        },
+        {
+          "name": "Subloom-Verification-20260912",
+          "type": 1,
+          "url": "file:///TEST_LIBRARY/Subloom-Verification-20260912.fcpbundle/"
+        }
+      ],
+      "hasSequence": 1,
+      "host": "Final Cut Pro",
+      "playhead": {
+        "epoch": 0,
+        "flags": 0,
+        "timescale": 0,
+        "value": 0
+      },
+      "reason": "activeSequenceChanged",
+      "recordedAt": "2026-09-12T08:02:10Z",
+      "selectionAPI": "sequenceTimeRange semantics require host testing",
+      "sequence": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "frameDuration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 25,
+          "value": 1
+        },
+        "name": "Subloom-Original",
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "sequenceRange": {
+        "duration": {
+          "epoch": 0,
+          "flags": 0,
+          "timescale": 0,
+          "value": 0
+        },
+        "start": {
+          "epoch": 0,
+          "flags": 0,
+          "timescale": 0,
+          "value": 0
+        }
+      },
+      "version": "12.3"
+    },
+    {
+      "sourceFile": "419A6815-507D-47F2-B72B-C69EEAD3CFC5.json",
+      "bundle": "com.apple.FinalCut",
+      "captionWriteAPI": "not exposed by SDK 1.0.3",
+      "clipEnumerationAPI": "not exposed by SDK 1.0.3",
+      "containers": [
+        {
+          "name": "Subloom-Original",
+          "type": 3,
+          "uid": "0D11EC79-ED11-4688-97A9-CB78621857DD"
+        },
+        {
+          "name": "Subloom-Probe",
+          "type": 2,
+          "uid": "30889C27-F0E5-408C-ABCA-D03897B21641"
+        },
+        {
+          "name": "Subloom-Verification-20260912",
+          "type": 1,
+          "url": "file:///TEST_LIBRARY/Subloom-Verification-20260912.fcpbundle/"
+        }
+      ],
+      "hasSequence": 1,
+      "host": "Final Cut Pro",
+      "playhead": {
+        "epoch": 0,
+        "flags": 0,
+        "timescale": 0,
+        "value": 0
+      },
+      "reason": "sequenceTimeRangeChanged",
+      "recordedAt": "2026-09-12T08:02:10Z",
+      "selectionAPI": "sequenceTimeRange semantics require host testing",
+      "sequence": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "frameDuration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 25,
+          "value": 1
+        },
+        "name": "Subloom-Original",
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "sequenceRange": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "version": "12.3"
+    },
+    {
+      "sourceFile": "784DCC01-C3DB-41C2-B5B2-937E5BACAD4C.json",
+      "bundle": "com.apple.FinalCut",
+      "captionWriteAPI": "not exposed by SDK 1.0.3",
+      "clipEnumerationAPI": "not exposed by SDK 1.0.3",
+      "containers": [
+        {
+          "name": "Subloom-Original",
+          "type": 3,
+          "uid": "0D11EC79-ED11-4688-97A9-CB78621857DD"
+        },
+        {
+          "name": "Subloom-Probe",
+          "type": 2,
+          "uid": "30889C27-F0E5-408C-ABCA-D03897B21641"
+        },
+        {
+          "name": "Subloom-Verification-20260912",
+          "type": 1,
+          "url": "file:///TEST_LIBRARY/Subloom-Verification-20260912.fcpbundle/"
+        }
+      ],
+      "hasSequence": 1,
+      "host": "Final Cut Pro",
+      "playhead": {
+        "epoch": 0,
+        "flags": 1,
+        "timescale": 720000,
+        "value": 2592783376
+      },
+      "reason": "playheadTimeChanged",
+      "recordedAt": "2026-09-12T08:02:10Z",
+      "selectionAPI": "sequenceTimeRange semantics require host testing",
+      "sequence": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "frameDuration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 25,
+          "value": 1
+        },
+        "name": "Subloom-Original",
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "sequenceRange": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "version": "12.3"
+    },
+    {
+      "sourceFile": "96CBD4BA-F2C0-4663-8ECD-90999CD544C9.json",
+      "bundle": "com.apple.FinalCut",
+      "host": "Final Cut Pro",
+      "recordedAt": "2026-09-12T08:02:51Z",
+      "status": "waiting for timeline observer",
+      "version": "12.3"
+    },
+    {
+      "sourceFile": "08BBCF34-10D0-45A3-90BE-0257E78A383B.json",
+      "bundle": "com.apple.FinalCut",
+      "captionWriteAPI": "not exposed by SDK 1.0.3",
+      "clipEnumerationAPI": "not exposed by SDK 1.0.3",
+      "containers": [
+        {
+          "name": "Subloom-Original",
+          "type": 3,
+          "uid": "0D11EC79-ED11-4688-97A9-CB78621857DD"
+        },
+        {
+          "name": "Subloom-Probe",
+          "type": 2,
+          "uid": "30889C27-F0E5-408C-ABCA-D03897B21641"
+        },
+        {
+          "name": "Subloom-Verification-20260912",
+          "type": 1,
+          "url": "file:///TEST_LIBRARY/Subloom-Verification-20260912.fcpbundle/"
+        }
+      ],
+      "hasSequence": 1,
+      "host": "Final Cut Pro",
+      "playhead": {
+        "epoch": 0,
+        "flags": 0,
+        "timescale": 0,
+        "value": 0
+      },
+      "reason": "activeSequenceChanged",
+      "recordedAt": "2026-09-12T08:02:51Z",
+      "selectionAPI": "sequenceTimeRange semantics require host testing",
+      "sequence": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "frameDuration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 25,
+          "value": 1
+        },
+        "name": "Subloom-Original",
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "sequenceRange": {
+        "duration": {
+          "epoch": 0,
+          "flags": 0,
+          "timescale": 0,
+          "value": 0
+        },
+        "start": {
+          "epoch": 0,
+          "flags": 0,
+          "timescale": 0,
+          "value": 0
+        }
+      },
+      "version": "12.3"
+    },
+    {
+      "sourceFile": "A25EA85A-F3F7-440E-8407-405416D8C3F6.json",
+      "bundle": "com.apple.FinalCut",
+      "captionWriteAPI": "not exposed by SDK 1.0.3",
+      "clipEnumerationAPI": "not exposed by SDK 1.0.3",
+      "containers": [
+        {
+          "name": "Subloom-Original",
+          "type": 3,
+          "uid": "0D11EC79-ED11-4688-97A9-CB78621857DD"
+        },
+        {
+          "name": "Subloom-Probe",
+          "type": 2,
+          "uid": "30889C27-F0E5-408C-ABCA-D03897B21641"
+        },
+        {
+          "name": "Subloom-Verification-20260912",
+          "type": 1,
+          "url": "file:///TEST_LIBRARY/Subloom-Verification-20260912.fcpbundle/"
+        }
+      ],
+      "hasSequence": 1,
+      "host": "Final Cut Pro",
+      "playhead": {
+        "epoch": 0,
+        "flags": 0,
+        "timescale": 0,
+        "value": 0
+      },
+      "reason": "sequenceTimeRangeChanged",
+      "recordedAt": "2026-09-12T08:02:51Z",
+      "selectionAPI": "sequenceTimeRange semantics require host testing",
+      "sequence": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "frameDuration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 25,
+          "value": 1
+        },
+        "name": "Subloom-Original",
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "sequenceRange": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "version": "12.3"
+    },
+    {
+      "sourceFile": "37A9B76C-BDB2-4E55-AFAF-56EAFF5135B0.json",
+      "bundle": "com.apple.FinalCut",
+      "captionWriteAPI": "not exposed by SDK 1.0.3",
+      "clipEnumerationAPI": "not exposed by SDK 1.0.3",
+      "containers": [
+        {
+          "name": "Subloom-Original",
+          "type": 3,
+          "uid": "0D11EC79-ED11-4688-97A9-CB78621857DD"
+        },
+        {
+          "name": "Subloom-Probe",
+          "type": 2,
+          "uid": "30889C27-F0E5-408C-ABCA-D03897B21641"
+        },
+        {
+          "name": "Subloom-Verification-20260912",
+          "type": 1,
+          "url": "file:///TEST_LIBRARY/Subloom-Verification-20260912.fcpbundle/"
+        }
+      ],
+      "hasSequence": 1,
+      "host": "Final Cut Pro",
+      "playhead": {
+        "epoch": 0,
+        "flags": 1,
+        "timescale": 720000,
+        "value": 2592783376
+      },
+      "reason": "playheadTimeChanged",
+      "recordedAt": "2026-09-12T08:02:51Z",
+      "selectionAPI": "sequenceTimeRange semantics require host testing",
+      "sequence": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "frameDuration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 25,
+          "value": 1
+        },
+        "name": "Subloom-Original",
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "sequenceRange": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "version": "12.3"
+    },
+    {
+      "sourceFile": "2CE543DE-7480-4E33-A6D7-785DC5CE29DA.json",
+      "bundle": "com.apple.FinalCut",
+      "captionWriteAPI": "not exposed by SDK 1.0.3",
+      "clipEnumerationAPI": "not exposed by SDK 1.0.3",
+      "containers": [
+        {
+          "name": "Subloom-Original",
+          "type": 3,
+          "uid": "0D11EC79-ED11-4688-97A9-CB78621857DD"
+        },
+        {
+          "name": "Subloom-Probe",
+          "type": 2,
+          "uid": "30889C27-F0E5-408C-ABCA-D03897B21641"
+        },
+        {
+          "name": "Subloom-Verification-20260912",
+          "type": 1,
+          "url": "file:///TEST_LIBRARY/Subloom-Verification-20260912.fcpbundle/"
+        }
+      ],
+      "hasSequence": 1,
+      "host": "Final Cut Pro",
+      "playhead": {
+        "epoch": 0,
+        "flags": 1,
+        "timescale": 720000,
+        "value": 2592783376
+      },
+      "reason": "playheadTimeChanged",
+      "recordedAt": "2026-09-12T08:03:34Z",
+      "selectionAPI": "sequenceTimeRange semantics require host testing",
+      "sequence": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "frameDuration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 25,
+          "value": 1
+        },
+        "name": "Subloom-Original",
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "sequenceRange": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "version": "12.3"
+    },
+    {
+      "sourceFile": "94483403-E1F2-4888-9F92-B7E1C70CD693.json",
+      "bundle": "com.apple.FinalCut",
+      "captionWriteAPI": "not exposed by SDK 1.0.3",
+      "clipEnumerationAPI": "not exposed by SDK 1.0.3",
+      "containers": [
+        {
+          "name": "Subloom-Original",
+          "type": 3,
+          "uid": "0D11EC79-ED11-4688-97A9-CB78621857DD"
+        },
+        {
+          "name": "Subloom-Probe",
+          "type": 2,
+          "uid": "30889C27-F0E5-408C-ABCA-D03897B21641"
+        },
+        {
+          "name": "Subloom-Verification-20260912",
+          "type": 1,
+          "url": "file:///TEST_LIBRARY/Subloom-Verification-20260912.fcpbundle/"
+        }
+      ],
+      "hasSequence": 1,
+      "host": "Final Cut Pro",
+      "playhead": {
+        "epoch": 0,
+        "flags": 1,
+        "timescale": 720000,
+        "value": 2596320000
+      },
+      "reason": "playheadTimeChanged",
+      "recordedAt": "2026-09-12T08:03:48Z",
+      "selectionAPI": "sequenceTimeRange semantics require host testing",
+      "sequence": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "frameDuration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 25,
+          "value": 1
+        },
+        "name": "Subloom-Original",
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "sequenceRange": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "version": "12.3"
+    },
+    {
+      "sourceFile": "65E9CEF5-35F4-46AE-94A3-A7DC88F4BDD8.json",
+      "bundle": "com.apple.FinalCut",
+      "captionWriteAPI": "not exposed by SDK 1.0.3",
+      "clipEnumerationAPI": "not exposed by SDK 1.0.3",
+      "containers": [
+        {
+          "name": "Subloom-Original",
+          "type": 3,
+          "uid": "0D11EC79-ED11-4688-97A9-CB78621857DD"
+        },
+        {
+          "name": "Subloom-Probe",
+          "type": 2,
+          "uid": "30889C27-F0E5-408C-ABCA-D03897B21641"
+        },
+        {
+          "name": "Subloom-Verification-20260912",
+          "type": 1,
+          "url": "file:///TEST_LIBRARY/Subloom-Verification-20260912.fcpbundle/"
+        }
+      ],
+      "hasSequence": 1,
+      "host": "Final Cut Pro",
+      "playhead": {
+        "epoch": 0,
+        "flags": 1,
+        "timescale": 720000,
+        "value": 2596320000
+      },
+      "reason": "manual",
+      "recordedAt": "2026-09-12T08:04:15Z",
+      "selectionAPI": "sequenceTimeRange semantics require host testing",
+      "sequence": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "frameDuration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 25,
+          "value": 1
+        },
+        "name": "Subloom-Original",
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "sequenceRange": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "version": "12.3"
+    },
+    {
+      "sourceFile": "5F05DAEE-55A3-4F01-8952-F5D30FC3A616.json",
+      "bundle": "com.apple.FinalCut",
+      "captionWriteAPI": "not exposed by SDK 1.0.3",
+      "clipEnumerationAPI": "not exposed by SDK 1.0.3",
+      "containers": [
+        {
+          "name": "Subloom-Original",
+          "type": 3,
+          "uid": "0D11EC79-ED11-4688-97A9-CB78621857DD"
+        },
+        {
+          "name": "Subloom-Probe",
+          "type": 2,
+          "uid": "30889C27-F0E5-408C-ABCA-D03897B21641"
+        },
+        {
+          "name": "Subloom-Verification-20260912",
+          "type": 1,
+          "url": "file:///TEST_LIBRARY/Subloom-Verification-20260912.fcpbundle/"
+        }
+      ],
+      "hasSequence": 1,
+      "host": "Final Cut Pro",
+      "playhead": {
+        "epoch": 0,
+        "flags": 1,
+        "timescale": 720000,
+        "value": 2596320000
+      },
+      "reason": "manual",
+      "recordedAt": "2026-09-12T08:04:40Z",
+      "selectionAPI": "sequenceTimeRange semantics require host testing",
+      "sequence": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "frameDuration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 25,
+          "value": 1
+        },
+        "name": "Subloom-Original",
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "sequenceRange": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "version": "12.3"
+    },
+    {
+      "sourceFile": "A4EBBB0E-FE62-48A5-852D-CFFBD9E5A874.json",
+      "bundle": "com.apple.FinalCut",
+      "captionWriteAPI": "not exposed by SDK 1.0.3",
+      "clipEnumerationAPI": "not exposed by SDK 1.0.3",
+      "containers": [
+        {
+          "name": "Subloom-Original",
+          "type": 3,
+          "uid": "0D11EC79-ED11-4688-97A9-CB78621857DD"
+        },
+        {
+          "name": "Subloom-Probe",
+          "type": 2,
+          "uid": "30889C27-F0E5-408C-ABCA-D03897B21641"
+        },
+        {
+          "name": "Subloom-Verification-20260912",
+          "type": 1,
+          "url": "file:///TEST_LIBRARY/Subloom-Verification-20260912.fcpbundle/"
+        }
+      ],
+      "hasSequence": 1,
+      "host": "Final Cut Pro",
+      "playhead": {
+        "epoch": 0,
+        "flags": 1,
+        "timescale": 720000,
+        "value": 2592783376
+      },
+      "reason": "playheadTimeChanged",
+      "recordedAt": "2026-09-12T08:04:54Z",
+      "selectionAPI": "sequenceTimeRange semantics require host testing",
+      "sequence": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "frameDuration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 25,
+          "value": 1
+        },
+        "name": "Subloom-Original",
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "sequenceRange": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "version": "12.3"
+    },
+    {
+      "sourceFile": "4105BD28-CC26-4AA5-8C8A-9E55DFE6410B.json",
+      "bundle": "com.apple.FinalCut",
+      "captionWriteAPI": "not exposed by SDK 1.0.3",
+      "clipEnumerationAPI": "not exposed by SDK 1.0.3",
+      "containers": [
+        {
+          "name": "Subloom-Original",
+          "type": 3,
+          "uid": "0D11EC79-ED11-4688-97A9-CB78621857DD"
+        },
+        {
+          "name": "Subloom-Probe",
+          "type": 2,
+          "uid": "30889C27-F0E5-408C-ABCA-D03897B21641"
+        },
+        {
+          "name": "Subloom-Verification-20260912",
+          "type": 1,
+          "url": "file:///TEST_LIBRARY/Subloom-Verification-20260912.fcpbundle/"
+        }
+      ],
+      "hasSequence": 1,
+      "host": "Final Cut Pro",
+      "playhead": {
+        "epoch": 0,
+        "flags": 1,
+        "timescale": 720000,
+        "value": 2592783376
+      },
+      "reason": "manual",
+      "recordedAt": "2026-09-12T08:06:11Z",
+      "selectionAPI": "sequenceTimeRange semantics require host testing",
+      "sequence": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "frameDuration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 25,
+          "value": 1
+        },
+        "name": "Subloom-Original",
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "sequenceRange": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "version": "12.3"
+    },
+    {
+      "sourceFile": "F6B9B513-0E87-41BF-A9D8-A5C8AB25CC5A.json",
+      "bundle": "com.apple.FinalCut",
+      "host": "Final Cut Pro",
+      "recordedAt": "2026-09-12T08:06:34Z",
+      "status": "waiting for timeline observer",
+      "version": "12.3"
+    },
+    {
+      "sourceFile": "12C311EC-61E2-40F3-B9EF-6E12C520173C.json",
+      "bundle": "com.apple.FinalCut",
+      "captionWriteAPI": "not exposed by SDK 1.0.3",
+      "clipEnumerationAPI": "not exposed by SDK 1.0.3",
+      "containers": [
+        {
+          "name": "Subloom-Original",
+          "type": 3,
+          "uid": "0D11EC79-ED11-4688-97A9-CB78621857DD"
+        },
+        {
+          "name": "Subloom-Probe",
+          "type": 2,
+          "uid": "30889C27-F0E5-408C-ABCA-D03897B21641"
+        },
+        {
+          "name": "Subloom-Verification-20260912",
+          "type": 1,
+          "url": "file:///TEST_LIBRARY/Subloom-Verification-20260912.fcpbundle/"
+        }
+      ],
+      "hasSequence": 1,
+      "host": "Final Cut Pro",
+      "playhead": {
+        "epoch": 0,
+        "flags": 0,
+        "timescale": 0,
+        "value": 0
+      },
+      "reason": "activeSequenceChanged",
+      "recordedAt": "2026-09-12T08:06:34Z",
+      "selectionAPI": "sequenceTimeRange semantics require host testing",
+      "sequence": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "frameDuration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 25,
+          "value": 1
+        },
+        "name": "Subloom-Original",
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "sequenceRange": {
+        "duration": {
+          "epoch": 0,
+          "flags": 0,
+          "timescale": 0,
+          "value": 0
+        },
+        "start": {
+          "epoch": 0,
+          "flags": 0,
+          "timescale": 0,
+          "value": 0
+        }
+      },
+      "version": "12.3"
+    },
+    {
+      "sourceFile": "0B303342-F8FB-4829-B1DF-FE7BAFED163A.json",
+      "bundle": "com.apple.FinalCut",
+      "captionWriteAPI": "not exposed by SDK 1.0.3",
+      "clipEnumerationAPI": "not exposed by SDK 1.0.3",
+      "containers": [
+        {
+          "name": "Subloom-Original",
+          "type": 3,
+          "uid": "0D11EC79-ED11-4688-97A9-CB78621857DD"
+        },
+        {
+          "name": "Subloom-Probe",
+          "type": 2,
+          "uid": "30889C27-F0E5-408C-ABCA-D03897B21641"
+        },
+        {
+          "name": "Subloom-Verification-20260912",
+          "type": 1,
+          "url": "file:///TEST_LIBRARY/Subloom-Verification-20260912.fcpbundle/"
+        }
+      ],
+      "hasSequence": 1,
+      "host": "Final Cut Pro",
+      "playhead": {
+        "epoch": 0,
+        "flags": 0,
+        "timescale": 0,
+        "value": 0
+      },
+      "reason": "sequenceTimeRangeChanged",
+      "recordedAt": "2026-09-12T08:06:34Z",
+      "selectionAPI": "sequenceTimeRange semantics require host testing",
+      "sequence": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "frameDuration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 25,
+          "value": 1
+        },
+        "name": "Subloom-Original",
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "sequenceRange": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "version": "12.3"
+    },
+    {
+      "sourceFile": "1D46663E-9FCC-4DB3-BD47-04C7358A3277.json",
+      "bundle": "com.apple.FinalCut",
+      "captionWriteAPI": "not exposed by SDK 1.0.3",
+      "clipEnumerationAPI": "not exposed by SDK 1.0.3",
+      "containers": [
+        {
+          "name": "Subloom-Original",
+          "type": 3,
+          "uid": "0D11EC79-ED11-4688-97A9-CB78621857DD"
+        },
+        {
+          "name": "Subloom-Probe",
+          "type": 2,
+          "uid": "30889C27-F0E5-408C-ABCA-D03897B21641"
+        },
+        {
+          "name": "Subloom-Verification-20260912",
+          "type": 1,
+          "url": "file:///TEST_LIBRARY/Subloom-Verification-20260912.fcpbundle/"
+        }
+      ],
+      "hasSequence": 1,
+      "host": "Final Cut Pro",
+      "playhead": {
+        "epoch": 0,
+        "flags": 1,
+        "timescale": 720000,
+        "value": 2592783376
+      },
+      "reason": "playheadTimeChanged",
+      "recordedAt": "2026-09-12T08:06:34Z",
+      "selectionAPI": "sequenceTimeRange semantics require host testing",
+      "sequence": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "frameDuration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 25,
+          "value": 1
+        },
+        "name": "Subloom-Original",
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "sequenceRange": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "version": "12.3"
+    },
+    {
+      "sourceFile": "4A25E7A2-D0C0-4260-9D21-5A99607DAEA7.json",
+      "bundle": "com.apple.FinalCut",
+      "captionWriteAPI": "not exposed by SDK 1.0.3",
+      "clipEnumerationAPI": "not exposed by SDK 1.0.3",
+      "containers": [
+        {
+          "name": "Subloom-Original",
+          "type": 3,
+          "uid": "0D11EC79-ED11-4688-97A9-CB78621857DD"
+        },
+        {
+          "name": "Subloom-Probe",
+          "type": 2,
+          "uid": "30889C27-F0E5-408C-ABCA-D03897B21641"
+        },
+        {
+          "name": "Subloom-Verification-20260912",
+          "type": 1,
+          "url": "file:///TEST_LIBRARY/Subloom-Verification-20260912.fcpbundle/"
+        }
+      ],
+      "hasSequence": 1,
+      "host": "Final Cut Pro",
+      "playhead": {
+        "epoch": 0,
+        "flags": 1,
+        "timescale": 720000,
+        "value": 2595628800
+      },
+      "reason": "playheadTimeChanged",
+      "recordedAt": "2026-09-12T08:07:05Z",
+      "selectionAPI": "sequenceTimeRange semantics require host testing",
+      "sequence": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "frameDuration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 25,
+          "value": 1
+        },
+        "name": "Subloom-Original",
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "sequenceRange": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "version": "12.3"
+    },
+    {
+      "sourceFile": "7C9272B2-5673-4169-8C70-696E9CBBE675.json",
+      "bundle": "com.apple.FinalCut",
+      "captionWriteAPI": "not exposed by SDK 1.0.3",
+      "clipEnumerationAPI": "not exposed by SDK 1.0.3",
+      "containers": [
+        {
+          "name": "Subloom-Original",
+          "type": 3,
+          "uid": "0D11EC79-ED11-4688-97A9-CB78621857DD"
+        },
+        {
+          "name": "Subloom-Probe",
+          "type": 2,
+          "uid": "30889C27-F0E5-408C-ABCA-D03897B21641"
+        },
+        {
+          "name": "Subloom-Verification-20260912",
+          "type": 1,
+          "url": "file:///TEST_LIBRARY/Subloom-Verification-20260912.fcpbundle/"
+        }
+      ],
+      "hasSequence": 1,
+      "host": "Final Cut Pro",
+      "playhead": {
+        "epoch": 0,
+        "flags": 1,
+        "timescale": 720000,
+        "value": 2594880000
+      },
+      "reason": "playheadTimeChanged",
+      "recordedAt": "2026-09-12T08:07:25Z",
+      "selectionAPI": "sequenceTimeRange semantics require host testing",
+      "sequence": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "frameDuration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 25,
+          "value": 1
+        },
+        "name": "Subloom-Original",
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "sequenceRange": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "version": "12.3"
+    },
+    {
+      "sourceFile": "B4571B63-E866-4629-8B1F-BFF29B4C5DB9.json",
+      "bundle": "com.apple.FinalCut",
+      "captionWriteAPI": "not exposed by SDK 1.0.3",
+      "clipEnumerationAPI": "not exposed by SDK 1.0.3",
+      "containers": [
+        {
+          "name": "Subloom-Original",
+          "type": 3,
+          "uid": "0D11EC79-ED11-4688-97A9-CB78621857DD"
+        },
+        {
+          "name": "Subloom-Probe",
+          "type": 2,
+          "uid": "30889C27-F0E5-408C-ABCA-D03897B21641"
+        },
+        {
+          "name": "Subloom-Verification-20260912",
+          "type": 1,
+          "url": "file:///TEST_LIBRARY/Subloom-Verification-20260912.fcpbundle/"
+        }
+      ],
+      "hasSequence": 1,
+      "host": "Final Cut Pro",
+      "playhead": {
+        "epoch": 0,
+        "flags": 1,
+        "timescale": 720000,
+        "value": 2594880000
+      },
+      "reason": "manual",
+      "recordedAt": "2026-09-12T08:07:47Z",
+      "selectionAPI": "sequenceTimeRange semantics require host testing",
+      "sequence": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "frameDuration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 25,
+          "value": 1
+        },
+        "name": "Subloom-Original",
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "sequenceRange": {
+        "duration": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 12800,
+          "value": 111104
+        },
+        "start": {
+          "epoch": 0,
+          "flags": 1,
+          "timescale": 1,
+          "value": 3600
+        }
+      },
+      "version": "12.3"
+    }
+  ]
+}
