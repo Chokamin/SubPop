@@ -308,3 +308,5 @@ download_sources.py白名单国内HF-Mirror优先失败尝试HF官方，用户�
 构建29重建、99项测试、原生布局及三版本编辑测试通过；独立环境四引擎 import 通过，在独立数据目录实际 SenseVoice 识别短片生成4条 Title。最终 PKG 461228394字节，SHA256 44de69b14c6e34c2a43dd7a888b970735ba28aeb60191f7a40356f7146213d5d。pkgbuild 出现 write permission 警告但成功退出；随后 expand-full 解包逐项对比37021个文件的内容/权限/链接全部一致，深度签名验证通过，解包环境 worker 启动通过。新增 scripts/verify_release.py 可重复校验，证据 docs/evidence/subpop-package29.json。
 
 发布目标 Chokamin/SubPop 的 v0.1.0.29 prerelease，未签 Developer ID/未公证，正式更新检查故意排除测试版。未在干净另一台Mac安装验收、未本轮改写FCP项目或替换本机开发安装；不能声称普通用户无阻碍一键安装。
+
+发行完成：https://github.com/Chokamin/SubPop/releases/tag/v0.1.0.29 ，isDraft=false、prerelease=true，标签对应源码4f61030。PKG与sha256附件已上传，GitHub端digest及大小与本机结果完全匹配。

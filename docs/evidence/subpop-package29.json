@@ -13,5 +13,10 @@
     "model": "sensevoice-small",
     "titleCount": 4
   },
-  "cleanMacFCPVerified": false
+  "cleanMacFCPVerified": false,
+  "releaseURL": "https://github.com/Chokamin/SubPop/releases/tag/v0.1.0.29",
+  "prerelease": true,
+  "published": true,
+  "uploadedDigestVerified": true,
+  "releaseCommit": "4f61030cc61a0da11e7f6d4010ed146b2e01de56"
 }
