@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="native/Probe/Assets/SubPop.png" width="88" alt="SubPop 图标" />
-
 # SubPop
 
 **让字幕跟上你的表达。**

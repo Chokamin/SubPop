@@ -1,5 +1,6 @@
-"""Build a relocatable, model-free unsigned preview PKG (Developer ID required for trusted distribution)."""
+"""Build a relocatable, model-free PKG with optional Developer ID signing."""
 from pathlib import Path
+import argparse
 import hashlib
 import json
 import plistlib
@@ -14,7 +15,9 @@ DIST=ROOT/'dist'
 
 def run(*args):subprocess.run([str(a) for a in args],check=True)
 
-def build():
+def build(application_identity=None, installer_identity=None):
+    if bool(application_identity) != bool(installer_identity):
+        raise ValueError("Both application and installer identities are required")
     if STAGE.exists():shutil.rmtree(STAGE)
     APP.parent.mkdir(parents=True);DIST.mkdir(exist_ok=True)
     shutil.copytree(ROOT/'.subloom/build/SubPop Probe.app',APP,symlinks=True)
@@ -39,22 +42,34 @@ def build():
         p=bundle/'Contents/Info.plist';info=plistlib.loads(p.read_bytes());info.pop('SubPopWorkspace',None)
         info.update(SubPopPackagedRuntime=True,LSMinimumSystemVersion='15.0')
         p.write_bytes(plistlib.dumps(info))
-    run('codesign','--force','--sign','-','--entitlements',ROOT/'.subloom/build/probe.entitlements',ext)
-    run('codesign','--force','--sign','-',APP)
+    if application_identity:
+        from sign_release import sign
+        sign(APP,application_identity,ROOT/'.subloom/build/probe.entitlements')
+    else:
+        run('codesign','--force','--sign','-','--entitlements',ROOT/'.subloom/build/probe.entitlements',ext)
+        run('codesign','--force','--sign','-',APP)
     run('codesign','--verify','--deep','--strict',APP)
     component=STAGE/'SubPop-component.pkg'
     run('pkgbuild','--root',STAGE/'payload','--identifier','com.chokamin.SubPop.installer','--version',version,'--install-location','/','--ownership','recommended',component)
     resources=STAGE/'resources';resources.mkdir()
     welcome=resources/'Welcome.html'
     welcome.write_text('<html><meta charset="utf-8"><body><h1>SubPop 公开测试版</h1><p>安装 FCP 扩展和独立本机识别环境。适用于 Apple Silicon、macOS 15 或更高版本。FCP 集成当前实测版本为 12.3。</p><p>安装后打开应用程序中的 SubPop，再从 Final Cut Pro 扩展菜单打开。首次允许默认任务文件夹，进入模型管理下载所需模型。</p><p>此包尚未完成 Developer ID 签名及 Apple 公证，仅供测试使用。安装不包含模型、测试视频、词库或历史字幕。</p></body></html>')
+    if application_identity:
+        welcome.write_text(welcome.read_text().replace('此包尚未完成 Developer ID 签名及 Apple 公证，仅供测试使用。','此包使用 Developer ID 签名。Apple 公证结果请以对应 Release 说明为准，仅供测试使用。'))
     xml=STAGE/'distribution.xml'
     xml.write_text(f'''<?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2"><title>SubPop</title><welcome file="Welcome.html"/><options customize="never" require-scripts="false" hostArchitectures="arm64"/><volume-check><allowed-os-versions><os-version min="15.0"/></allowed-os-versions></volume-check><choices-outline><line choice="default"/></choices-outline><choice id="default" visible="false"><pkg-ref id="com.chokamin.SubPop.installer"/></choice><pkg-ref id="com.chokamin.SubPop.installer" version="{version}">SubPop-component.pkg</pkg-ref></installer-gui-script>''')
-    output=DIST/f'SubPop-{version}-arm64-test.pkg'
-    run('productbuild','--distribution',xml,'--resources',resources,'--package-path',STAGE,output)
+    flavor='signed-candidate' if application_identity else 'test'
+    output=DIST/f'SubPop-{version}-arm64-{flavor}.pkg'
+    run('productbuild','--distribution',xml,'--resources',resources,'--package-path',STAGE,*(['--sign',installer_identity,'--timestamp'] if installer_identity else []),output)
     with output.open('rb') as stream:
         digest=hashlib.file_digest(stream,'sha256').hexdigest()
     (DIST/(output.name+'.sha256')).write_text(digest+'  '+output.name+'\n')
     print(json.dumps(dict(package=str(output),bytes=output.stat().st_size,sha256=digest,notarized=False)))
 
-if __name__=='__main__':build()
+if __name__=='__main__':
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--application-identity')
+    parser.add_argument('--installer-identity')
+    args=parser.parse_args()
+    build(args.application_identity,args.installer_identity)

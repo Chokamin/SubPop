@@ -25,6 +25,7 @@ def manifest(base):
     return result
 
 assert actual.is_dir(), 'Expand final PKG with pkgutil --expand-full first'
+assert sorted(p.name for p in actual.parent.iterdir()) == ['SubPop.app'], 'Unexpected installer payload'
 expected, packaged = manifest(source), manifest(actual)
 assert expected == packaged, 'Expanded payload differs from staging'
 for suffix in ('', 'Contents/PlugIns/SubPopProbe.appex'):
@@ -34,5 +35,6 @@ for suffix in ('', 'Contents/PlugIns/SubPopProbe.appex'):
 assert not (actual / 'Contents/Resources/Runtime/.subloom/models').exists()
 assert not (actual / 'Contents/Resources/Runtime/.subloom/verification').exists()
 subprocess.run(['codesign', '--verify', '--deep', '--strict', str(actual)], check=True)
+signature = subprocess.run(['codesign', '-dvv', str(actual)], capture_output=True, text=True, check=True).stderr
 print(json.dumps({'filesVerified': len(packaged), 'payloadMatches': True, 'externalSymlinks': False,
-                  'bundledModels': False, 'bundledUserJobs': False, 'signature': 'ad-hoc'}))
+                  'bundledModels': False, 'bundledUserJobs': False, 'signature': 'Developer ID' if 'Authority=Developer ID Application:' in signature else 'ad-hoc'}))
