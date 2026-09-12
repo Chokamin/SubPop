@@ -1,0 +1,55 @@
+{
+  "sampleRate": 16000,
+  "hostExport": "FCP WAV 48kHz stereo, downmixed/resampled by ffmpeg for comparison",
+  "cases": [
+    {
+      "name": "mix-split-gain",
+      "sampleCount": 138880,
+      "rendererPCM": "1331818456a5b1a2220ae26da39ccc71d146271199b9df96293d4b9af6fa6ea8",
+      "hostWAVSHA256": "6fba8b2cdd9d26334af9a4d26c7f56479457b3563294915a7274f73a1ef5868a",
+      "halves": [
+        {
+          "startSample": 0,
+          "hostRelativeGain": 0.5011870265007019,
+          "rendererRMS": 0.06486746668815613,
+          "hostRMS": 0.045860450714826584,
+          "correlationAfterOneSampleAlignment": 0.9998921918132364,
+          "hostToRendererGainAfterAlignment": 0.7069106698036194
+        },
+        {
+          "startSample": 64000,
+          "hostRelativeGain": 0.9999992251396179,
+          "rendererRMS": 0.12173167616128922,
+          "hostRMS": 0.0860319584608078,
+          "correlationAfterOneSampleAlignment": 0.9996660260407384,
+          "hostToRendererGainAfterAlignment": 0.7064982652664185
+        }
+      ]
+    },
+    {
+      "name": "mix-split-muted",
+      "sampleCount": 138880,
+      "rendererPCM": "c9ae46c92b246e786c6b185d229d8f68b5315a60b6416e6c003f71ea08df69e1",
+      "hostWAVSHA256": "15209cf39984bf071acc8e56900038bc18adaa74247e506d7283eb17e893fde6",
+      "halves": [
+        {
+          "startSample": 0,
+          "hostRelativeGain": -2.9194777084740053e-07,
+          "rendererRMS": 0.0,
+          "hostRMS": 1.7052501789294183e-05,
+          "correlationAfterOneSampleAlignment": null,
+          "hostToRendererGainAfterAlignment": null
+        },
+        {
+          "startSample": 64000,
+          "hostRelativeGain": 0.9999983310699463,
+          "rendererRMS": 0.12173167616128922,
+          "hostRMS": 0.086031973361969,
+          "correlationAfterOneSampleAlignment": 0.9996660036601984,
+          "hostToRendererGainAfterAlignment": 0.7064984440803528
+        }
+      ]
+    }
+  ],
+  "interpretation": "Timeline position, static -6dB attenuation and first-half silence match. Host/reference has one-sample resampling delay and approx -3dB mono/stereo gain difference; not byte-identical final FCP mix."
+}

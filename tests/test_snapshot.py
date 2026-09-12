@@ -17,7 +17,9 @@ class SnapshotTests(unittest.TestCase):
         self.assertTrue(all(c.get('enabled')=='0' for c in clips))
         for name in ('audio-split-4s','audio-leading-gap'):
             path=fixtures/f'fcp-12.3-{name}.fcpxml'
-            with self.assertRaises(ValueError):prepare(path.read_bytes())
+            normalized,existing=prepare(path.read_bytes())
+            self.assertEqual(len(existing),3)
+            self.assertFalse(ET.fromstring(normalized).findall('.//title'))
             with self.assertRaises(ValueError):inspect(path)
         gap=ET.parse(fixtures/'fcp-12.3-audio-leading-gap.fcpxml').find('.//spine/gap')
         self.assertEqual(seconds(gap.get('duration')),4)

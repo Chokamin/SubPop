@@ -25,3 +25,15 @@ class WorkerTests(unittest.TestCase):
     def test_result_cannot_read_arbitrary_directory(self):
         with tempfile.TemporaryDirectory() as temp:
             with self.assertRaises(ValueError):publish_result(Path(temp),Path(temp))
+
+    def test_silent_job_response_finishes_without_payloads(self):
+        from unittest.mock import patch
+        import probes.worker as worker
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp).resolve();job=root/'.subloom/verification/jobs'/str(uuid.uuid4());job.mkdir(parents=True)
+            request=root/str(uuid.uuid4());request.mkdir()
+            (job/'status.json').write_text(json.dumps({'projectUID':UID,'status':'blocked-no-audio','snapshotSHA256':'snapshot'}))
+            with patch.object(worker,'ROOT',root):publish_result(request,job)
+            result=json.loads((request/'response.json').read_text())
+            self.assertEqual(result['status'],'blocked-no-audio')
+            self.assertNotIn('payloads',result)

@@ -7,15 +7,15 @@ import subprocess
 import hashlib
 from fractions import Fraction
 try:
-    from .readback import inspect
+    from .timeline_audio import inspect
 except ImportError:
-    from readback import inspect
+    from timeline_audio import inspect
 
 
 def run(xml, asr, aligner, output, pcm_path=None, device="cpu", verbose=True):
     snapshot = inspect(xml)
     expected = Path(__file__).resolve().parents[1] / '.subloom/verification/mandarin.mp4'
-    if Path(snapshot['media']).resolve() != expected or snapshot['project'] != 'Subloom-Original':
+    if any(s['media'] and Path(s['media']).resolve() != expected for s in snapshot['segments']) or snapshot['project'] != 'Subloom-Original':
         raise ValueError('Only the isolated fixture is allowed')
     for key in ('HF_HUB_OFFLINE', 'TRANSFORMERS_OFFLINE', 'HF_HUB_DISABLE_TELEMETRY'):
         os.environ[key] = '1'
@@ -32,9 +32,7 @@ def run(xml, asr, aligner, output, pcm_path=None, device="cpu", verbose=True):
         if len(pcm) != Fraction(snapshot['duration'])*16000*4:
             raise ValueError('PCM length must cover the complete fixture at 16kHz float32 mono')
     else:
-        pcm = subprocess.run(['ffmpeg', '-v', 'error', '-ss', str(float(Fraction(snapshot['source_start']))),
-            '-i', snapshot['media'], '-t', str(float(Fraction(snapshot['duration']))),
-            '-vn', '-ac', '1', '-ar', '16000', '-f', 'f32le', 'pipe:1'], check=True, capture_output=True).stdout
+        raise ValueError('Timeline recognition requires rendered PCM; source-file fallback removed')
     samples = np.frombuffer(pcm, dtype='<f4').copy()
     if not np.isfinite(samples).all():
         raise ValueError('Non-finite PCM samples')

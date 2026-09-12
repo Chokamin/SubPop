@@ -39,6 +39,10 @@ def publish_result(directory, job):
     if job.parent!=ROOT/'.subloom/verification/jobs' or not valid_id(job.name):raise ValueError('Invalid result directory')
     status=json.loads((job/'status.json').read_text())
     if status['projectUID']!=UID:raise ValueError('Wrong project')
+    if status['status']=='blocked-no-audio':
+        save(directory/'response.json',{'requestID':directory.name,'status':'blocked-no-audio',
+             'stage':'silent','projectUID':UID,'jobID':job.name,'snapshotSHA256':status['snapshotSHA256']})
+        return
     if status['status']=='blocked-existing-titles':
         save(directory/'response.json',{'requestID':directory.name,'status':'blocked-existing-titles',
              'stage':status['stage'],'projectUID':UID,'jobID':job.name,'collision':status['collision'],
@@ -59,7 +63,7 @@ def serve():
     BRIDGE.mkdir(parents=True,exist_ok=True);os.chmod(BRIDGE,0o700)
     lock=(BRIDGE/'worker.lock').open('w')
     fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-    active=None;log=None;request=None;offset=0;buffer='';ready=None;started=0
+    active=None;log=None;request=None;offset=0;buffer='';ready=None;started=0;job_error=None
     try:
         while True:
             save(BRIDGE/'service.json',{'protocol':1,'pid':os.getpid(),'heartbeat':time.time(),
@@ -76,6 +80,7 @@ def serve():
                     if 'stage' in event:
                         save(request/'response.json',{'requestID':request.name,'status':'running','stage':event['stage']})
                     if 'ready' in event:ready=event['ready']
+                    if isinstance(event.get('error'),str):job_error=event['error'][:1000]
                 if time.monotonic()-started>600 and code is None:
                     active.terminate()
                     try:active.wait(timeout=5)
@@ -83,7 +88,7 @@ def serve():
                     code=-1
                 if code is not None:
                     try:
-                        if code!=0 or ready is None:raise ValueError('Recognition failed; see this request worker.log')
+                        if code!=0 or ready is None:raise ValueError(job_error or 'Recognition failed; see this request worker.log')
                         publish_result(request,ready)
                     except Exception as error:save(request/'response.json',{'requestID':request.name,'status':'failed','stage':'worker','error':str(error)})
                     log.close();active=None
@@ -100,7 +105,7 @@ def serve():
                         continue
                     try:
                         xml=request_input(candidate)
-                        request=candidate;offset=0;buffer='';ready=None
+                        request=candidate;offset=0;buffer='';ready=None;job_error=None
                         save(response,{'requestID':candidate.name,'status':'running','stage':'starting'})
                         log=(candidate/'worker.log').open('w')
                         active=subprocess.Popen([sys.executable,'-B','-m','probes.run_job','--xml',str(xml)],cwd=ROOT,

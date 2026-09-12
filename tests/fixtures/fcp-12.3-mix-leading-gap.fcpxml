@@ -1,0 +1,91 @@
+<?xml version='1.0' encoding='utf-8'?>
+<fcpxml version="1.14">
+    <resources>
+        <format id="r1" frameDuration="1/25s" width="640" height="360" colorSpace="1-1-1 (Rec. 709)" />
+        <effect id="r2" name="基本字幕" uid=".../Titles.localized/Bumper:Opener.localized/Basic Title.localized/Basic Title.moti" />
+        <asset id="r3" name="mandarin" uid="EB757423CC373D1C25ABA22F3E30F499" start="0s" duration="8680/1000s" hasVideo="1" format="r4" hasAudio="1" videoSources="1" audioSources="1" audioChannels="1" audioRate="16000">
+            <media-rep kind="original-media" sig="EB757423CC373D1C25ABA22F3E30F499" src="file:///TEST_MEDIA/mandarin.mp4">
+                </media-rep>
+            </asset>
+        <format id="r4" frameDuration="512/12800s" width="640" height="360" colorSpace="6-1-6 (Rec. 601 (NTSC))" />
+    </resources>
+    <library location="file:///TEST_LIBRARY/Subloom-Verification-20260912.fcpbundle/">
+        <event name="Subloom-Probe" uid="30889C27-F0E5-408C-ABCA-D03897B21641">
+            <project name="Subloom-Original" uid="0D11EC79-ED11-4688-97A9-CB78621857DD" modDate="2026-09-12 18:19:09 +0800">
+                <sequence format="r1" duration="111104/12800s" tcStart="3600s" tcFormat="NDF" audioLayout="stereo" audioRate="48k">
+                    <spine>
+                        <gap name="空隙" offset="3600s" start="3600s" duration="4s">
+                            <title ref="r2" lane="1" offset="3600s" name="大家好，欢迎使用中文字幕工具。" duration="80/25s">
+                                <param name="展平" key="9999/999166631/999166633/2/351" value="1" />
+                                <param name="对齐" key="9999/999166631/999166633/2/354/999169573/401" value="1 (居中)" />
+                                <text>
+                                    <text-style ref="ts1">大家好，欢迎使用中文字幕工具。</text-style>
+                                </text>
+                                <text-style-def id="ts1">
+                                    <text-style font="Helvetica" fontSize="28" fontFace="Regular" fontColor="1 1 1 1" alignment="center" />
+                                </text-style-def>
+                            </title>
+                            <title ref="r2" lane="1" offset="90084/25s" name="今天我们测试语音识别，" duration="56/25s">
+                                <param name="展平" key="9999/999166631/999166633/2/351" value="1" />
+                                <param name="对齐" key="9999/999166631/999166633/2/354/999169573/401" value="1 (居中)" />
+                                <text>
+                                    <text-style ref="ts2">今天我们测试语音识别，</text-style>
+                                </text>
+                                <text-style-def id="ts2">
+                                    <text-style font="Helvetica" fontSize="28" fontFace="Regular" fontColor="1 1 1 1" alignment="center" />
+                                </text-style-def>
+                            </title>
+                        </gap>
+                        <asset-clip ref="r3" offset="3604s" name="mandarin" start="4s" duration="59904/12800s" tcFormat="NDF" audioRole="dialogue">
+                            <caption lane="1" offset="4s" name="保留 3.5% 和 USB-C" start="3600s" duration="30/25s" role="SRT?captionFormat=SRT.cmn-Hans">
+                                <text placement="bottom">
+                                    <text-style ref="ts3">保留 3.5% 和 USB-C</text-style>
+                                </text>
+                                <text-style-def id="ts3">
+                                    <text-style font=".AppleSystemUIFont" fontSize="13" fontFace="Regular" fontColor="1 1 1 1" backgroundColor="0 0 0 1" />
+                                </text-style-def>
+                            </caption>
+                            <caption lane="1" offset="1752/300s" name="并把生成的字幕导入达芬奇。" start="3600s" duration="68/25s" role="SRT 2?captionFormat=SRT.cmn-Hans">
+                                <text placement="bottom">
+                                    <text-style ref="ts4">并把生成的字幕导入达芬奇。</text-style>
+                                </text>
+                                <text-style-def id="ts4">
+                                    <text-style font=".AppleSystemUIFont" fontSize="13" fontFace="Regular" fontColor="1 1 1 1" backgroundColor="0 0 0 1" />
+                                </text-style-def>
+                            </caption>
+                            <title ref="r2" lane="1" offset="146/25s" name="并把生成的字幕导入达芬奇。" duration="68/25s">
+                                <param name="展平" key="9999/999166631/999166633/2/351" value="1" />
+                                <param name="对齐" key="9999/999166631/999166633/2/354/999169573/401" value="1 (居中)" />
+                                <text>
+                                    <text-style ref="ts5">并把生成的字幕导入达芬奇。</text-style>
+                                </text>
+                                <text-style-def id="ts5">
+                                    <text-style font="Helvetica" fontSize="28" fontFace="Regular" fontColor="1 1 1 1" alignment="center" />
+                                </text-style-def>
+                            </title>
+                        </asset-clip>
+                    </spine>
+                </sequence>
+            </project>
+        </event>
+        <smart-collection name="项目" match="all">
+            <match-clip rule="is" type="project" />
+        </smart-collection>
+        <smart-collection name="所有视频" match="any">
+            <match-media rule="is" type="videoOnly" />
+            <match-media rule="is" type="videoWithAudio" />
+        </smart-collection>
+        <smart-collection name="仅音频" match="all">
+            <match-media rule="is" type="audioOnly" />
+        </smart-collection>
+        <smart-collection name="静止图像" match="all">
+            <match-media rule="is" type="stills" />
+        </smart-collection>
+        <smart-collection name="个人收藏" match="all">
+            <match-ratings value="favorites" />
+        </smart-collection>
+        <smart-collection name="缺少分析" match="all">
+            <match-analysis-type rule="isMissing" value="any" />
+        </smart-collection>
+    </library>
+</fcpxml>

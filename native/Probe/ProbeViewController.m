@@ -67,7 +67,7 @@ static NSDictionary *Time(CMTime t) {
     SubPopDropView *view = [[SubPopDropView alloc] initWithFrame:NSMakeRect(0,0,620,430)];
     view.controller = self;
     [view registerForDraggedTypes:@[@"com.apple.finalcutpro.xml.v1-14", @"com.apple.finalcutpro.xml.v1-13", @"com.apple.finalcutpro.xml.v1-12", @"com.apple.finalcutpro.xml.v1-11", @"com.apple.finalcutpro.xml.v1-10", @"com.apple.finalcutpro.xml", NSPasteboardTypeFileURL]];
-    NSTextField *label = [NSTextField wrappingLabelWithString:@"SubPop 接入探针 · 隔离项目验证\n每次识别前，把浏览器中的当前测试项目重新拖到此处。"];
+    NSTextField *label = [NSTextField wrappingLabelWithString:@"SubPop 整段识别 · 连续单声道片段、空隙、静音、恒定音量\n每次识别前，将当前测试项目拖到此处；不跟随临时独奏监听。"];
     label.frame = NSMakeRect(16,365,588,52); label.autoresizingMask = NSViewWidthSizable|NSViewMinYMargin;
     [view addSubview:label];
     NSButton *refresh = [NSButton buttonWithTitle:@"记录当前状态" target:self action:@selector(refresh:)];
@@ -189,6 +189,10 @@ static NSDictionary *Time(CMTime t) {
         if (valid && payloads.count==3) { self.titlePayloads=payloads; self.resultDate=NSDate.date; }
         [self record:@{@"reason":@"worker-result",@"status":self.titlePayloads ? @"ready-to-drag" : @"result-rejected",@"requestID":self.requestID,@"jobID":response[@"jobID"] ?: @""}];
         self.requestID=nil; self.generateButton.enabled=YES;
+    } else if ([response[@"status"] isEqual:@"blocked-no-audio"]) {
+        self.titlePayloads=nil;
+        [self record:@{@"reason":@"worker-result",@"status":@"blocked-no-audio",@"message":@"整段音频为静音，未启动识别或生成字幕"}];
+        self.requestID=nil; self.generateButton.enabled=YES;
     } else if ([response[@"status"] isEqual:@"blocked-existing-titles"]) {
         self.titlePayloads=nil;
         [self record:@{@"reason":@"worker-result",@"status":@"blocked-existing-titles",@"stage":response[@"stage"] ?: @"conflict",@"collision":response[@"collision"] ?: @{},@"requestID":self.requestID,@"message":@"已有相同或重叠Title，未生成可拖出内容；保留现有编辑"}];
@@ -215,7 +219,7 @@ static NSDictionary *Time(CMTime t) {
     NSDraggingItem *drag=[[NSDraggingItem alloc] initWithPasteboardWriter:item];
     NSImage *image=[[NSImage alloc] initWithSize:NSMakeSize(270,36)];
     [image lockFocus]; [[NSColor controlBackgroundColor] setFill]; NSRectFill(NSMakeRect(0,0,270,36));
-    [@"SubPop · 3 Titles · 8.68s" drawAtPoint:NSMakePoint(8,10) withAttributes:@{NSForegroundColorAttributeName:NSColor.labelColor}]; [image unlockFocus];
+    [@"SubPop · 整段字幕" drawAtPoint:NSMakePoint(8,10) withAttributes:@{NSForegroundColorAttributeName:NSColor.labelColor}]; [image unlockFocus];
     NSPoint point=[view convertPoint:event.locationInWindow fromView:nil];
     [drag setDraggingFrame:NSMakeRect(point.x,point.y,270,36) contents:image];
     [view beginDraggingSessionWithItems:@[drag] event:event source:self];
