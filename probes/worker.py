@@ -38,7 +38,13 @@ def publish_result(directory, job):
     job=Path(job).resolve()
     if job.parent!=ROOT/'.subloom/verification/jobs' or not valid_id(job.name):raise ValueError('Invalid result directory')
     status=json.loads((job/'status.json').read_text())
-    if status['status']!='ready' or status['projectUID']!=UID:raise ValueError('Result not ready')
+    if status['projectUID']!=UID:raise ValueError('Wrong project')
+    if status['status']=='blocked-existing-titles':
+        save(directory/'response.json',{'requestID':directory.name,'status':'blocked-existing-titles',
+             'stage':status['stage'],'projectUID':UID,'jobID':job.name,'collision':status['collision'],
+             'snapshotSHA256':status['snapshotSHA256']})
+        return
+    if status['status']!='ready':raise ValueError('Result not ready')
     titles={}
     for version in ('1.12','1.13','1.14'):
         name=f'TitleProbe-{version}.fcpxml';data=(job/name).read_bytes()

@@ -21,6 +21,11 @@ static NSDictionary *Time(CMTime t) {
 @property BOOL observed;
 @property NSDictionary<NSString *, NSData *> *titlePayloads;
 @property BOOL resultLoadAttempted;
+@property NSURL *freshDropURL;
+@property NSDate *freshDropDate;
+@property NSDate *resultDate;
+@property NSUInteger dropGeneration;
+@property NSUInteger requestGeneration;
 @property NSURL *bridgeURL;
 @property BOOL bridgeScoped;
 @property NSTimer *bridgeTimer;
@@ -38,7 +43,7 @@ static NSDictionary *Time(CMTime t) {
 @implementation SubPopTitleDragView
 - (void)drawRect:(NSRect)rect {
     [[NSColor controlBackgroundColor] setFill]; NSRectFill(self.bounds);
-    [@"拖出三条测试 Title → 原项目起点上方" drawAtPoint:NSMakePoint(12,10) withAttributes:@{NSForegroundColorAttributeName:NSColor.labelColor,NSFontAttributeName:[NSFont systemFontOfSize:14]}];
+    [@"拖出本次新 Title → 原项目起点上方" drawAtPoint:NSMakePoint(12,10) withAttributes:@{NSForegroundColorAttributeName:NSColor.labelColor,NSFontAttributeName:[NSFont systemFontOfSize:14]}];
 }
 - (void)mouseDown:(NSEvent *)event { [self.controller beginTitleDrag:event fromView:self]; }
 @end
@@ -62,7 +67,7 @@ static NSDictionary *Time(CMTime t) {
     SubPopDropView *view = [[SubPopDropView alloc] initWithFrame:NSMakeRect(0,0,620,430)];
     view.controller = self;
     [view registerForDraggedTypes:@[@"com.apple.finalcutpro.xml.v1-14", @"com.apple.finalcutpro.xml.v1-13", @"com.apple.finalcutpro.xml.v1-12", @"com.apple.finalcutpro.xml.v1-11", @"com.apple.finalcutpro.xml.v1-10", @"com.apple.finalcutpro.xml", NSPasteboardTypeFileURL]];
-    NSTextField *label = [NSTextField wrappingLabelWithString:@"SubPop 接入探针 · 隔离项目验证\n将浏览器中的测试项目拖到此面板，检查交换数据。"];
+    NSTextField *label = [NSTextField wrappingLabelWithString:@"SubPop 接入探针 · 隔离项目验证\n每次识别前，把浏览器中的当前测试项目重新拖到此处。"];
     label.frame = NSMakeRect(16,365,588,52); label.autoresizingMask = NSViewWidthSizable|NSViewMinYMargin;
     [view addSubview:label];
     NSButton *refresh = [NSButton buttonWithTitle:@"记录当前状态" target:self action:@selector(refresh:)];
@@ -77,13 +82,11 @@ static NSDictionary *Time(CMTime t) {
     SubPopTitleDragView *drag = [[SubPopTitleDragView alloc] initWithFrame:NSMakeRect(184,267,420,42)];
     drag.controller=self; drag.autoresizingMask=NSViewWidthSizable|NSViewMinYMargin;
     [drag setAccessibilityElement:YES]; [drag setAccessibilityRole:NSAccessibilityGroupRole];
-    [drag setAccessibilityLabel:@"拖出三条测试 Title 到原项目起点上方"];
+    [drag setAccessibilityLabel:@"拖出本次新 Title 到原项目起点上方"];
     [view addSubview:drag];
-    NSButton *load=[NSButton buttonWithTitle:@"载入识别结果" target:self action:@selector(loadResult:)];
-    load.frame=NSMakeRect(16,272,160,32); load.autoresizingMask=NSViewMinYMargin; [view addSubview:load];
     NSButton *connect=[NSButton buttonWithTitle:@"连接本机识别服务" target:self action:@selector(connectWorker:)];
     connect.frame=NSMakeRect(16,218,220,32); connect.autoresizingMask=NSViewMinYMargin; [view addSubview:connect];
-    self.generateButton=[NSButton buttonWithTitle:@"识别最近项目快照" target:self action:@selector(startWorkerJob:)];
+    self.generateButton=[NSButton buttonWithTitle:@"识别刚拖入的项目" target:self action:@selector(startWorkerJob:)];
     self.generateButton.frame=NSMakeRect(250,218,350,32); self.generateButton.autoresizingMask=NSViewMinYMargin;
     [view addSubview:self.generateButton];
     NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(16,16,588,192)];
@@ -135,12 +138,11 @@ static NSDictionary *Time(CMTime t) {
     if (!self.bridgeURL || ![self workerAvailable] || ![self isolatedProjectActive]) {
         [self record:@{@"reason":@"worker-submit",@"status":@"connect-service-and-open-isolated-project-first"}]; return;
     }
-    NSURL *latest=nil; NSDate *latestDate=nil;
-    for (NSURL *url in [[NSFileManager defaultManager] contentsOfDirectoryAtURL:[self evidenceDirectory] includingPropertiesForKeys:@[NSURLContentModificationDateKey] options:0 error:nil]) {
-        if (![url.lastPathComponent hasPrefix:@"drop-"] || ![url.pathExtension isEqual:@"fcpxml"]) continue;
-        NSDate *date=nil; [url getResourceValue:&date forKey:NSURLContentModificationDateKey error:nil];
-        if (!latest || [date compare:latestDate]==NSOrderedDescending) { latest=url; latestDate=date; }
+    if (!self.freshDropURL || !self.freshDropDate || -self.freshDropDate.timeIntervalSinceNow>300) {
+        self.titlePayloads=nil;
+        [self record:@{@"reason":@"worker-submit",@"status":@"fresh-project-drop-required",@"message":@"请重新拖入当前项目；旧快照不能重复识别"}]; return;
     }
+    NSURL *latest=self.freshDropURL; NSDate *latestDate=self.freshDropDate;
     NSData *original=[NSData dataWithContentsOfURL:latest];
     NSXMLDocument *xml=original ? [[NSXMLDocument alloc] initWithData:original options:NSXMLNodeLoadExternalEntitiesNever error:nil] : nil;
     NSArray *projects=[xml nodesForXPath:@"/fcpxml/project | /fcpxml/library/event/project" error:nil];
@@ -158,9 +160,10 @@ static NSDictionary *Time(CMTime t) {
     NSDictionary *manifest=@{@"requestID":request,@"projectUID":@"0D11EC79-ED11-4688-97A9-CB78621857DD",@"xmlSHA256":sha};
     if (ok) ok=[[NSJSONSerialization dataWithJSONObject:manifest options:0 error:nil] writeToURL:[directory URLByAppendingPathComponent:@"request.json"] options:NSDataWritingAtomic error:&error];
     if (!ok) { [self record:@{@"reason":@"worker-submit",@"status":@"write-failed",@"error":error.localizedDescription ?: @""}]; return; }
+    self.requestGeneration=self.dropGeneration; self.freshDropURL=nil;
     self.requestID=request; self.requestSHA=sha; self.lastJobStage=nil; self.generateButton.enabled=NO;
     self.resultLoadAttempted=YES; self.titlePayloads=nil;
-    [self record:@{@"reason":@"worker-submit",@"status":@"submitted",@"requestID":request,@"snapshotDate":latestDate.description ?: @"",@"source":@"last dropped XML snapshot; not current timeline freshness"}];
+    [self record:@{@"reason":@"worker-submit",@"status":@"submitted",@"requestID":request,@"snapshotDate":latestDate.description ?: @"",@"source":@"new drop in current session; edits after capture still require another drop"}];
 }
 - (void)pollWorker:(NSTimer *)timer {
     if (!self.requestID) return;
@@ -173,7 +176,7 @@ static NSDictionary *Time(CMTime t) {
     if (![response[@"requestID"] isEqual:self.requestID]) return;
     if ([response[@"status"] isEqual:@"ready"]) {
         NSMutableDictionary *payloads=[NSMutableDictionary new];
-        BOOL valid=[self isolatedProjectActive] && [response[@"snapshotSHA256"] isEqual:self.requestSHA] &&
+        BOOL valid=self.requestGeneration==self.dropGeneration && [self isolatedProjectActive] && [response[@"snapshotSHA256"] isEqual:self.requestSHA] &&
             [response[@"projectUID"] isEqual:@"0D11EC79-ED11-4688-97A9-CB78621857DD"] &&
             [response[@"payloads"] isKindOfClass:NSDictionary.class] && [response[@"outputs"] isKindOfClass:NSDictionary.class];
         if (valid) for (NSString *version in @[@"1.12",@"1.13",@"1.14"]) {
@@ -183,8 +186,12 @@ static NSDictionary *Time(CMTime t) {
             if (![[self sha256:data] isEqual:response[@"outputs"][name]]) { valid=NO; break; }
             payloads[version]=data;
         }
-        if (valid && payloads.count==3) self.titlePayloads=payloads;
+        if (valid && payloads.count==3) { self.titlePayloads=payloads; self.resultDate=NSDate.date; }
         [self record:@{@"reason":@"worker-result",@"status":self.titlePayloads ? @"ready-to-drag" : @"result-rejected",@"requestID":self.requestID,@"jobID":response[@"jobID"] ?: @""}];
+        self.requestID=nil; self.generateButton.enabled=YES;
+    } else if ([response[@"status"] isEqual:@"blocked-existing-titles"]) {
+        self.titlePayloads=nil;
+        [self record:@{@"reason":@"worker-result",@"status":@"blocked-existing-titles",@"stage":response[@"stage"] ?: @"conflict",@"collision":response[@"collision"] ?: @{},@"requestID":self.requestID,@"message":@"已有相同或重叠Title，未生成可拖出内容；保留现有编辑"}];
         self.requestID=nil; self.generateButton.enabled=YES;
     } else if ([response[@"status"] isEqual:@"failed"] || ![self workerAvailable]) {
         [self record:@{@"reason":@"worker-result",@"status":@"failed",@"error":response[@"error"] ?: @"service-disconnected"}];
@@ -194,40 +201,8 @@ static NSDictionary *Time(CMTime t) {
         [self record:@{@"reason":@"worker-progress",@"status":response[@"stage"] ?: @"running",@"requestID":self.requestID}];
     }
 }
-- (void)loadResult:(id)sender {
-    NSOpenPanel *panel=[NSOpenPanel openPanel];
-    panel.canChooseDirectories=YES; panel.canChooseFiles=NO; panel.allowsMultipleSelection=NO;
-    panel.message=@"选择 SubPop 完成的识别任务文件夹";
-    [panel beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse response) {
-        if (response!=NSModalResponseOK) return;
-        self.resultLoadAttempted=YES; self.titlePayloads=nil;
-        NSURL *folder=panel.URL; BOOL access=[folder startAccessingSecurityScopedResource];
-        NSData *statusData=[NSData dataWithContentsOfURL:[folder URLByAppendingPathComponent:@"status.json"]];
-        NSDictionary *status=statusData ? [NSJSONSerialization JSONObjectWithData:statusData options:0 error:nil] : nil;
-        NSMutableDictionary *payloads=[NSMutableDictionary new];
-        BOOL valid=[status isKindOfClass:NSDictionary.class] && [status[@"status"] isEqual:@"ready"] &&
-            [status[@"projectUID"] isEqual:@"0D11EC79-ED11-4688-97A9-CB78621857DD"] &&
-            [status[@"outputs"] isKindOfClass:NSDictionary.class];
-        if (valid) for (NSString *version in @[@"1.12",@"1.13",@"1.14"]) {
-            NSString *name=[NSString stringWithFormat:@"TitleProbe-%@.fcpxml",version];
-            NSData *data=[NSData dataWithContentsOfURL:[folder URLByAppendingPathComponent:name]];
-            if (!data.length || data.length>1024*1024) { valid=NO; break; }
-            unsigned char digest[CC_SHA256_DIGEST_LENGTH]; CC_SHA256(data.bytes,(CC_LONG)data.length,digest);
-            NSMutableString *sha=[NSMutableString new]; for (int i=0;i<CC_SHA256_DIGEST_LENGTH;i++) [sha appendFormat:@"%02x",digest[i]];
-            if (![sha isEqual:status[@"outputs"][name]]) { valid=NO; break; }
-            NSXMLDocument *xml=[[NSXMLDocument alloc] initWithData:data options:NSXMLNodeLoadExternalEntitiesNever error:nil];
-            if (![[xml.rootElement attributeForName:@"version"].stringValue isEqual:version] ||
-                [xml nodesForXPath:@"/fcpxml/clip" error:nil].count!=1 ||
-                [xml nodesForXPath:@"//project | //library | //event | //asset | //media-rep" error:nil].count) { valid=NO; break; }
-            payloads[version]=data;
-        }
-        if (access) [folder stopAccessingSecurityScopedResource];
-        if (valid && payloads.count==3) self.titlePayloads=payloads;
-        [self record:@{@"folder":folder.lastPathComponent ?: @"",@"statusBytes":@(statusData.length),@"loadedVersions":@(payloads.count),@"reason":@"load-recognition-result",@"status":self.titlePayloads ? @"ready-to-drag" : @"invalid-result",@"jobID":valid ? (status[@"jobID"] ?: @"") : @"",@"source":@"explicit snapshot job; current timeline freshness still requires verification"}];
-    }];
-}
 - (void)beginTitleDrag:(NSEvent *)event fromView:(NSView *)view {
-    if (self.resultLoadAttempted && !self.titlePayloads) { [self record:@{@"reason":@"title-drag-refused",@"status":@"Load a valid completed result first"}]; return; }
+    if (!self.titlePayloads || !self.resultDate || -self.resultDate.timeIntervalSinceNow>300) { [self record:@{@"reason":@"title-drag-refused",@"status":@"Load a valid completed result first"}]; return; }
     FCPXSequence *sequence=self.timeline.activeSequence;
     FCPXObject *container=sequence.container;
     if (container.objectType!=kFCPXObjectType_Project ||
@@ -248,12 +223,12 @@ static NSDictionary *Time(CMTime t) {
 - (NSDragOperation)draggingSession:(NSDraggingSession *)session sourceOperationMaskForDraggingContext:(NSDraggingContext)context { return NSDragOperationCopy; }
 - (void)pasteboard:(NSPasteboard *)pasteboard item:(NSPasteboardItem *)item provideDataForType:(NSPasteboardType)type {
     NSString *version=[type hasSuffix:@"v1-12"] ? @"1.12" : ([type hasSuffix:@"v1-13"] ? @"1.13" : @"1.14");
-    NSURL *url=[[NSBundle bundleForClass:self.class] URLForResource:[@"TitleProbe-" stringByAppendingString:version] withExtension:@"fcpxml"];
-    NSData *data=self.titlePayloads ? self.titlePayloads[version] : [NSData dataWithContentsOfURL:url];
+    NSData *data=self.titlePayloads[version];
     if (data) [item setData:data forType:type];
     [self record:@{@"reason":@"title-drag-data",@"type":type,@"version":version,@"bytes":@(data.length)}];
 }
 - (void)draggingSession:(NSDraggingSession *)session endedAtPoint:(NSPoint)point operation:(NSDragOperation)operation {
+    if (operation!=NSDragOperationNone) { self.titlePayloads=nil; self.resultDate=nil; }
     [self record:@{@"reason":@"title-drag-ended",@"operation":@(operation),@"status":@"Host XML readback required; operation alone is not writeback proof"}];
 }
 - (void)viewDidAppear {
@@ -267,6 +242,7 @@ static NSDictionary *Time(CMTime t) {
 - (void)viewWillDisappear {
     [self.bridgeTimer invalidate]; self.bridgeTimer=nil;
     if (self.bridgeScoped) [self.bridgeURL stopAccessingSecurityScopedResource];
+    self.freshDropURL=nil; self.freshDropDate=nil; self.titlePayloads=nil; self.resultDate=nil; self.dropGeneration++;
     self.bridgeScoped=NO; self.bridgeURL=nil; self.requestID=nil; self.generateButton.enabled=YES;
     [self.timeline removeTimelineObserver:self]; self.timeline = nil; self.host = nil; self.observed = NO;
     [super viewWillDisappear];
@@ -332,10 +308,11 @@ static NSDictionary *Time(CMTime t) {
     }
     [self record:result];
 }
-- (void)activeSequenceChanged { self.observed=YES; [self snapshot:@"activeSequenceChanged"]; }
+- (void)activeSequenceChanged { self.freshDropURL=nil; self.titlePayloads=nil; self.dropGeneration++; self.observed=YES; [self snapshot:@"activeSequenceChanged"]; }
 - (void)sequenceTimeRangeChanged { self.observed=YES; [self snapshot:@"sequenceTimeRangeChanged"]; }
 - (void)playheadTimeChanged { self.observed=YES; [self snapshot:@"playheadTimeChanged"]; }
 - (BOOL)receivePasteboard:(NSPasteboard *)pasteboard {
+    self.freshDropURL=nil; self.freshDropDate=nil; self.titlePayloads=nil; self.resultDate=nil; self.dropGeneration++;
     NSMutableArray *saved = [NSMutableArray new];
     for (NSPasteboardType type in pasteboard.types) {
         if (![type hasPrefix:@"com.apple.finalcutpro.xml"]) continue;
@@ -345,6 +322,7 @@ static NSDictionary *Time(CMTime t) {
         NSURL *url = [[self evidenceDirectory] URLByAppendingPathComponent:name];
         NSError *error = nil;
         BOOL ok = [data writeToURL:url options:NSDataWritingAtomic error:&error];
+        if (ok && (!self.freshDropURL || [type isEqual:@"com.apple.finalcutpro.xml.v1-14"])) { self.freshDropURL=url; self.freshDropDate=NSDate.date; }
         [saved addObject:@{@"type":type,@"bytes":@(data.length),@"saved":@(ok),@"file":name,@"error":error.localizedDescription ?: @""}];
     }
     [self record:@{@"reason":@"drop",@"types":pasteboard.types ?: @[],@"xml":saved}];

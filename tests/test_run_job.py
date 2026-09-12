@@ -13,7 +13,7 @@ class JobTests(unittest.TestCase):
     def test_failed_decode_never_marks_job_ready(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);xml=root/'input.xml';xml.write_text('<fcpxml/>')
-            with patch.object(run_job,'WORK',root/'jobs'),patch.object(run_job,'preflight',return_value={'uid':run_job.UID}),patch.object(run_job.subprocess,'run',side_effect=RuntimeError('decoder failed')):
+            with patch.object(run_job,'WORK',root/'jobs'),patch.object(run_job,'preflight',return_value={'uid':run_job.UID}),patch.object(run_job,'prepare',return_value=(b'<fcpxml/>',[])),patch.object(run_job.subprocess,'run',side_effect=RuntimeError('decoder failed')):
                 with self.assertRaises(RuntimeError):run_job.run(xml,root,root)
             state=json.loads(next((root/'jobs').glob('*/status.json')).read_text())
             self.assertEqual(state['status'],'failed');self.assertEqual(state['stage'],'decode')

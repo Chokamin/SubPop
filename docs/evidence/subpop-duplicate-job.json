@@ -1,0 +1,20 @@
+{
+  "jobID": "037726ef-f9d6-4915-bee4-bfead5e6bc9a",
+  "status": "blocked-existing-titles",
+  "stage": "duplicate",
+  "projectUID": "0D11EC79-ED11-4688-97A9-CB78621857DD",
+  "snapshotSHA256": "71e2c92abc98cb689084ac8a1118844e57d5bdd643595aae9cd245cd9e101453",
+  "createdAt": "2026-09-12T09:49:36.942776+00:00",
+  "source": "explicit XML snapshot; freshness not established by active host",
+  "collision": {
+    "status": "duplicate",
+    "exactMatches": 3,
+    "overlappingRows": 3,
+    "existingTitles": 3
+  },
+  "pcmSHA256": "341261a03f1f1e5a43cc95820bc2468366a1f81de66d83f293e1da95ee3739f2",
+  "titleCount": 3,
+  "device": "cpu",
+  "evidence": "Independent CLI on earlier real FCP export, not yet new live panel drop",
+  "titlePayloadsGenerated": false
+}

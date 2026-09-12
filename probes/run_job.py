@@ -13,6 +13,7 @@ import uuid
 from .readback import inspect
 from .caption_fixture import captions, srt
 from .title_fixture import payload, UID
+from .snapshot import prepare, collision
 
 ROOT=Path(__file__).resolve().parents[1]
 WORK=ROOT/'.subloom/verification/jobs'
@@ -39,11 +40,13 @@ def preflight(xml, asr, aligner):
 
 def run(xml,asr,aligner):
     # Validate before starting costly work. Each invocation owns a new directory.
-    snapshot=preflight(xml,asr,aligner)
+    original=xml.read_bytes()
+    normalized,existing=prepare(original)
     directory=WORK/str(uuid.uuid4());directory.mkdir(parents=True)
-    frozen=directory/'input.fcpxml';frozen.write_bytes(xml.read_bytes())
+    frozen=directory/'input.fcpxml';frozen.write_bytes(original)
+    audioXML=directory/'audio-input.fcpxml';audioXML.write_bytes(normalized)
     # Re-validate the actual frozen input to prevent an input-file race.
-    snapshot=preflight(frozen,asr,aligner)
+    snapshot=preflight(audioXML,asr,aligner)
     state={'jobID':directory.name,'status':'running','stage':'decode','projectUID':snapshot['uid'],
            'snapshotSHA256':hashlib.sha256(frozen.read_bytes()).hexdigest(),
            'createdAt':datetime.now(timezone.utc).isoformat(),'source':'explicit XML snapshot; freshness not established by active host'}
@@ -52,18 +55,24 @@ def run(xml,asr,aligner):
     try:
         progress('decode')
         binary=ROOT/'.subloom/build/SubPopAudioProbeCLI'
-        completed=subprocess.run([str(binary),str(frozen),UID,str(directory)],capture_output=True,text=True,check=True,timeout=60)
+        completed=subprocess.run([str(binary),str(audioXML),UID,str(directory)],capture_output=True,text=True,check=True,timeout=60)
         decoded=json.loads(completed.stdout);save(directory/'audio.json',decoded)
         if decoded.get('status')!='decoded':raise ValueError('Audio decode failed: '+decoded.get('stage','unknown'))
         pcm=directory/decoded['pcmFile']
         if pcm.parent!=directory or not pcm.is_file():raise ValueError('Invalid PCM output')
         progress('recognize')
         from .recognize_fixture import run as recognize
-        result=recognize(frozen,asr,aligner,directory/'asr.json',pcm,device='cpu',verbose=False)
+        result=recognize(audioXML,asr,aligner,directory/'asr.json',pcm,device='cpu',verbose=False)
         progress('generate-titles')
         rows=captions(result)
         manifest={'projectUID':UID,'pcmSHA256':result['pcm_sha256'],'fps':25,'captions':rows}
         save(directory/'captions.json',manifest)
+        check=collision(rows,existing);save(directory/'collision.json',check)
+        if check['status']!='clear':
+            state.update(status='blocked-existing-titles',stage=check['status'],collision=check,
+                         pcmSHA256=result['pcm_sha256'],titleCount=len(rows),device=result['device'])
+            save(directory/'status.json',state);print(json.dumps({'ready':str(directory),'blocked':check['status']}),flush=True)
+            return directory
         (directory/'captions.srt').write_text(srt(rows))
         for version in ('1.12','1.13','1.14'):(directory/f'TitleProbe-{version}.fcpxml').write_bytes(payload(manifest,version))
         outputs={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in directory.iterdir() if p.name.startswith('TitleProbe-') or p.name in ('captions.json','captions.srt')}
