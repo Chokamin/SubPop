@@ -51,7 +51,6 @@ static NSDictionary *Time(CMTime t) {
 @property NSString *displayState;
 @property NSString *dropName;
 @property NSDate *engineLaunchDate;
-@property NSButton *engineSettings;
 @property NSArray *modelCatalog;
 @property NSString *selectedModelID;
 @property NSString *requestModelID;
@@ -76,7 +75,6 @@ static NSDictionary *Time(CMTime t) {
 @property NSString *resultRequestID;
 @property BOOL restoringSession;
 @property NSPopover *diagnostics;
-@property NSButton *diagnosticsButton;
 @property NSButton *vocabularyButton;
 @property NSButton *modelsButton;
 @property NSArray *requestVocabulary;
@@ -188,10 +186,8 @@ static NSDictionary *Time(CMTime t) {
     self.editorControls=[NSStackView stackViewWithViews:@[[self label:@"字幕样式" size:12 weight:NSFontWeightMedium],self.fontPicker,self.sizePicker]];self.editorControls.spacing=10;[stack addArrangedSubview:self.editorControls];self.editorControls.hidden=YES;
     self.resultView=[[SubPopTitleDragView alloc] initWithFrame:NSMakeRect(0,0,572,36)];self.resultView.controller=self;[self.resultView setAccessibilityElement:YES];[self.resultView setAccessibilityRole:NSAccessibilityGroupRole];[stack addArrangedSubview:self.resultView];[self.resultView.heightAnchor constraintEqualToConstant:36].active=YES;self.resultView.hidden=YES;
     NSView *actions=[[NSView alloc] initWithFrame:NSMakeRect(0,0,572,36)];
-    self.engineSettings=[NSButton buttonWithTitle:@"帮助" target:self action:@selector(showModelSettings:)];self.engineSettings.bezelStyle=NSBezelStyleRounded;self.engineSettings.frame=NSMakeRect(0,2,64,30);[actions addSubview:self.engineSettings];
-    self.diagnosticsButton=[NSButton buttonWithTitle:@"诊断" target:self action:@selector(showDiagnostics:)];self.diagnosticsButton.bordered=NO;self.diagnosticsButton.frame=NSMakeRect(64,2,50,30);[actions addSubview:self.diagnosticsButton];
-    self.vocabularyButton=[NSButton buttonWithTitle:@"词库" target:self action:@selector(showVocabulary:)];self.vocabularyButton.bezelStyle=NSBezelStyleRounded;self.vocabularyButton.frame=NSMakeRect(114,2,84,30);[actions addSubview:self.vocabularyButton];
-    self.modelsButton=[NSButton buttonWithTitle:@"模型管理" target:self action:@selector(showModels:)];self.modelsButton.bezelStyle=NSBezelStyleRounded;self.modelsButton.frame=NSMakeRect(202,2,92,30);[actions addSubview:self.modelsButton];
+    self.vocabularyButton=[NSButton buttonWithTitle:@"词库" target:self action:@selector(showVocabulary:)];self.vocabularyButton.bezelStyle=NSBezelStyleRounded;self.vocabularyButton.frame=NSMakeRect(0,2,84,30);[actions addSubview:self.vocabularyButton];
+    self.modelsButton=[NSButton buttonWithTitle:@"模型管理" target:self action:@selector(showModels:)];self.modelsButton.bezelStyle=NSBezelStyleRounded;self.modelsButton.frame=NSMakeRect(88,2,92,30);[actions addSubview:self.modelsButton];
     self.cancelButton=[NSButton buttonWithTitle:@"取消" target:self action:@selector(cancelJob:)];self.cancelButton.bezelStyle=NSBezelStyleRounded;self.cancelButton.frame=NSMakeRect(298,2,90,30);self.cancelButton.autoresizingMask=NSViewMinXMargin;[actions addSubview:self.cancelButton];
     self.generateButton=[NSButton buttonWithTitle:@"开始识别" target:self action:@selector(primaryAction:)];self.generateButton.bezelStyle=NSBezelStyleRounded;self.generateButton.controlSize=NSControlSizeLarge;self.generateButton.keyEquivalent=@"\r";self.generateButton.frame=NSMakeRect(400,0,172,34);self.generateButton.autoresizingMask=NSViewMinXMargin;[actions addSubview:self.generateButton];
     [stack addArrangedSubview:actions];[actions.heightAnchor constraintEqualToConstant:36].active=YES;
