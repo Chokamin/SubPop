@@ -1,0 +1,28 @@
+{
+  "requestID": "deb7a4c6-1652-4815-855e-f88629f2cba8",
+  "status": "blocked-existing-titles",
+  "stage": "duplicate",
+  "projectUID": "0D11EC79-ED11-4688-97A9-CB78621857DD",
+  "jobID": "98a284d6-d364-40d8-afec-94ccaf6b9280",
+  "collision": {
+    "status": "duplicate",
+    "exactMatches": 3,
+    "overlappingRows": 3,
+    "existingTitles": 3
+  },
+  "snapshotSHA256": "eab5edbc0c9b0ccb85ce4720d4aeb7bc372704379841f749fa02f9b5a6bb741d",
+  "build": 12,
+  "host": "Final Cut Pro 12.3",
+  "captureAt": "2026-09-12T09:53:56Z",
+  "submittedAt": "2026-09-12T09:55:23Z",
+  "completedAt": "2026-09-12T09:55:35Z",
+  "actualFreshDrop": true,
+  "hostDisplayed": "blocked-existing-titles / duplicate",
+  "titlePayloadsGenerated": false,
+  "originalTimelineUI": {
+    "titles": 3,
+    "captions": 5,
+    "durationFrames": 217,
+    "fps": 25
+  }
+}

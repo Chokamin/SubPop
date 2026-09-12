@@ -30,3 +30,12 @@ class SnapshotTests(unittest.TestCase):
             if mode=='template':root.find('.//effect').set('uid','unverified')
             else:ET.SubElement(root.find('.//title'),'audio' if mode=='audio' else 'filter-audio')
             with self.assertRaises(ValueError):prepare(ET.tostring(root))
+
+    def test_fresh_host_drop_matches_actual_duplicate_decision(self):
+        import json
+        _,existing=prepare((ROOT/'tests/fixtures/fcp-12.3-fresh-title-drop.fcpxml').read_bytes())
+        _,previous=prepare((ROOT/'tests/fixtures/fcp-12.3-title-split.fcpxml').read_bytes())
+        evidence=json.loads((ROOT/'docs/evidence/subpop-fresh-duplicate.json').read_text())
+        self.assertEqual(collision(previous,existing),evidence['collision'])
+        self.assertEqual(evidence['status'],'blocked-existing-titles')
+        self.assertFalse(evidence['titlePayloadsGenerated'])

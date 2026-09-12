@@ -127,3 +127,14 @@
 
 
 独立后台补充实测：已有真实after-title-split导出经新归一化→原生解码→CPU识别，job037726ef-f9d6-4915-bee4-bfead5e6bc9a返回blocked-existing-titles/duplicate，3条精确匹配，无TitleProbe输出文件。证据docs/evidence/subpop-duplicate-job.json。不是新鲜拖入面板的实测结论。
+
+
+## 2026-09-12：当前项目重新拖入后的面板重复拦截实测通过
+
+用户重新拖入当前Subloom-Original，09:53:56Z收4种XML，均8187字节，新快照含3条Title与5条Caption。09:55:23Z点击“识别刚拖入的项目”，请求deb7a4c6-1652-4815-855e-f88629f2cba8，经原生音频副本解码/CPU识别，09:55:35Z面板显示blocked-existing-titles/duplicate：existingTitles=3、exactMatches=3、overlappingRows=3。任务98a284d6-d364-40d8-afec-94ccaf6b9280没有生成TitleProbe输出文件。
+
+已通过FCP面板UI确认重复提示，原时间线仍为8.68秒、3条Title、5条Caption和mandarin。新快照脱敏保存tests/fixtures/fcp-12.3-fresh-title-drop.fcpxml，证据docs/evidence/subpop-fresh-duplicate.json。没有重写时间线，也无需用户再拖入同一项目。构建12保持运行，服务已连接，输入已消费、无可拖出新结果。
+
+新快照→识别→重复保护已通过本受限样本；用户校对冲突仍只有此前真实导出档案回归，实时编辑后再拖入冲突的UI验收未做。实时变化监听、最终可听混音、复杂项目、通用时长/帧率仍未完成。
+
+本轮构建/签名与38项回归通过；未修改原生代码或重新安装。
