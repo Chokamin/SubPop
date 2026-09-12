@@ -6,6 +6,26 @@ from probes.snapshot import prepare,collision
 ROOT=Path(__file__).resolve().parents[1]
 
 class SnapshotTests(unittest.TestCase):
+    def test_host_split_gap_boundaries_and_restoration(self):
+        from probes.readback import inspect,seconds
+        fixtures=ROOT/'tests/fixtures'
+        split=ET.parse(fixtures/'fcp-12.3-audio-split-4s.fcpxml')
+        clips=split.findall('.//spine/asset-clip')
+        self.assertEqual([(seconds(c.get('offset'))-3600,seconds(c.get('start','0s')),seconds(c.get('duration'))) for c in clips],
+                         [(0,0,4),(4,4,seconds('117/25s'))])
+        # Both clips really were disabled in this captured host experiment.
+        self.assertTrue(all(c.get('enabled')=='0' for c in clips))
+        for name in ('audio-split-4s','audio-leading-gap'):
+            path=fixtures/f'fcp-12.3-{name}.fcpxml'
+            with self.assertRaises(ValueError):prepare(path.read_bytes())
+            with self.assertRaises(ValueError):inspect(path)
+        gap=ET.parse(fixtures/'fcp-12.3-audio-leading-gap.fcpxml').find('.//spine/gap')
+        self.assertEqual(seconds(gap.get('duration')),4)
+        def shape(e):return e.tag,sorted(e.attrib.items()),(e.text or '').strip(),[shape(c) for c in e]
+        before=ET.parse(fixtures/'fcp-12.3-audio-restored.fcpxml').find('.//sequence')
+        after=ET.parse(fixtures/'fcp-12.3-audio-edit-restored.fcpxml').find('.//sequence')
+        self.assertEqual(shape(before),shape(after))
+
     def test_verified_titles_removed_only_from_audio_copy(self):
         raw=(ROOT/'tests/fixtures/fcp-12.3-title-split.fcpxml').read_bytes()
         normalized,existing=prepare(raw)

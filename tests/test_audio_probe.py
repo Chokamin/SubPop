@@ -37,6 +37,32 @@ class AudioProbeTests(unittest.TestCase):
     def test_wrong_active_project_refused(self):
         self.assertEqual(self.probe(uid='different')['stage'],'active-project-uid-mismatch')
 
+    def test_actual_split_and_gap_refused_before_decode(self):
+        for name in ('audio-split-4s','audio-leading-gap'):
+            xml=ROOT/f'tests/fixtures/fcp-12.3-{name}.fcpxml'
+            result=json.loads(subprocess.check_output([str(self.binary),str(xml),UID,str(self.directory)],text=True))
+            self.assertEqual(result['stage'],'plain-clip-required')
+
+    def test_derived_tail_trim_uses_source_offset(self):
+        # Derived decoder experiment, not a host mix: isolate the real second
+        # segment, enable it and remove attached titles/captions.
+        def tail(tree):
+            actual=ET.parse(ROOT/'tests/fixtures/fcp-12.3-audio-split-4s.fcpxml')
+            segment=actual.findall('.//spine/asset-clip')[1]
+            clip=tree.find('.//asset-clip')
+            clip.attrib.clear();clip.attrib.update(segment.attrib)
+            clip.attrib.pop('enabled',None);clip.set('offset','3600s')
+            for child in list(clip):clip.remove(child)
+            tree.find('.//sequence').set('duration',segment.get('duration'))
+        whole=self.probe()
+        whole_bytes=(self.directory/whole['pcmFile']).read_bytes()
+        result=self.probe(tail)
+        self.assertEqual(result['status'],'decoded',result)
+        self.assertEqual(result['sourceStartSeconds'],4)
+        self.assertEqual(result['sampleCount'],74880)
+        # A sample-for-sample comparison catches silently decoding from zero.
+        self.assertEqual((self.directory/result['pcmFile']).read_bytes(),whole_bytes[64000*4:])
+
     def test_source_audio_attributes_refused(self):
         for key,value in (('srcEnable','video'),('srcEnable','invalid'),('audioStart','1s'),('audioDuration','2s')):
             with self.subTest(key=key,value=value):
