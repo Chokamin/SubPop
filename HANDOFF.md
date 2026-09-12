@@ -7,18 +7,18 @@
 产品已从 Subloom 更名为 **SubPop**。仓库实际目录已改为 `/Users/chokamin/Desktop/SubPop`；旧 Subloom 路径为兼容链接。`.subloom` 缓存和历史测试项目保留原名。当前阶段为接入验证，理想闭环未通过，完整 MVP 未开发。
 
 - 用户已明确授权安装和启动原生只读探针，无需重复确认。`/Applications/SubPop Probe.app` 已安装，FCP 12.3 标准版扩展菜单实际出现并能打开原生面板。
-- 当前打开的是隔离 `Subloom-Verification-20260912` 资源库的 `Subloom-Original`，当前保留新旧五条字幕，探针面板已关闭。未接触其他资源库或修改 VinciSub。
+- 当前打开的是隔离 `Subloom-Verification-20260912` 资源库的 `Subloom-Original`，当前保留新旧五条Caption和三条独立Title，详见文末最新验收。未接触其他资源库或修改 VinciSub。
 - host 身份、观察者回调、日志落盘通过；播放头和范围返回有效值，范围与 8.68 秒测试项目一致。构建 6 已恢复 activeSequence，原项目 UID 与此前独立 XML 导出一致；切换另一个项目再切回、重开面板均正确读取。根因尚未隔离，不宣称单一修复已证明。
 - 更正旧结论：苹果概述明确提到 selected time range，不能凭 sequenceTimeRange 名称排除选区能力。已做局部范围/清除对照：UI 选区变化但 SDK 一直返回全项目；播放头新鲜度亦有疑点，选区读取未通过；现已由用户明确选择固定全项目模式，不再将选区作为前置条件。
 - 前轮 SRT 原项目相对定位实测通过；同 UID XML 保留两者会新建项目。离线 Qwen 0.6B/对齐 CPU 实测通过；最新 ASR 三条字幕已通过原生 SRT 导入写入原项目，旧两条保留。仅有人工交接的链路通过，不是插件端到端自动验收。
-- 24 项构建/单元/真实 XML 与证据档案回归通过；本轮另有 FCP 实际 SRT 导入和校对回读验收，详见 `docs/writeback-validation.md`。
+- 29 项构建/单元/真实 XML 与证据档案回归通过；本轮另有 FCP 实际 SRT 导入和校对回读验收，详见 `docs/writeback-validation.md`。
 
 ## 下一步、风险与阻塞
 
 1. 继续验证冷启动读取稳定性，并隔离恢复原因。构建 6 原项目/切换/重开已读通；直接 PID 读取第一项资源库成功。旧 -600 不再出现；不能只凭历史日志归因。新增诊断同时记录 NSError 与回复 errn。
 2. 固定整项目识别：使用有效的 activeSequence 项目身份、startTime 和 duration 界定完整时间线，不依赖 sequenceTimeRange。选区、浏览器范围验证延期；历史负结果保留在 `docs/evidence/subpop-selection-comparison.json`。
 3. 项目拖入 XML、原生 AVFoundation 完整解码和外部 CPU 识别已在单片段测试通过，见 `docs/native-audio-validation.md`。直接文件打开/书签解析仍失败，不能泛化权限机制；角色/子角色/组件禁用、Solo、效果、变速和复合片段仍待测。
-4. Caption 原生 SRT 导入原项目通过，需五个操作阶段，新角色保留旧字幕；FCP 内改标点后导出回读通过，但自动双向同步未实现。继续比较 Title 最短写回交互后确定产品路线，不静默采用文件导入或 XML 全项目替换。
+4. Caption 原生 SRT 导入原项目通过，需五个操作阶段，新角色保留旧字幕；FCP 内改标点后导出回读通过，但自动双向同步未实现。Title一次拖放＋一次拆分已通过（文末）；下一步确定产品路线，不静默采用文件导入或 XML 全项目替换。
 5. MPS、其他帧率、长音频、冲突恢复未测；正式产品不得依赖 VinciSub 解释器和缓存。
 
 ## 关键文件和验证
@@ -60,3 +60,14 @@
 ## 2026-09-12：首次拖放操作核对
 
 用户首次实际从FCP浏览器拖入了三条10秒“基础标题”，并非SubPop payload；当时没有title-drag-data日志。随后用户找到SubPop拖出区，因原项目已被临时标题延长到10秒，触发title-drag-refused（08:57:13Z）。这不属于FCP拒收payload。已通过FCP UI逐条删除三条误拖标题；UI及SDK确认原项目恢复8.68秒，mandarin与原五条Caption均保留，播放头回到起点。面板重新打开，已给出“独立小窗口三个按钮下方文字行，仅拖一次”的明确说明，等待再拖；仍未完成真实Title落轨。
+
+
+## 2026-09-12：真实 Title 拖入、拆分与校对通过
+
+用户完成正确的一次拖放。08:58:36Z FCP请求com.apple.finalcutpro.xml.v1-14，原生探针发送1988字节；08:58:39Z会话结束。operation为NSUInteger最大值，不将其单独解释为成功。实际UI与独立XML确认clip连接在原mandarin上方、相对0秒，217帧；内部三句分别0–80、84–140、146–214帧，间隙4/6/3帧。原project UID、sequence属性、asset-clip属性和五条Caption属性/文本完全保留；浏览器新增SubPop ASR Titles Probe片段，不是新项目。
+
+再执行FCP“片段→将片段项分开”，原时间线得到三条独立Title，空隙与精确时间保持，包装及gap不再留在原时间线。选首句在文本检查器将句号改感叹号，独立XML比对仅Title文字变化（除项目modDate）；随后撤销并以UI核对恢复句号。
+
+当前原项目保留音视频、五条Caption、三条独立Title，总长8.68秒。真实拖放、拆分、校对快照已脱敏存入tests/fixtures/fcp-12.3-title-*.fcpxml，汇总docs/evidence/subpop-title-writeback.json。构建/签名及29项回归通过。安装版本仍9，无需用户再次拖放。
+
+比较：已生成结果之后，Title为一次拖放，若要直接逐句编辑再执行一次拆分；SRT为先前记录的五个操作阶段。Title的绝对位置由实际落点决定，本次用户准确拖到起点。尚未验证偏移纠正、批量样式、重复写回/去重、其他帧率/复杂项目；自动ASR串联与双向校对同步未实现。此结果支持用户选择写回路线，不自动将Title设为产品默认。

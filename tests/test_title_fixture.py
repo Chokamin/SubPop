@@ -42,3 +42,32 @@ class TitleFixtureTests(unittest.TestCase):
             expected=payload(self.manifest,version)
             for folder in ('native/Probe/Fixtures','.subloom/build/SubPop Probe.app/Contents/PlugIns/SubPopProbe.appex/Contents/Resources'):
                 self.assertEqual((ROOT/folder/f'TitleProbe-{version}.fcpxml').read_bytes(),expected)
+
+class ActualTitleReadbackTests(unittest.TestCase):
+    def test_drag_and_split_keep_original_content_and_measured_title_times(self):
+        baseline=ET.parse(ROOT/'tests/fixtures/fcp-12.3-asr-writeback.fcpxml')
+        def captions(root):
+            return sorted((tuple(sorted(c.attrib.items())),''.join(c.find('text').itertext()).strip()) for c in root.findall('.//caption'))
+        for phase in ('drag','split'):
+            root=ET.parse(ROOT/f'tests/fixtures/fcp-12.3-title-{phase}.fcpxml')
+            self.assertEqual(root.find('.//project').get('uid'),baseline.find('.//project').get('uid'))
+            for path in ('.//project/sequence','.//asset-clip'):
+                self.assertEqual(root.find(path).attrib,baseline.find(path).attrib)
+            self.assertEqual(captions(root),captions(baseline))
+            titles=root.findall('.//title')
+            self.assertEqual(len(titles),3)
+            self.assertEqual([(Fraction(t.get('offset')[:-1])*25,Fraction(t.get('duration')[:-1])*25) for t in titles],[(0,80),(84,56),(146,68)])
+            if phase=='drag':
+                wrapper=root.find('.//asset-clip/clip')
+                self.assertEqual(wrapper.get('offset'),'0s')
+                self.assertEqual(wrapper.get('lane'),'1')
+            else:self.assertEqual(len(root.findall('.//asset-clip/title')),3)
+
+    def test_title_proofread_changes_only_text(self):
+        before=ET.parse(ROOT/'tests/fixtures/fcp-12.3-title-split.fcpxml').getroot()
+        after=ET.parse(ROOT/'tests/fixtures/fcp-12.3-title-proofread.fcpxml').getroot()
+        text=after.find('.//title/text/text-style')
+        self.assertEqual(text.text,'大家好，欢迎使用中文字幕工具！')
+        text.text=before.find('.//title/text/text-style').text
+        after.find('.//project').set('modDate',before.find('.//project').get('modDate'))
+        self.assertEqual(ET.tostring(before),ET.tostring(after))
