@@ -10,16 +10,27 @@ static NSDictionary *Time(CMTime t) {
 @interface SubPopDropView : NSView <NSDraggingDestination>
 @property (weak) SubPopProbeViewController *controller;
 @end
-@interface SubPopProbeViewController : NSViewController <FCPXTimelineObserver>
+@interface SubPopTitleDragView : NSView
+@property (weak) SubPopProbeViewController *controller;
+@end
+@interface SubPopProbeViewController : NSViewController <FCPXTimelineObserver, NSDraggingSource, NSPasteboardItemDataProvider>
 @property id<FCPXHost> host;
 @property FCPXTimeline *timeline;
 @property NSTextView *output;
 @property BOOL observed;
 - (BOOL)receivePasteboard:(NSPasteboard *)pasteboard;
+- (void)beginTitleDrag:(NSEvent *)event fromView:(NSView *)view;
 @end
 @implementation SubPopDropView
 - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender { return NSDragOperationCopy; }
 - (BOOL)performDragOperation:(id<NSDraggingInfo>)sender { return [self.controller receivePasteboard:sender.draggingPasteboard]; }
+@end
+@implementation SubPopTitleDragView
+- (void)drawRect:(NSRect)rect {
+    [[NSColor controlBackgroundColor] setFill]; NSRectFill(self.bounds);
+    [@"拖出三条测试 Title → 原项目起点上方" drawAtPoint:NSMakePoint(12,10) withAttributes:@{NSForegroundColorAttributeName:NSColor.labelColor,NSFontAttributeName:[NSFont systemFontOfSize:14]}];
+}
+- (void)mouseDown:(NSEvent *)event { [self.controller beginTitleDrag:event fromView:self]; }
 @end
 @implementation SubPopProbeViewController
 - (NSURL *)evidenceDirectory {
@@ -41,7 +52,7 @@ static NSDictionary *Time(CMTime t) {
     SubPopDropView *view = [[SubPopDropView alloc] initWithFrame:NSMakeRect(0,0,620,430)];
     view.controller = self;
     [view registerForDraggedTypes:@[@"com.apple.finalcutpro.xml.v1-14", @"com.apple.finalcutpro.xml.v1-13", @"com.apple.finalcutpro.xml.v1-12", @"com.apple.finalcutpro.xml.v1-11", @"com.apple.finalcutpro.xml.v1-10", @"com.apple.finalcutpro.xml", NSPasteboardTypeFileURL]];
-    NSTextField *label = [NSTextField wrappingLabelWithString:@"SubPop 接入探针 · 只读\n将浏览器中的测试项目拖到此面板，检查交换数据。"];
+    NSTextField *label = [NSTextField wrappingLabelWithString:@"SubPop 接入探针 · 隔离项目验证\n将浏览器中的测试项目拖到此面板，检查交换数据。"];
     label.frame = NSMakeRect(16,365,588,52); label.autoresizingMask = NSViewWidthSizable|NSViewMinYMargin;
     [view addSubview:label];
     NSButton *refresh = [NSButton buttonWithTitle:@"记录当前状态" target:self action:@selector(refresh:)];
@@ -53,11 +64,45 @@ static NSDictionary *Time(CMTime t) {
     NSButton *audio = [NSButton buttonWithTitle:@"验证最近项目音频" target:self action:@selector(probeAudio:)];
     audio.frame = NSMakeRect(360,325,240,30); audio.autoresizingMask = NSViewMinYMargin;
     [view addSubview:audio];
-    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(16,16,588,296)];
+    SubPopTitleDragView *drag = [[SubPopTitleDragView alloc] initWithFrame:NSMakeRect(16,267,588,42)];
+    drag.controller=self; drag.autoresizingMask=NSViewWidthSizable|NSViewMinYMargin;
+    [drag setAccessibilityElement:YES]; [drag setAccessibilityRole:NSAccessibilityGroupRole];
+    [drag setAccessibilityLabel:@"拖出三条测试 Title 到原项目起点上方"];
+    [view addSubview:drag];
+    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(16,16,588,240)];
     scroll.autoresizingMask = NSViewWidthSizable|NSViewHeightSizable; scroll.hasVerticalScroller = YES;
     self.output = [[NSTextView alloc] initWithFrame:scroll.bounds]; self.output.editable = NO;
     self.output.font = [NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightRegular];
     scroll.documentView = self.output; [view addSubview:scroll]; self.view = view;
+}
+- (void)beginTitleDrag:(NSEvent *)event fromView:(NSView *)view {
+    FCPXSequence *sequence=self.timeline.activeSequence;
+    FCPXObject *container=sequence.container;
+    if (container.objectType!=kFCPXObjectType_Project ||
+        ![((FCPXProject *)container).UID isEqual:@"0D11EC79-ED11-4688-97A9-CB78621857DD"] ||
+        CMTimeCompare(sequence.duration,CMTimeMake(217,25))!=0) {
+        [self record:@{@"reason":@"title-drag-refused",@"status":@"Open the unchanged isolated 8.68s original project first"}]; return;
+    }
+    NSPasteboardItem *item=[NSPasteboardItem new];
+    [item setDataProvider:self forTypes:@[@"com.apple.finalcutpro.xml",@"com.apple.finalcutpro.xml.v1-14",@"com.apple.finalcutpro.xml.v1-13",@"com.apple.finalcutpro.xml.v1-12"]];
+    NSDraggingItem *drag=[[NSDraggingItem alloc] initWithPasteboardWriter:item];
+    NSImage *image=[[NSImage alloc] initWithSize:NSMakeSize(270,36)];
+    [image lockFocus]; [[NSColor controlBackgroundColor] setFill]; NSRectFill(NSMakeRect(0,0,270,36));
+    [@"SubPop · 3 Titles · 8.68s" drawAtPoint:NSMakePoint(8,10) withAttributes:@{NSForegroundColorAttributeName:NSColor.labelColor}]; [image unlockFocus];
+    NSPoint point=[view convertPoint:event.locationInWindow fromView:nil];
+    [drag setDraggingFrame:NSMakeRect(point.x,point.y,270,36) contents:image];
+    [view beginDraggingSessionWithItems:@[drag] event:event source:self];
+}
+- (NSDragOperation)draggingSession:(NSDraggingSession *)session sourceOperationMaskForDraggingContext:(NSDraggingContext)context { return NSDragOperationCopy; }
+- (void)pasteboard:(NSPasteboard *)pasteboard item:(NSPasteboardItem *)item provideDataForType:(NSPasteboardType)type {
+    NSString *version=[type hasSuffix:@"v1-12"] ? @"1.12" : ([type hasSuffix:@"v1-13"] ? @"1.13" : @"1.14");
+    NSURL *url=[[NSBundle bundleForClass:self.class] URLForResource:[@"TitleProbe-" stringByAppendingString:version] withExtension:@"fcpxml"];
+    NSData *data=[NSData dataWithContentsOfURL:url];
+    if (data) [item setData:data forType:type];
+    [self record:@{@"reason":@"title-drag-data",@"type":type,@"version":version,@"bytes":@(data.length)}];
+}
+- (void)draggingSession:(NSDraggingSession *)session endedAtPoint:(NSPoint)point operation:(NSDragOperation)operation {
+    [self record:@{@"reason":@"title-drag-ended",@"operation":@(operation),@"status":@"Host XML readback required; operation alone is not writeback proof"}];
 }
 - (void)viewDidAppear {
     [super viewDidAppear];

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE fcpxml>
+<fcpxml version="1.14">
+  <resources>
+    <format id="r1" name="FFVideoFormatRateUndefined" frameDuration="1/25s" width="640" height="360" colorSpace="1-1-1 (Rec. 709)" />
+    <effect id="r2" name="基本字幕" uid=".../Titles.localized/Bumper:Opener.localized/Basic Title.localized/Basic Title.moti" />
+  </resources>
+  <clip name="SubPop ASR Titles Probe" format="r1" start="0s" duration="217/25s" tcFormat="NDF">
+    <spine>
+      <title ref="r2" offset="0/25s" name="大家好，欢迎使用中文字幕工具。" start="0s" duration="80/25s">
+        <text>
+          <text-style ref="ts1">大家好，欢迎使用中文字幕工具。</text-style>
+        </text>
+        <text-style-def id="ts1">
+          <text-style font="Helvetica" fontSize="28" fontFace="Regular" fontColor="1 1 1 1" alignment="center" />
+        </text-style-def>
+      </title>
+      <gap name="Gap" offset="80/25s" start="0s" duration="4/25s" />
+      <title ref="r2" offset="84/25s" name="今天我们测试语音识别，" start="0s" duration="56/25s">
+        <text>
+          <text-style ref="ts2">今天我们测试语音识别，</text-style>
+        </text>
+        <text-style-def id="ts2">
+          <text-style font="Helvetica" fontSize="28" fontFace="Regular" fontColor="1 1 1 1" alignment="center" />
+        </text-style-def>
+      </title>
+      <gap name="Gap" offset="140/25s" start="0s" duration="6/25s" />
+      <title ref="r2" offset="146/25s" name="并把生成的字幕导入达芬奇。" start="0s" duration="68/25s">
+        <text>
+          <text-style ref="ts3">并把生成的字幕导入达芬奇。</text-style>
+        </text>
+        <text-style-def id="ts3">
+          <text-style font="Helvetica" fontSize="28" fontFace="Regular" fontColor="1 1 1 1" alignment="center" />
+        </text-style-def>
+      </title>
+      <gap name="Gap" offset="214/25s" start="0s" duration="3/25s" />
+    </spine>
+  </clip>
+</fcpxml>

@@ -1,6 +1,7 @@
-"""Build the native read-only probe against a locally extracted Apple SDK."""
+"""Build the native integration probe against a locally extracted Apple SDK."""
 from pathlib import Path
 import plistlib
+import shutil
 import subprocess
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -17,13 +18,16 @@ def run(*args):subprocess.run([str(a) for a in args],check=True)
 def build():
     if not (SDK/'usr/lib/libProExtension.a').exists():raise SystemExit('Extract official SDK first; see HANDOFF.md')
     for bundle in (APP,EXT):(bundle/'Contents/MacOS').mkdir(parents=True,exist_ok=True)
-    base=dict(CFBundleVersion='8',CFBundleShortVersionString='0.0.1',LSMinimumSystemVersion='13.0')
+    base=dict(CFBundleVersion='9',CFBundleShortVersionString='0.0.1',LSMinimumSystemVersion='13.0')
     plist(APP/'Contents/Info.plist',dict(base,CFBundleIdentifier='com.chokamin.SubPopProbe',CFBundleName='SubPop Probe',CFBundleExecutable='SubPopProbe',CFBundlePackageType='APPL',NSPrincipalClass='NSApplication',NSAppleEventsUsageDescription='SubPop 只读探针需要读取 Final Cut Pro 的当前项目和时间线信息。'))
     plist(EXT/'Contents/Info.plist',dict(base,CFBundleIdentifier='com.chokamin.SubPopProbe.Extension',CFBundleName='SubPop Probe',CFBundleDisplayName='SubPop Probe',CFBundleExecutable='SubPopProbeExtension',CFBundlePackageType='XPC!',NSAppleEventsUsageDescription='SubPop 只读探针需要读取 Final Cut Pro 的当前项目和时间线信息。',NSExtension=dict(NSExtensionPointIdentifier='com.apple.FinalCut.WorkflowExtension',ProExtensionPrincipalViewControllerClass='SubPopProbeViewController'),ProExtensionAttributes=dict(ContentViewMinimumWidth=620,ContentViewMinimumHeight=430)))
     mac_sdk=subprocess.check_output(['xcrun','--sdk','macosx','--show-sdk-path'],text=True).strip()
     flags=['-isysroot',mac_sdk,'-fobjc-arc','-Wall','-Wextra','-Werror','-Wno-unused-parameter','-arch','arm64','-mmacosx-version-min=13.0','-framework','Cocoa']
     run('xcrun','clang',*flags,ROOT/'native/Probe/Container.m','-o',APP/'Contents/MacOS/SubPopProbe')
     run('xcrun','clang',*flags,'-fapplication-extension','-I'+str(SDK/'usr/include'),'-F'+str(SDK/'Library/Frameworks'),'-L'+str(SDK/'usr/lib'),'-lProExtension','-framework','CoreMedia','-framework','AVFoundation','-Wl,-e,_ProExtensionMain',ROOT/'native/Probe/ProbeViewController.m',ROOT/'native/Probe/AudioProbe.m','-o',EXT/'Contents/MacOS/SubPopProbeExtension')
+    resources=EXT/'Contents/Resources'
+    resources.mkdir(parents=True,exist_ok=True)
+    for fixture in (ROOT/'native/Probe/Fixtures').glob('*.fcpxml'):shutil.copy2(fixture,resources/fixture.name)
     ent=ROOT/'.subloom/build/probe.entitlements'
     plist(ent,{'com.apple.security.app-sandbox':True, 'com.apple.security.automation.apple-events':True, 'com.apple.security.scripting-targets':{'com.apple.FinalCut':['com.apple.FinalCut.library.inspection']}})
     run('codesign','--force','--sign','-','--entitlements',ent,EXT)

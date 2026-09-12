@@ -73,3 +73,11 @@
 - 关键文件：docs/writeback-validation.md、docs/evidence/subpop-asr-writeback.json/.srt、tests/fixtures/fcp-12.3-asr-writeback.fcpxml、fcp-12.3-asr-proofread.fcpxml。
 - 验证：构建/签名及24项回归通过；真实SRT导入和XML回读另行完成。未发布；未修改VinciSub；原项目保留新旧五条字幕，探针关闭，安装构建8。
 - 剩余：手动SRT写回五个操作阶段仍不是已采用产品方案；Title最短路径、自动识别串联、校对同步、稳定身份/去重、快照新鲜度、最终可听音频和独立模型环境待验证。
+
+## 2026-09-12：Title拖放路径准备
+
+- 需求：继续比较整项目识别的原时间线写回路径。
+- 改动：FCP自带Basic Title临时导出后撤销，新增受限title_fixture生成器、固定ASR XML资源、原生拖出区与版本协商日志；安装构建9。
+- 验证：原项目8.68秒和五条Caption恢复；1.14 DTD、构建/签名、27项回归通过；FCP面板实际加载新拖出区。
+- 当前：等待用户跨窗口拖入原项目起点上方；未将静态验证视为真实落轨。
+- 剩余：宿主实际接受与精确时间、包装拆分与编辑、原内容保留、产品路线选择。详见docs/title-validation.md。
