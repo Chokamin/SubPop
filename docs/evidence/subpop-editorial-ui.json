@@ -1,0 +1,25 @@
+{
+  "build": 24,
+  "sourceProjectCommit": "3f448f0e0d4b5fd7af63c71490c440ed76190742",
+  "jobID": "a82907cc-3413-4cae-89d5-cedabbc49fcb",
+  "reusedASR": "164f6cec-10e2-4057-bbdd-bc568f850d09",
+  "modelID": "qwen3-asr-1.7b",
+  "beforeCount": 562,
+  "afterCount": 616,
+  "reviewBlocks": 14,
+  "allAlphanumericCharactersPreserved": true,
+  "commonChineseSentencePunctuationCount": 0,
+  "overlaps": 0,
+  "firstFrame": 9,
+  "lastFrame": 39788,
+  "rules": "channel-study-v1",
+  "tests": {
+    "independentRuntime": 93,
+    "systemPython": {
+      "total": 93,
+      "dependencySkips": 5
+    },
+    "native": "616-row proofreading, XML style/time preservation; layout widths 580/800/1100, waveform and real progress/cancel states"
+  },
+  "scope": "Reused measured ASR; presentation rules only, not accuracy improvement or new full-video ASR; no FCP timeline writes"
+}

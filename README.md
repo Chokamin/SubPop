@@ -11,6 +11,7 @@
 - 模型管理：面板内下载、切换和移除；首次自动补齐共用对齐模型，真实进度/速度、暂停续传和SHA-256校验。
 - 默认识别对白角色，可选择全部音频；单声道、立体声、剪切、空隙和连接音频，按时间线位置渲染。
 - 不设固定项目时长上限，常见整数／分数帧率；ASR 分段、时间回映射、进度与取消。
+- 自动字幕整理：先按标点、实测停顿和中文词边界断句，再去句子标点；保护数值/单位/技术标识和词库专名，接平 <=0.2 秒短间隙。规则迁移及限制见 [说明](docs/subtitle-rules-port.md)。
 - 字幕表格校对、字体／字号、草稿及任务恢复；三版本 Title 拖出，保留已有字幕冲突保护。
 - 后台自动准备，记住首次目录授权。识别不上传音频，不调用 FCP“共享／导出”。
 
@@ -22,7 +23,7 @@
 
 维护更新：关闭 SubPop 面板后执行 `python3 scripts/install_local.py`，再从 FCP“窗口 → 扩展 → SubPop Probe”重开。更新保留模型和授权；若旧进程仍被 FCP 缓存，需要重新启动该扩展。普通使用无需终端或手动启动后台。
 
-模型缺失时点击面板里的“模型管理”下载，无需终端。共用时间对齐模型约1.84 GB；移除识别模型会保留它。
+模型缺失时点击面板顶部的“模型”下载，无需终端。共用时间对齐模型约1.84 GB；移除识别模型会保留它。
 
 维护人员也可以通过独立环境补齐：
 
@@ -35,6 +36,6 @@
 
 ## 开发验证
 
-先 `python3 scripts/build_probe.py`，再 `python3 -B -m unittest discover -s tests -v`。原生音频测试需要系统媒体服务权限。
+先 `python3 scripts/build_probe.py`，再 `python3 -B -m unittest discover -s tests -v`。原生音频测试需要系统媒体服务权限。中文分词集成须另外用 `.venv/bin/python -B -m unittest discover -s tests -v` 完整运行；依赖固定在 `requirements-asr.lock.txt`。
 
 构建使用本项目解包的苹果 Workflow Extension SDK。`SubPopPresentationTests` 是无 FCP 宿主、无窗口的 AppKit 校对回归程序，不能替代 FCP 落轨验收。所有 FCP 工程验证只使用 `.subloom/verification/` 独立资源库，不修改用户其他工程。

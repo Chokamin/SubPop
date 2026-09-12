@@ -12,6 +12,7 @@ import uuid
 from .project import inspect, render
 from fractions import Fraction
 from .caption_fixture import captions, srt
+from .editorial import optimized_captions, RULES_VERSION
 from .title_fixture import payload, UID
 from .snapshot import prepare, collision
 from .models import DEFAULT_MODEL_ID, model_spec, resolve_model
@@ -39,8 +40,10 @@ def preflight(xml, asr, aligner):
 
 def finalize(directory,state,result,existing):
     frame=Fraction(result['snapshot']['frameDuration']);fps=1/frame
-    rows=captions(result,fps,generic=True)
+    review=[]
+    rows=optimized_captions(result,fps,state.get('vocabulary',[]),warnings=review)
     manifest={**result['snapshot'],'projectUID':state['projectUID'],'pcmSHA256':result['pcm_sha256'],'fps':str(fps),'captions':rows,'modelID':state['modelID'],'vocabulary':state.get('vocabulary',[])}
+    manifest.update(editorialRules=RULES_VERSION,reviewWarnings=review)
     save(directory/'captions.json',manifest)
     check=collision(rows,existing);save(directory/'collision.json',check)
     if check['status']!='clear':

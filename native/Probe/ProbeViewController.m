@@ -4,6 +4,7 @@
 #import <ProExtensionHost/ProExtensionHost.h>
 #import "AudioProbe.h"
 #import <CommonCrypto/CommonDigest.h>
+#import "StudioChrome.h"
 
 static NSDictionary *Time(CMTime t) {
     return @{ @"value": @(t.value), @"timescale": @(t.timescale), @"flags": @(t.flags), @"epoch": @(t.epoch) };
@@ -46,6 +47,11 @@ static NSDictionary *Time(CMTime t) {
 @property NSTextField *dropTitle;
 @property NSTextField *dropDetail;
 @property NSTextField *steps;
+@property SubPopSignalView *signal;
+@property NSProgressIndicator *jobBar;
+@property NSStackView *reviewHeader;
+@property NSTextField *captionCount;
+@property NSString *lastVisualState;
 @property NSProgressIndicator *spinner;
 @property SubPopTitleDragView *resultView;
 @property NSString *displayState;
@@ -93,15 +99,15 @@ static NSDictionary *Time(CMTime t) {
 @end
 @implementation SubPopDropView
 - (void)drawRect:(NSRect)rect {
-    NSBezierPath *path=[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds,1,1) xRadius:12 yRadius:12];
-    [(self.dragHover ? [NSColor.controlAccentColor colorWithAlphaComponent:0.12] : NSColor.controlBackgroundColor) setFill]; [path fill];
-    [(self.dragHover ? NSColor.controlAccentColor : NSColor.separatorColor) setStroke];
+    NSBezierPath *path=[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds,1,1) xRadius:14 yRadius:14];
+    [(self.dragHover ? [SubPopAccent() colorWithAlphaComponent:0.10] : [NSColor colorWithCalibratedWhite:.09 alpha:1]) setFill]; [path fill];
+    [(self.dragHover ? SubPopAccent() : [NSColor colorWithCalibratedWhite:1 alpha:.14]) setStroke];
     CGFloat dash[]={5,4}; [path setLineDash:dash count:2 phase:0]; [path stroke];
 }
 - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
     BOOL supported=NO;
     for (NSString *type in sender.draggingPasteboard.types) if ([type hasPrefix:@"com.apple.finalcutpro.xml"]) supported=YES;
-    self.dragHover=supported; [self setNeedsDisplay:YES]; return supported ? NSDragOperationCopy : NSDragOperationNone;
+    self.dragHover=supported; if (supported) SubPopReveal(self); [self setNeedsDisplay:YES]; return supported ? NSDragOperationCopy : NSDragOperationNone;
 }
 - (void)draggingExited:(id<NSDraggingInfo>)sender { self.dragHover=NO; [self setNeedsDisplay:YES]; }
 - (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
@@ -112,10 +118,10 @@ static NSDictionary *Time(CMTime t) {
 @implementation SubPopTitleDragView
 - (void)drawRect:(NSRect)rect {
     BOOL enabled=[self.controller canDragResult];
-    [(enabled ? [NSColor.controlAccentColor colorWithAlphaComponent:0.14] : NSColor.controlBackgroundColor) setFill];
-    [[NSBezierPath bezierPathWithRoundedRect:self.bounds xRadius:8 yRadius:8] fill];
+    [(enabled ? [SubPopAccent() colorWithAlphaComponent:0.17] : NSColor.controlBackgroundColor) setFill];
+    [[NSBezierPath bezierPathWithRoundedRect:self.bounds xRadius:12 yRadius:12] fill];
     NSString *text=enabled ? @"↗  拖回字幕到 Final Cut Pro" : @"识别完成后，在这里拖回字幕";
-    [text drawAtPoint:NSMakePoint(16,9) withAttributes:@{NSForegroundColorAttributeName:enabled ? NSColor.controlAccentColor : NSColor.secondaryLabelColor,NSFontAttributeName:[NSFont systemFontOfSize:13 weight:NSFontWeightMedium]}];
+    [text drawAtPoint:NSMakePoint(18,16) withAttributes:@{NSForegroundColorAttributeName:enabled ? SubPopAccent() : NSColor.secondaryLabelColor,NSFontAttributeName:[NSFont systemFontOfSize:13 weight:NSFontWeightMedium]}];
 }
 - (void)mouseDown:(NSEvent *)event { if ([self.controller canDragResult]) [self.controller beginTitleDrag:event fromView:self]; }
 @end
@@ -140,61 +146,7 @@ static NSDictionary *Time(CMTime t) {
     NSTextField *label=[NSTextField wrappingLabelWithString:text];
     label.font=[NSFont systemFontOfSize:size weight:weight]; return label;
 }
-- (void)loadView {
-    self.view=[[NSView alloc] initWithFrame:NSMakeRect(0,0,620,620)];
-    NSDictionary *catalog=[self readJSON:[[NSBundle bundleForClass:self.class] URLForResource:@"models" withExtension:@"json"]];
-    self.modelCatalog=catalog[@"models"] ?: @[];
-    self.selectedModelID=[NSUserDefaults.standardUserDefaults stringForKey:@"selectedModelID"] ?: catalog[@"defaultModelID"];
-    if (![self.modelCatalog filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"id == %@",self.selectedModelID]].count) self.selectedModelID=catalog[@"defaultModelID"];
-    NSStackView *stack=[NSStackView new]; stack.orientation=NSUserInterfaceLayoutOrientationVertical; stack.alignment=NSLayoutAttributeLeading; stack.spacing=16; stack.translatesAutoresizingMaskIntoConstraints=NO;
-    NSScrollView *page=[[NSScrollView alloc] initWithFrame:self.view.bounds];page.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;page.hasVerticalScroller=YES;page.drawsBackground=NO;[self.view addSubview:page];
-    SubPopDocumentView *document=[SubPopDocumentView new];document.translatesAutoresizingMaskIntoConstraints=NO;page.documentView=document;
-    [document.widthAnchor constraintEqualToAnchor:page.contentView.widthAnchor].active=YES;
-    [document addSubview:stack];
-    [NSLayoutConstraint activateConstraints:@[[stack.leadingAnchor constraintEqualToAnchor:document.leadingAnchor constant:24],[stack.trailingAnchor constraintEqualToAnchor:document.trailingAnchor constant:-24],[stack.topAnchor constraintEqualToAnchor:document.topAnchor constant:20]]];
-    NSView *header=[[NSView alloc] initWithFrame:NSMakeRect(0,0,572,34)];
-    NSTextField *brand=[self label:@"SubPop" size:24 weight:NSFontWeightSemibold];brand.frame=NSMakeRect(0,0,160,34);[header addSubview:brand];
-    self.serviceLabel=[self label:@"正在连接" size:12 weight:NSFontWeightRegular];self.serviceLabel.frame=NSMakeRect(360,8,212,18);self.serviceLabel.alignment=NSTextAlignmentRight;self.serviceLabel.autoresizingMask=NSViewMinXMargin;[header addSubview:self.serviceLabel];
-    [stack addArrangedSubview:header];[header.heightAnchor constraintEqualToConstant:34].active=YES;
-    SubPopDropView *drop=[[SubPopDropView alloc] initWithFrame:NSMakeRect(0,0,572,80)];drop.controller=self;
-    [drop registerForDraggedTypes:@[@"com.apple.finalcutpro.xml.v1-14",@"com.apple.finalcutpro.xml.v1-13",@"com.apple.finalcutpro.xml.v1-12",@"com.apple.finalcutpro.xml"]];
-    [drop setAccessibilityElement:YES];[drop setAccessibilityRole:NSAccessibilityGroupRole];[drop setAccessibilityLabel:@"导入项目拖放区"];
-    self.dropTitle=[self label:@"拖入你的项目" size:17 weight:NSFontWeightSemibold];self.dropTitle.frame=NSMakeRect(18,41,536,24);self.dropTitle.autoresizingMask=NSViewWidthSizable;[drop addSubview:self.dropTitle];
-    self.dropDetail=[self label:@"从 FCP 浏览器拖入 · 识别整段视频" size:12 weight:NSFontWeightRegular];self.dropDetail.textColor=NSColor.secondaryLabelColor;self.dropDetail.frame=NSMakeRect(18,12,536,22);self.dropDetail.autoresizingMask=NSViewWidthSizable;[drop addSubview:self.dropDetail];
-
-    [stack addArrangedSubview:drop];[drop.heightAnchor constraintEqualToConstant:80].active=YES;
-    NSView *options=[[NSView alloc] initWithFrame:NSMakeRect(0,0,572,74)];
-    NSTextField *modelLabel=[self label:@"识别模型" size:12 weight:NSFontWeightMedium];modelLabel.frame=NSMakeRect(0,55,240,18);[options addSubview:modelLabel];
-    self.modelPicker=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(0,24,300,28) pullsDown:NO];self.modelPicker.target=self;self.modelPicker.action=@selector(modelChanged:);[self.modelPicker setAccessibilityLabel:@"识别模型"];
-    for (NSDictionary *model in self.modelCatalog) { [self.modelPicker addItemWithTitle:model[@"name"]];self.modelPicker.lastItem.representedObject=model[@"id"]; }
-    [self.modelPicker selectItemAtIndex:[self.modelCatalog indexOfObjectPassingTest:^BOOL(NSDictionary *m,NSUInteger i,BOOL *stop){return [m[@"id"] isEqual:self.selectedModelID];}]];[options addSubview:self.modelPicker];
-    NSTextField *audioLabel=[self label:@"音频范围" size:12 weight:NSFontWeightMedium];audioLabel.frame=NSMakeRect(324,55,240,18);audioLabel.autoresizingMask=NSViewMinXMargin;[options addSubview:audioLabel];
-    self.audioPicker=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(324,24,248,28) pullsDown:NO];[self.audioPicker addItemsWithTitles:@[@"仅对白 · 排除音乐角色",@"所有音频 · 按时间线混合"]];self.audioPicker.autoresizingMask=NSViewMinXMargin;self.audioPicker.target=self;self.audioPicker.action=@selector(audioChanged:);[self.audioPicker setAccessibilityLabel:@"音频范围"];[options addSubview:self.audioPicker];
-    self.modelDetail=[self label:@"" size:11 weight:NSFontWeightRegular];self.modelDetail.textColor=NSColor.secondaryLabelColor;self.modelDetail.frame=NSMakeRect(0,0,572,18);self.modelDetail.autoresizingMask=NSViewWidthSizable;[options addSubview:self.modelDetail];
-    [stack addArrangedSubview:options];[options.heightAnchor constraintEqualToConstant:74].active=YES;
-    NSView *status=[[NSView alloc] initWithFrame:NSMakeRect(0,0,572,54)];
-    self.statusTitle=[self label:@"等待项目" size:14 weight:NSFontWeightSemibold];self.statusTitle.frame=NSMakeRect(0,31,534,21);self.statusTitle.autoresizingMask=NSViewWidthSizable;[status addSubview:self.statusTitle];
-    self.statusDetail=[self label:@"" size:12 weight:NSFontWeightRegular];self.statusDetail.textColor=NSColor.secondaryLabelColor;self.statusDetail.frame=NSMakeRect(0,0,572,28);self.statusDetail.autoresizingMask=NSViewWidthSizable;[status addSubview:self.statusDetail];
-    self.spinner=[[NSProgressIndicator alloc] initWithFrame:NSMakeRect(550,33,16,16)];self.spinner.style=NSProgressIndicatorStyleSpinning;self.spinner.displayedWhenStopped=NO;self.spinner.autoresizingMask=NSViewMinXMargin;[status addSubview:self.spinner];
-    [stack addArrangedSubview:status];[status.heightAnchor constraintEqualToConstant:54].active=YES;
-    self.captionTable=[NSTableView new];self.captionTable.rowHeight=32;self.captionTable.usesAlternatingRowBackgroundColors=YES;self.captionTable.dataSource=self;self.captionTable.delegate=self;
-    NSTableColumn *time=[[NSTableColumn alloc] initWithIdentifier:@"time"];time.title=@"开始";time.width=82;time.editable=NO;[self.captionTable addTableColumn:time];
-    NSTableColumn *text=[[NSTableColumn alloc] initWithIdentifier:@"text"];text.title=@"字幕 · 双击校对";text.width=440;text.editable=YES;[self.captionTable addTableColumn:text];
-    self.captionScroll=[NSScrollView new];self.captionScroll.documentView=self.captionTable;self.captionScroll.hasVerticalScroller=YES;self.captionScroll.borderType=NSBezelBorder;[stack addArrangedSubview:self.captionScroll];[self.captionScroll.heightAnchor constraintEqualToConstant:150].active=YES;self.captionScroll.hidden=YES;
-    self.fontPicker=[[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];[self.fontPicker addItemsWithTitles:@[@"Helvetica",@"PingFang SC",@"Arial"]];self.fontPicker.target=self;self.fontPicker.action=@selector(styleChanged:);[self.fontPicker setAccessibilityLabel:@"字幕字体"];
-    self.sizePicker=[[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];[self.sizePicker addItemsWithTitles:@[@"28",@"36",@"48",@"64",@"72",@"80",@"96",@"120"]];self.sizePicker.target=self;self.sizePicker.action=@selector(styleChanged:);[self.sizePicker setAccessibilityLabel:@"字幕字号"];
-    self.editorControls=[NSStackView stackViewWithViews:@[[self label:@"字幕样式" size:12 weight:NSFontWeightMedium],self.fontPicker,self.sizePicker]];self.editorControls.spacing=10;[stack addArrangedSubview:self.editorControls];self.editorControls.hidden=YES;
-    self.resultView=[[SubPopTitleDragView alloc] initWithFrame:NSMakeRect(0,0,572,36)];self.resultView.controller=self;[self.resultView setAccessibilityElement:YES];[self.resultView setAccessibilityRole:NSAccessibilityGroupRole];[stack addArrangedSubview:self.resultView];[self.resultView.heightAnchor constraintEqualToConstant:36].active=YES;self.resultView.hidden=YES;
-    NSView *actions=[[NSView alloc] initWithFrame:NSMakeRect(0,0,572,36)];
-    self.vocabularyButton=[NSButton buttonWithTitle:@"词库" target:self action:@selector(showVocabulary:)];self.vocabularyButton.bezelStyle=NSBezelStyleRounded;self.vocabularyButton.frame=NSMakeRect(0,2,84,30);[actions addSubview:self.vocabularyButton];
-    self.modelsButton=[NSButton buttonWithTitle:@"模型管理" target:self action:@selector(showModels:)];self.modelsButton.bezelStyle=NSBezelStyleRounded;self.modelsButton.frame=NSMakeRect(88,2,92,30);[actions addSubview:self.modelsButton];
-    self.cancelButton=[NSButton buttonWithTitle:@"取消" target:self action:@selector(cancelJob:)];self.cancelButton.bezelStyle=NSBezelStyleRounded;self.cancelButton.frame=NSMakeRect(298,2,90,30);self.cancelButton.autoresizingMask=NSViewMinXMargin;[actions addSubview:self.cancelButton];
-    self.generateButton=[NSButton buttonWithTitle:@"开始识别" target:self action:@selector(primaryAction:)];self.generateButton.bezelStyle=NSBezelStyleRounded;self.generateButton.controlSize=NSControlSizeLarge;self.generateButton.keyEquivalent=@"\r";self.generateButton.frame=NSMakeRect(400,0,172,34);self.generateButton.autoresizingMask=NSViewMinXMargin;[actions addSubview:self.generateButton];
-    [stack addArrangedSubview:actions];[actions.heightAnchor constraintEqualToConstant:36].active=YES;
-    self.scopeLabel=[self label:@"音频不上传 · 字幕可逐句编辑" size:11 weight:NSFontWeightRegular];self.scopeLabel.textColor=NSColor.secondaryLabelColor;[stack addArrangedSubview:self.scopeLabel];
-    for (NSView *row in stack.arrangedSubviews) [row.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active=YES;
-    self.output=[[NSTextView alloc] initWithFrame:NSMakeRect(0,0,520,300)];self.output.editable=NO;self.output.font=[NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightRegular];self.displayState=@"idle";[document.bottomAnchor constraintEqualToAnchor:stack.bottomAnchor constant:20].active=YES;[self updateInterface];
-}
+#include "StudioLayout.inc"
 - (void)restoreSession {
     if (self.restoringSession || self.requestID || self.titlePayloads || !self.bridgeURL || !self.timeline || ![self workerAvailable]) return;
     NSDictionary *saved=[NSUserDefaults.standardUserDefaults dictionaryForKey:@"pendingSession"];
@@ -312,19 +264,28 @@ static NSDictionary *Time(CMTime t) {
     NSDictionary *copy=SubPopPresentation(state); self.statusTitle.stringValue=copy[@"title"]; self.statusDetail.stringValue=copy[@"detail"];
     if ([state isEqual:@"error"] && self.visibleError.length) self.statusDetail.stringValue=self.visibleError;
     if ([state isEqual:@"recognize"] && self.jobProgress) self.statusTitle.stringValue=[NSString stringWithFormat:@"正在识别语音 · %.0f%%",100*self.jobProgress.doubleValue];
-    self.serviceLabel.stringValue=connected ? @"● 本机已连接" : @"本机未连接";
+    self.serviceLabel.stringValue=connected ? @"● 本机就绪" : @"本机未连接";
     self.modelDetail.stringValue=[NSString stringWithFormat:@"%@ · %@ · 本机 CPU",[self selectedModel][@"description"] ?: @"",[self selectedModelAvailable] ? @"已安装" : @"模型未就绪"];
     self.serviceLabel.textColor=connected ? NSColor.systemGreenColor : NSColor.secondaryLabelColor;
-    self.dropTitle.stringValue=fresh ? (self.dropName ?: @"项目已导入") : @"拖入你的项目";
-    self.dropDetail.stringValue=fresh ? [NSString stringWithFormat:@"整段 %.1f 秒 · 修改时间线后请重新拖入",CMTimeGetSeconds(self.dropDuration)] : @"从 FCP 浏览器拖入 · 识别整段视频";
+    self.dropTitle.stringValue=fresh ? (self.dropName ?: @"项目已导入") : @"把项目拖到这里";
+    self.dropDetail.stringValue=fresh ? [NSString stringWithFormat:@"%02ld:%02ld · 整个项目 · 修改时间线后请重新拖入",(long)(CMTimeGetSeconds(self.dropDuration)/60),(long)CMTimeGetSeconds(self.dropDuration)%60] : @"从 Final Cut Pro 浏览器拖入整个项目";
     BOOL busy=self.requestID!=nil;BOOL managing=[self modelOperationBusy];
     BOOL preparing=[state isEqual:@"preparing"];
-    self.generateButton.title=preparing ? @"正在准备…" : (busy ? @"正在处理…" : (connected ? @"开始识别" : @"准备本机识别"));
+    self.generateButton.title=preparing ? @"正在准备…" : (busy ? @"正在处理…" : (connected ? (self.titlePayloads ? @"重新识别" : @"生成字幕") : @"准备本机识别"));
     self.generateButton.enabled=!managing && !preparing && !busy && (!connected || (fresh && [self isolatedProjectActive] && [self selectedModelAvailable]));
     self.vocabularyButton.enabled=!busy;self.vocabularyButton.title=[NSString stringWithFormat:@"词库 · %lu",(unsigned long)[self effectiveVocabulary].count];
     self.modelPicker.enabled=!busy && !managing;self.audioPicker.enabled=!busy;self.cancelButton.hidden=!busy;
     BOOL hasRows=self.titlePayloads && self.captionRows.count;
-    self.captionScroll.hidden=!hasRows;self.editorControls.hidden=!hasRows;self.resultView.hidden=!hasRows;
+    BOOL newlyReady=hasRows && self.captionScroll.hidden;
+    self.captionScroll.hidden=!hasRows;self.editorControls.hidden=!hasRows;self.resultView.hidden=!hasRows;self.reviewHeader.hidden=!hasRows;
+    self.captionCount.stringValue=[NSString stringWithFormat:@"字幕预览  ·  %lu 条",(unsigned long)self.captionRows.count];
+    if (newlyReady) {SubPopReveal(self.captionScroll);SubPopReveal(self.resultView);}
+    self.jobBar.hidden=!(busy && [state isEqual:@"recognize"] && self.jobProgress);
+    if (!self.jobBar.hidden) self.jobBar.doubleValue=self.jobProgress.doubleValue;
+    [self.signal setWorking:busy || preparing || managing];
+    if (hasRows && [self.resultManifest[@"reviewWarnings"] count]) self.statusDetail.stringValue=[NSString stringWithFormat:@"已自动整理 · %lu 段时间需校对，保留原断句 · 拖回后可逐句编辑",(unsigned long)[self.resultManifest[@"reviewWarnings"] count]];
+    if (self.lastVisualState && ![self.lastVisualState isEqual:state]) SubPopReveal(self.statusTitle);
+    self.lastVisualState=state;
     if (connected && ![self selectedModelAvailable] && !busy) { self.statusTitle.stringValue=@"所选模型尚未就绪";self.statusDetail.stringValue=@"点击“模型管理”下载，或选择已安装的模型。"; }
     if (busy || preparing) [self.spinner startAnimation:nil]; else [self.spinner stopAnimation:nil];
     BOOL ready=[self canDragResult]; [self.resultView setAccessibilityLabel:ready ? @"拖回字幕到 Final Cut Pro" : @"字幕拖出区，识别完成后可用"]; [self.resultView setNeedsDisplay:YES];

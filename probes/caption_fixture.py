@@ -62,6 +62,10 @@ def captions(data, fps=25, generic=False):
                 raw[-1]['text']+=text;raw[-1]['end']=max(raw[-1]['end'],end)
             else:raw.append(dict(text=text,start=start,end=end))
         if cursor!=len(words):raise ValueError('Unconsumed alignment')
+    return quantize(raw, duration, fps)
+
+
+def quantize(raw, duration, fps):
     rows=[]
     for row in raw:
         start=(row['start']*fps).__floor__();end=(row['end']*fps).__ceil__()

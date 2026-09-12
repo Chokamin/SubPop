@@ -22,8 +22,8 @@
     NSButton *enabled=[NSButton checkboxWithTitle:@"识别时使用词库" target:nil action:nil];enabled.frame=NSMakeRect(0,208,480,24);
     NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
     enabled.state=![defaults objectForKey:@"vocabularyEnabled"] || [defaults boolForKey:@"vocabularyEnabled"] ? NSControlStateValueOn : NSControlStateValueOff;[view addSubview:enabled];
-    NSScrollView *scroll=[[NSScrollView alloc] initWithFrame:NSMakeRect(0,34,480,164)];scroll.hasVerticalScroller=YES;scroll.borderType=NSBezelBorder;
-    NSTextView *editor=[[NSTextView alloc] initWithFrame:NSMakeRect(0,0,460,164)];editor.richText=NO;editor.font=[NSFont systemFontOfSize:14];editor.textContainerInset=NSMakeSize(10,10);editor.string=self.vocabularyDraft ?: ([[defaults arrayForKey:@"vocabularyTerms"] componentsJoinedByString:@"\n"] ?: @"");scroll.documentView=editor;[view addSubview:scroll];
+    NSScrollView *scroll=[[NSScrollView alloc] initWithFrame:NSMakeRect(0,34,480,164)];scroll.hasVerticalScroller=YES;scroll.borderType=NSNoBorder;scroll.wantsLayer=YES;scroll.layer.cornerRadius=10;scroll.layer.masksToBounds=YES;
+    NSTextView *editor=[[NSTextView alloc] initWithFrame:NSMakeRect(0,0,460,164)];editor.richText=NO;editor.backgroundColor=[NSColor colorWithCalibratedWhite:.09 alpha:1];editor.font=[NSFont systemFontOfSize:14];editor.textContainerInset=NSMakeSize(10,10);editor.string=self.vocabularyDraft ?: ([[defaults arrayForKey:@"vocabularyTerms"] componentsJoinedByString:@"\n"] ?: @"");scroll.documentView=editor;[view addSubview:scroll];
     NSTextField *limit=[self label:@"最多 100 个词 · 合计 2000 字 · 保存在本机" size:12 weight:NSFontWeightRegular];limit.frame=NSMakeRect(0,0,480,24);limit.textColor=NSColor.secondaryLabelColor;[view addSubview:limit];
     alert.accessoryView=view;[alert addButtonWithTitle:@"保存"];[alert addButtonWithTitle:@"取消"];
     [alert beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse result) {
@@ -47,11 +47,12 @@
     NSUInteger index=0;
     for (NSDictionary *spec in self.modelCatalog) {
         CGFloat y=204-index*100;
-        NSTextField *name=[self label:spec[@"name"] size:16 weight:NSFontWeightSemibold];name.frame=NSMakeRect(0,y+54,350,26);[view addSubview:name];
-        NSTextField *detail=[self label:spec[@"description"] size:12 weight:NSFontWeightRegular];detail.frame=NSMakeRect(0,y+28,350,24);detail.textColor=NSColor.secondaryLabelColor;[view addSubview:detail];
-        NSTextField *status=[self label:@"检查模型…" size:12 weight:NSFontWeightMedium];status.frame=NSMakeRect(0,y+3,350,22);[view addSubview:status];
-        NSButton *action=[NSButton buttonWithTitle:@"下载" target:self action:@selector(modelAction:)];action.identifier=spec[@"id"];action.frame=NSMakeRect(370,y+41,145,30);action.bezelStyle=NSBezelStyleRounded;[view addSubview:action];
-        NSButton *remove=[NSButton buttonWithTitle:@"移除模型" target:self action:@selector(removeModel:)];remove.identifier=spec[@"id"];remove.frame=NSMakeRect(370,y+6,145,28);remove.bordered=NO;[view addSubview:remove];
+        NSView *card=[[NSView alloc] initWithFrame:NSMakeRect(0,y-3,520,92)];card.wantsLayer=YES;card.layer.cornerRadius=12;card.layer.backgroundColor=[NSColor colorWithCalibratedWhite:.105 alpha:1].CGColor;card.layer.borderColor=[NSColor colorWithCalibratedWhite:1 alpha:.065].CGColor;card.layer.borderWidth=1;[view addSubview:card];
+        NSTextField *name=[self label:spec[@"name"] size:16 weight:NSFontWeightSemibold];name.frame=NSMakeRect(14,y+54,330,26);[view addSubview:name];
+        NSTextField *detail=[self label:spec[@"description"] size:12 weight:NSFontWeightRegular];detail.frame=NSMakeRect(14,y+28,330,24);detail.textColor=NSColor.secondaryLabelColor;[view addSubview:detail];
+        NSTextField *status=[self label:@"检查模型…" size:12 weight:NSFontWeightMedium];status.frame=NSMakeRect(14,y+3,330,22);[view addSubview:status];
+        NSButton *action=[NSButton buttonWithTitle:@"下载" target:self action:@selector(modelAction:)];action.identifier=spec[@"id"];action.frame=NSMakeRect(358,y+41,145,30);action.bezelStyle=NSBezelStyleRounded;[view addSubview:action];
+        NSButton *remove=[NSButton buttonWithTitle:@"移除模型" target:self action:@selector(removeModel:)];remove.identifier=spec[@"id"];remove.frame=NSMakeRect(358,y+6,145,28);remove.bordered=NO;[view addSubview:remove];
         self.modelRows[spec[@"id"]]=@{@"status":status,@"action":action,@"remove":remove};index++;
     }
     self.downloadProgress=[[NSProgressIndicator alloc] initWithFrame:NSMakeRect(0,66,520,8)];self.downloadProgress.indeterminate=NO;self.downloadProgress.minValue=0;self.downloadProgress.maxValue=1;[view addSubview:self.downloadProgress];
@@ -78,6 +79,7 @@
     double value=[task[@"progress"] doubleValue];
     if (!busy || NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion) self.downloadProgress.doubleValue=value;
     else [NSAnimationContext runAnimationGroup:^(NSAnimationContext *context) {context.duration=0.2;self.downloadProgress.animator.doubleValue=value;} completionHandler:nil];
+    self.downloadProgress.hidden=!busy;
     if (busy) {
         [self.downloadSpinner startAnimation:nil];
         if (cancelling) self.downloadLabel.stringValue=@"正在暂停下载…\n已经下载的部分会保留。";
