@@ -21,6 +21,13 @@ static NSDictionary *Time(CMTime t) {
 @property BOOL observed;
 @property NSDictionary<NSString *, NSData *> *titlePayloads;
 @property BOOL resultLoadAttempted;
+@property NSURL *bridgeURL;
+@property BOOL bridgeScoped;
+@property NSTimer *bridgeTimer;
+@property NSString *requestID;
+@property NSString *requestSHA;
+@property NSString *lastJobStage;
+@property NSButton *generateButton;
 - (BOOL)receivePasteboard:(NSPasteboard *)pasteboard;
 - (void)beginTitleDrag:(NSEvent *)event fromView:(NSView *)view;
 @end
@@ -74,11 +81,118 @@ static NSDictionary *Time(CMTime t) {
     [view addSubview:drag];
     NSButton *load=[NSButton buttonWithTitle:@"载入识别结果" target:self action:@selector(loadResult:)];
     load.frame=NSMakeRect(16,272,160,32); load.autoresizingMask=NSViewMinYMargin; [view addSubview:load];
-    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(16,16,588,240)];
+    NSButton *connect=[NSButton buttonWithTitle:@"连接本机识别服务" target:self action:@selector(connectWorker:)];
+    connect.frame=NSMakeRect(16,218,220,32); connect.autoresizingMask=NSViewMinYMargin; [view addSubview:connect];
+    self.generateButton=[NSButton buttonWithTitle:@"识别最近项目快照" target:self action:@selector(startWorkerJob:)];
+    self.generateButton.frame=NSMakeRect(250,218,350,32); self.generateButton.autoresizingMask=NSViewMinYMargin;
+    [view addSubview:self.generateButton];
+    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(16,16,588,192)];
     scroll.autoresizingMask = NSViewWidthSizable|NSViewHeightSizable; scroll.hasVerticalScroller = YES;
     self.output = [[NSTextView alloc] initWithFrame:scroll.bounds]; self.output.editable = NO;
     self.output.font = [NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightRegular];
     scroll.documentView = self.output; [view addSubview:scroll]; self.view = view;
+}
+- (NSDictionary *)readJSON:(NSURL *)url {
+    NSData *data=[NSData dataWithContentsOfURL:url];
+    if (!data || data.length>2*1024*1024) return nil;
+    id value=[NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+    return [value isKindOfClass:NSDictionary.class] ? value : nil;
+}
+- (NSString *)sha256:(NSData *)data {
+    unsigned char digest[CC_SHA256_DIGEST_LENGTH]; CC_SHA256(data.bytes,(CC_LONG)data.length,digest);
+    NSMutableString *sha=[NSMutableString new]; for (int i=0;i<CC_SHA256_DIGEST_LENGTH;i++) [sha appendFormat:@"%02x",digest[i]];
+    return sha;
+}
+- (BOOL)isolatedProjectActive {
+    FCPXSequence *sequence=self.timeline.activeSequence;
+    FCPXObject *container=sequence.container;
+    return container.objectType==kFCPXObjectType_Project &&
+        [((FCPXProject *)container).UID isEqual:@"0D11EC79-ED11-4688-97A9-CB78621857DD"] &&
+        CMTIME_IS_NUMERIC(sequence.duration) && CMTimeCompare(sequence.duration,CMTimeMake(217,25))==0;
+}
+- (BOOL)workerAvailable {
+    NSDictionary *service=[self readJSON:[self.bridgeURL URLByAppendingPathComponent:@"service.json"]];
+    NSNumber *heartbeat=service[@"heartbeat"];
+    return [heartbeat isKindOfClass:NSNumber.class] && fabs(NSDate.date.timeIntervalSince1970-heartbeat.doubleValue)<10 && [service[@"protocol"] isEqual:@1];
+}
+- (void)connectWorker:(id)sender {
+    NSOpenPanel *panel=[NSOpenPanel openPanel]; panel.canChooseDirectories=YES; panel.canChooseFiles=NO;
+    panel.allowsMultipleSelection=NO; panel.message=@"选择 SubPop 的 .subloom/verification/bridge 任务目录（首次连接）";
+    [panel beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse response) {
+        if (response!=NSModalResponseOK) return;
+        NSString *root=[[NSBundle bundleForClass:self.class] objectForInfoDictionaryKey:@"SubPopWorkspace"];
+        NSString *expected=[root stringByAppendingPathComponent:@".subloom/verification/bridge"];
+        if (![panel.URL.path.stringByStandardizingPath isEqual:expected]) { [self record:@{@"reason":@"worker-connect",@"status":@"wrong-directory"}]; return; }
+        if (self.bridgeScoped) [self.bridgeURL stopAccessingSecurityScopedResource];
+        self.bridgeURL=panel.URL; self.bridgeScoped=[panel.URL startAccessingSecurityScopedResource];
+        [self.bridgeTimer invalidate];
+        self.bridgeTimer=[NSTimer scheduledTimerWithTimeInterval:1 target:self selector:@selector(pollWorker:) userInfo:nil repeats:YES];
+        [self record:@{@"reason":@"worker-connect",@"status":[self workerAvailable] ? @"connected" : @"service-unavailable-open-SubPop-app"}];
+    }];
+}
+- (void)startWorkerJob:(id)sender {
+    if (self.requestID) return;
+    if (!self.bridgeURL || ![self workerAvailable] || ![self isolatedProjectActive]) {
+        [self record:@{@"reason":@"worker-submit",@"status":@"connect-service-and-open-isolated-project-first"}]; return;
+    }
+    NSURL *latest=nil; NSDate *latestDate=nil;
+    for (NSURL *url in [[NSFileManager defaultManager] contentsOfDirectoryAtURL:[self evidenceDirectory] includingPropertiesForKeys:@[NSURLContentModificationDateKey] options:0 error:nil]) {
+        if (![url.lastPathComponent hasPrefix:@"drop-"] || ![url.pathExtension isEqual:@"fcpxml"]) continue;
+        NSDate *date=nil; [url getResourceValue:&date forKey:NSURLContentModificationDateKey error:nil];
+        if (!latest || [date compare:latestDate]==NSOrderedDescending) { latest=url; latestDate=date; }
+    }
+    NSData *original=[NSData dataWithContentsOfURL:latest];
+    NSXMLDocument *xml=original ? [[NSXMLDocument alloc] initWithData:original options:NSXMLNodeLoadExternalEntitiesNever error:nil] : nil;
+    NSArray *projects=[xml nodesForXPath:@"/fcpxml/project | /fcpxml/library/event/project" error:nil];
+    if (projects.count!=1 || ![[projects[0] attributeForName:@"uid"].stringValue isEqual:@"0D11EC79-ED11-4688-97A9-CB78621857DD"]) {
+        [self record:@{@"reason":@"worker-submit",@"status":@"matching-dropped-project-required"}]; return;
+    }
+    // Credentials from FCP drag are never handed to the unsandboxed worker.
+    for (NSXMLNode *bookmark in [xml nodesForXPath:@"//bookmark" error:nil]) [bookmark detach];
+    NSData *data=[xml XMLDataWithOptions:0];
+    NSString *request=NSUUID.UUID.UUIDString.lowercaseString;
+    NSURL *directory=[self.bridgeURL URLByAppendingPathComponent:request isDirectory:YES]; NSError *error=nil;
+    BOOL ok=[[NSFileManager defaultManager] createDirectoryAtURL:directory withIntermediateDirectories:NO attributes:nil error:&error];
+    if (ok) ok=[data writeToURL:[directory URLByAppendingPathComponent:@"input.fcpxml"] options:NSDataWritingAtomic error:&error];
+    NSString *sha=[self sha256:data];
+    NSDictionary *manifest=@{@"requestID":request,@"projectUID":@"0D11EC79-ED11-4688-97A9-CB78621857DD",@"xmlSHA256":sha};
+    if (ok) ok=[[NSJSONSerialization dataWithJSONObject:manifest options:0 error:nil] writeToURL:[directory URLByAppendingPathComponent:@"request.json"] options:NSDataWritingAtomic error:&error];
+    if (!ok) { [self record:@{@"reason":@"worker-submit",@"status":@"write-failed",@"error":error.localizedDescription ?: @""}]; return; }
+    self.requestID=request; self.requestSHA=sha; self.lastJobStage=nil; self.generateButton.enabled=NO;
+    self.resultLoadAttempted=YES; self.titlePayloads=nil;
+    [self record:@{@"reason":@"worker-submit",@"status":@"submitted",@"requestID":request,@"snapshotDate":latestDate.description ?: @"",@"source":@"last dropped XML snapshot; not current timeline freshness"}];
+}
+- (void)pollWorker:(NSTimer *)timer {
+    if (!self.requestID) return;
+    NSURL *directory=[self.bridgeURL URLByAppendingPathComponent:self.requestID isDirectory:YES];
+    NSDictionary *response=[self readJSON:[directory URLByAppendingPathComponent:@"response.json"]];
+    if (!response) {
+        if (![self workerAvailable]) { self.generateButton.enabled=YES; self.requestID=nil; [self record:@{@"reason":@"worker-result",@"status":@"service-disconnected"}]; }
+        return;
+    }
+    if (![response[@"requestID"] isEqual:self.requestID]) return;
+    if ([response[@"status"] isEqual:@"ready"]) {
+        NSMutableDictionary *payloads=[NSMutableDictionary new];
+        BOOL valid=[self isolatedProjectActive] && [response[@"snapshotSHA256"] isEqual:self.requestSHA] &&
+            [response[@"projectUID"] isEqual:@"0D11EC79-ED11-4688-97A9-CB78621857DD"] &&
+            [response[@"payloads"] isKindOfClass:NSDictionary.class] && [response[@"outputs"] isKindOfClass:NSDictionary.class];
+        if (valid) for (NSString *version in @[@"1.12",@"1.13",@"1.14"]) {
+            id text=response[@"payloads"][version]; if (![text isKindOfClass:NSString.class]) { valid=NO; break; }
+            NSData *data=[text dataUsingEncoding:NSUTF8StringEncoding];
+            NSString *name=[NSString stringWithFormat:@"TitleProbe-%@.fcpxml",version];
+            if (![[self sha256:data] isEqual:response[@"outputs"][name]]) { valid=NO; break; }
+            payloads[version]=data;
+        }
+        if (valid && payloads.count==3) self.titlePayloads=payloads;
+        [self record:@{@"reason":@"worker-result",@"status":self.titlePayloads ? @"ready-to-drag" : @"result-rejected",@"requestID":self.requestID,@"jobID":response[@"jobID"] ?: @""}];
+        self.requestID=nil; self.generateButton.enabled=YES;
+    } else if ([response[@"status"] isEqual:@"failed"] || ![self workerAvailable]) {
+        [self record:@{@"reason":@"worker-result",@"status":@"failed",@"error":response[@"error"] ?: @"service-disconnected"}];
+        self.requestID=nil; self.generateButton.enabled=YES;
+    } else if (![self.lastJobStage isEqual:response[@"stage"]]) {
+        self.lastJobStage=response[@"stage"];
+        [self record:@{@"reason":@"worker-progress",@"status":response[@"stage"] ?: @"running",@"requestID":self.requestID}];
+    }
 }
 - (void)loadResult:(id)sender {
     NSOpenPanel *panel=[NSOpenPanel openPanel];
@@ -151,6 +265,9 @@ static NSDictionary *Time(CMTime t) {
     [self.timeline addTimelineObserver:self];
 }
 - (void)viewWillDisappear {
+    [self.bridgeTimer invalidate]; self.bridgeTimer=nil;
+    if (self.bridgeScoped) [self.bridgeURL stopAccessingSecurityScopedResource];
+    self.bridgeScoped=NO; self.bridgeURL=nil; self.requestID=nil; self.generateButton.enabled=YES;
     [self.timeline removeTimelineObserver:self]; self.timeline = nil; self.host = nil; self.observed = NO;
     [super viewWillDisappear];
 }

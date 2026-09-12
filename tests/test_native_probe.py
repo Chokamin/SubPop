@@ -35,5 +35,8 @@ class NativeBundleTests(unittest.TestCase):
         self.assertEqual(ent['com.apple.security.scripting-targets'],{'com.apple.FinalCut':['com.apple.FinalCut.library.inspection']})
         self.assertIs(ent['com.apple.security.automation.apple-events'],True)
         self.assertNotIn('com.apple.security.cs.disable-library-validation',ent)
+        self.assertIs(ent['com.apple.security.files.user-selected.read-write'],True)
+        self.assertNotIn('com.apple.security.network.server',ent)
+        self.assertNotIn('com.apple.security.network.client',ent)
 
 if __name__=='__main__':unittest.main()
