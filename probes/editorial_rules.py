@@ -1,4 +1,4 @@
-# Adapted from the user-owned VinciSub subtitle rules; see docs/subtitle-rules-port.md.
+# Adapted from the user-owned VinciSub subtitle rules; ported as independent text rules (not model training).
 """Subtitle timing, local lexical boundaries and SRT serialization."""
 
 import math

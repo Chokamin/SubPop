@@ -7,7 +7,7 @@ ROOT=Path(__file__).resolve().parents[1]
 
 class CaptionFixtureTests(unittest.TestCase):
     def setUp(self):
-        self.data=json.loads((ROOT/'docs/evidence/subpop-native-asr.json').read_text())
+        self.data=json.loads((ROOT/'tests/fixtures/evidence/subpop-native-asr.json').read_text())
 
     def test_real_alignment_keeps_words_and_measured_times(self):
         rows=captions(self.data)

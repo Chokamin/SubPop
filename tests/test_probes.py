@@ -87,7 +87,7 @@ class ActualHostEvidenceTests(unittest.TestCase):
         baseline=inspect(root/'tests/fixtures/fcp-12.3-native-drop.fcpxml')
         after=inspect(root/'tests/fixtures/fcp-12.3-asr-writeback.fcpxml')
         proofread=inspect(root/'tests/fixtures/fcp-12.3-asr-proofread.fcpxml')
-        evidence=json.loads((root/'docs/evidence/subpop-asr-writeback.json').read_text())
+        evidence=json.loads((root/'tests/fixtures/evidence/subpop-asr-writeback.json').read_text())
         self.assertEqual(baseline['uid'],after['uid'])
         self.assertEqual(after['uid'],proofread['uid'])
         self.assertEqual(len(after['captions']),5)
@@ -109,8 +109,8 @@ class ActualHostEvidenceTests(unittest.TestCase):
         # Joins archived live evidence; does not run FCP or the ASR model.
         import json
         root = Path(__file__).resolve().parents[1]
-        audio = json.loads((root/'docs/evidence/subpop-native-audio-build8.json').read_text())
-        asr = json.loads((root/'docs/evidence/subpop-native-asr.json').read_text())
+        audio = json.loads((root/'tests/fixtures/evidence/subpop-native-audio-build8.json').read_text())
+        asr = json.loads((root/'tests/fixtures/evidence/subpop-native-asr.json').read_text())
         dropped = inspect(root/'tests/fixtures/fcp-12.3-native-drop.fcpxml')
         self.assertEqual(audio['projectUID'], dropped['uid'])
         self.assertEqual(audio['projectUID'], asr['snapshot']['uid'])
@@ -125,7 +125,7 @@ class ActualHostEvidenceTests(unittest.TestCase):
         # Archive consistency only: never reclassify this as live selection support.
         import json
         root = Path(__file__).resolve().parents[1]
-        evidence = json.loads((root/'docs/evidence/subpop-selection-comparison.json').read_text())
+        evidence = json.loads((root/'tests/fixtures/evidence/subpop-selection-comparison.json').read_text())
         records = {r['sourceFile']: r for r in evidence['records']}
         xml = E.parse(root/'tests/fixtures/fcp-12.3-caption-readback.fcpxml')
         project = xml.find('.//project')
@@ -155,7 +155,7 @@ class ActualHostEvidenceTests(unittest.TestCase):
         # Recorded host evidence regression, not a new live FCP test.
         import json
         root = Path(__file__).resolve().parents[1]
-        records = json.loads((root/'docs/evidence/subpop-host-recovered.json').read_text())
+        records = json.loads((root/'tests/fixtures/evidence/subpop-host-recovered.json').read_text())
         xml = E.parse(root/'tests/fixtures/fcp-12.3-caption-readback.fcpxml')
         project = xml.find('.//project')
         original = next(x for x in records if x['sequence']['name'] == project.get('name'))

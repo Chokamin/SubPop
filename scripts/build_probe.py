@@ -16,7 +16,7 @@ def plist(path,value):
 def run(*args):subprocess.run([str(a) for a in args],check=True)
 
 def build():
-    if not (SDK/'usr/lib/libProExtension.a').exists():raise SystemExit('Extract official SDK first; see HANDOFF.md')
+    if not (SDK/'usr/lib/libProExtension.a').exists():raise SystemExit(f'Extract the official Apple Workflow Extension SDK first; expected SDK: {SDK}')
     for bundle in (APP,EXT):(bundle/'Contents/MacOS').mkdir(parents=True,exist_ok=True)
     base=dict(CFBundleVersion='29',CFBundleShortVersionString='0.1.0',LSMinimumSystemVersion='13.0',SubPopUpdateRepository='Chokamin/SubPop')
     plist(APP/'Contents/Info.plist',dict(base,LSUIElement=True,CFBundleURLTypes=[dict(CFBundleURLName='com.chokamin.SubPopProbe.start',CFBundleURLSchemes=['subpop-probe'])],SubPopWorkspace=str(ROOT),CFBundleIdentifier='com.chokamin.SubPopProbe',CFBundleName='SubPop',CFBundleIconFile='SubPop',CFBundleExecutable='SubPopProbe',CFBundlePackageType='APPL',NSPrincipalClass='NSApplication',NSAppleEventsUsageDescription='SubPop 需要读取 Final Cut Pro 的当前项目和时间线信息。'))

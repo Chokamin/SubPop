@@ -7,3 +7,10 @@ __pycache__/
 *.fcpbundle/
 
 dist/
+
+# Local collaboration memory and machine-specific development evidence
+/HANDOFF.md
+/PROJECT_MEMORY.md
+/DECISIONS.md
+/CLAUDE.md
+/docs/
