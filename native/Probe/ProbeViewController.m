@@ -2,6 +2,7 @@
 #import <ProExtension/ProExtension.h>
 #import <ProExtensionHost/ProExtensionHost.h>
 #import "AudioProbe.h"
+#import <CommonCrypto/CommonDigest.h>
 
 static NSDictionary *Time(CMTime t) {
     return @{ @"value": @(t.value), @"timescale": @(t.timescale), @"flags": @(t.flags), @"epoch": @(t.epoch) };
@@ -18,6 +19,8 @@ static NSDictionary *Time(CMTime t) {
 @property FCPXTimeline *timeline;
 @property NSTextView *output;
 @property BOOL observed;
+@property NSDictionary<NSString *, NSData *> *titlePayloads;
+@property BOOL resultLoadAttempted;
 - (BOOL)receivePasteboard:(NSPasteboard *)pasteboard;
 - (void)beginTitleDrag:(NSEvent *)event fromView:(NSView *)view;
 @end
@@ -64,18 +67,53 @@ static NSDictionary *Time(CMTime t) {
     NSButton *audio = [NSButton buttonWithTitle:@"验证最近项目音频" target:self action:@selector(probeAudio:)];
     audio.frame = NSMakeRect(360,325,240,30); audio.autoresizingMask = NSViewMinYMargin;
     [view addSubview:audio];
-    SubPopTitleDragView *drag = [[SubPopTitleDragView alloc] initWithFrame:NSMakeRect(16,267,588,42)];
+    SubPopTitleDragView *drag = [[SubPopTitleDragView alloc] initWithFrame:NSMakeRect(184,267,420,42)];
     drag.controller=self; drag.autoresizingMask=NSViewWidthSizable|NSViewMinYMargin;
     [drag setAccessibilityElement:YES]; [drag setAccessibilityRole:NSAccessibilityGroupRole];
     [drag setAccessibilityLabel:@"拖出三条测试 Title 到原项目起点上方"];
     [view addSubview:drag];
+    NSButton *load=[NSButton buttonWithTitle:@"载入识别结果" target:self action:@selector(loadResult:)];
+    load.frame=NSMakeRect(16,272,160,32); load.autoresizingMask=NSViewMinYMargin; [view addSubview:load];
     NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(16,16,588,240)];
     scroll.autoresizingMask = NSViewWidthSizable|NSViewHeightSizable; scroll.hasVerticalScroller = YES;
     self.output = [[NSTextView alloc] initWithFrame:scroll.bounds]; self.output.editable = NO;
     self.output.font = [NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightRegular];
     scroll.documentView = self.output; [view addSubview:scroll]; self.view = view;
 }
+- (void)loadResult:(id)sender {
+    NSOpenPanel *panel=[NSOpenPanel openPanel];
+    panel.canChooseDirectories=YES; panel.canChooseFiles=NO; panel.allowsMultipleSelection=NO;
+    panel.message=@"选择 SubPop 完成的识别任务文件夹";
+    [panel beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse response) {
+        if (response!=NSModalResponseOK) return;
+        self.resultLoadAttempted=YES; self.titlePayloads=nil;
+        NSURL *folder=panel.URL; BOOL access=[folder startAccessingSecurityScopedResource];
+        NSData *statusData=[NSData dataWithContentsOfURL:[folder URLByAppendingPathComponent:@"status.json"]];
+        NSDictionary *status=statusData ? [NSJSONSerialization JSONObjectWithData:statusData options:0 error:nil] : nil;
+        NSMutableDictionary *payloads=[NSMutableDictionary new];
+        BOOL valid=[status isKindOfClass:NSDictionary.class] && [status[@"status"] isEqual:@"ready"] &&
+            [status[@"projectUID"] isEqual:@"0D11EC79-ED11-4688-97A9-CB78621857DD"] &&
+            [status[@"outputs"] isKindOfClass:NSDictionary.class];
+        if (valid) for (NSString *version in @[@"1.12",@"1.13",@"1.14"]) {
+            NSString *name=[NSString stringWithFormat:@"TitleProbe-%@.fcpxml",version];
+            NSData *data=[NSData dataWithContentsOfURL:[folder URLByAppendingPathComponent:name]];
+            if (!data.length || data.length>1024*1024) { valid=NO; break; }
+            unsigned char digest[CC_SHA256_DIGEST_LENGTH]; CC_SHA256(data.bytes,(CC_LONG)data.length,digest);
+            NSMutableString *sha=[NSMutableString new]; for (int i=0;i<CC_SHA256_DIGEST_LENGTH;i++) [sha appendFormat:@"%02x",digest[i]];
+            if (![sha isEqual:status[@"outputs"][name]]) { valid=NO; break; }
+            NSXMLDocument *xml=[[NSXMLDocument alloc] initWithData:data options:NSXMLNodeLoadExternalEntitiesNever error:nil];
+            if (![[xml.rootElement attributeForName:@"version"].stringValue isEqual:version] ||
+                [xml nodesForXPath:@"/fcpxml/clip" error:nil].count!=1 ||
+                [xml nodesForXPath:@"//project | //library | //event | //asset | //media-rep" error:nil].count) { valid=NO; break; }
+            payloads[version]=data;
+        }
+        if (access) [folder stopAccessingSecurityScopedResource];
+        if (valid && payloads.count==3) self.titlePayloads=payloads;
+        [self record:@{@"folder":folder.lastPathComponent ?: @"",@"statusBytes":@(statusData.length),@"loadedVersions":@(payloads.count),@"reason":@"load-recognition-result",@"status":self.titlePayloads ? @"ready-to-drag" : @"invalid-result",@"jobID":valid ? (status[@"jobID"] ?: @"") : @"",@"source":@"explicit snapshot job; current timeline freshness still requires verification"}];
+    }];
+}
 - (void)beginTitleDrag:(NSEvent *)event fromView:(NSView *)view {
+    if (self.resultLoadAttempted && !self.titlePayloads) { [self record:@{@"reason":@"title-drag-refused",@"status":@"Load a valid completed result first"}]; return; }
     FCPXSequence *sequence=self.timeline.activeSequence;
     FCPXObject *container=sequence.container;
     if (container.objectType!=kFCPXObjectType_Project ||
@@ -97,7 +135,7 @@ static NSDictionary *Time(CMTime t) {
 - (void)pasteboard:(NSPasteboard *)pasteboard item:(NSPasteboardItem *)item provideDataForType:(NSPasteboardType)type {
     NSString *version=[type hasSuffix:@"v1-12"] ? @"1.12" : ([type hasSuffix:@"v1-13"] ? @"1.13" : @"1.14");
     NSURL *url=[[NSBundle bundleForClass:self.class] URLForResource:[@"TitleProbe-" stringByAppendingString:version] withExtension:@"fcpxml"];
-    NSData *data=[NSData dataWithContentsOfURL:url];
+    NSData *data=self.titlePayloads ? self.titlePayloads[version] : [NSData dataWithContentsOfURL:url];
     if (data) [item setData:data forType:type];
     [self record:@{@"reason":@"title-drag-data",@"type":type,@"version":version,@"bytes":@(data.length)}];
 }

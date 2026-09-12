@@ -6,10 +6,13 @@ from pathlib import Path
 import subprocess
 import hashlib
 from fractions import Fraction
-from readback import inspect
+try:
+    from .readback import inspect
+except ImportError:
+    from readback import inspect
 
 
-def run(xml, asr, aligner, output, pcm_path=None):
+def run(xml, asr, aligner, output, pcm_path=None, device="cpu", verbose=True):
     snapshot = inspect(xml)
     expected = Path(__file__).resolve().parents[1] / '.subloom/verification/mandarin.mp4'
     if Path(snapshot['media']).resolve() != expected or snapshot['project'] != 'Subloom-Original':
@@ -35,7 +38,8 @@ def run(xml, asr, aligner, output, pcm_path=None):
     samples = np.frombuffer(pcm, dtype='<f4').copy()
     if not np.isfinite(samples).all():
         raise ValueError('Non-finite PCM samples')
-    device = 'mps' if torch.backends.mps.is_available() else 'cpu'
+    if device not in ('cpu', 'mps'):raise ValueError('Unsupported device')
+    if device == 'mps' and not torch.backends.mps.is_available():raise ValueError('MPS unavailable')
     model = Qwen3ASRModel.from_pretrained(str(asr), dtype=torch.float32, device_map=device,
         attn_implementation='eager', max_inference_batch_size=1, max_new_tokens=512,
         forced_aligner=str(aligner), forced_aligner_kwargs=dict(dtype=torch.float32, device_map=device, attn_implementation='eager'))
@@ -46,7 +50,8 @@ def run(xml, asr, aligner, output, pcm_path=None):
         rows.append(dict(text=converter.convert(part.text), words=[dict(text=converter.convert(w.text), start=w.start_time, end=w.end_time) for w in part.time_stamps]))
     evidence = 'ASR of native-extension PCM via external test process; not automatic plugin workflow' if pcm_path else 'offline ASR of FCP export; not live Workflow Extension'
     output.write_text(json.dumps(dict(evidence=evidence, snapshot=snapshot, pcm_sha256=hashlib.sha256(pcm).hexdigest(), device=device, results=rows), ensure_ascii=False, indent=2))
-    print(output.read_text())
+    if verbose:print(output.read_text())
+    return json.loads(output.read_text())
 
 
 if __name__ == '__main__':
