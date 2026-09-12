@@ -62,6 +62,22 @@ if __name__=='__main__':unittest.main()
 
 
 class ActualHostEvidenceTests(unittest.TestCase):
+    def test_native_audio_and_asr_share_the_complete_project_pcm(self):
+        # Joins archived live evidence; does not run FCP or the ASR model.
+        import json
+        root = Path(__file__).resolve().parents[1]
+        audio = json.loads((root/'docs/evidence/subpop-native-audio-build8.json').read_text())
+        asr = json.loads((root/'docs/evidence/subpop-native-asr.json').read_text())
+        dropped = inspect(root/'tests/fixtures/fcp-12.3-native-drop.fcpxml')
+        self.assertEqual(audio['projectUID'], dropped['uid'])
+        self.assertEqual(audio['projectUID'], asr['snapshot']['uid'])
+        self.assertEqual(audio['pcmSHA256'], asr['pcm_sha256'])
+        self.assertEqual(audio['sampleCount'], Fraction(dropped['duration'])*16000)
+        self.assertEqual(audio['pcmBytes'], audio['sampleCount']*4)
+        self.assertEqual(audio['status'], 'decoded')
+        self.assertEqual(audio['sampleRate'], 16000)
+        self.assertIn('unknown',audio['audibility'])
+
     def test_selection_comparison_preserves_ui_sdk_mismatch(self):
         # Archive consistency only: never reclassify this as live selection support.
         import json

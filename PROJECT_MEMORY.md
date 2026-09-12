@@ -53,3 +53,13 @@
 - 决策：FCP 内按活动项目完整时间线识别；选区延期，不再阻塞当前版本。使用有效项目身份、sequence.startTime/duration 界定范围，不依赖 sequenceTimeRange。
 - 改动：更新 DECISIONS.md、HANDOFF.md、README.md 和接入报告。现有代码只有只读探针和隔离样本离线识别，未声称产品整段识别已实现；未改历史证据或宿主数据。
 - 下一步：验证整个项目对应的音频获取、时间映射及原时间线字幕写回；不继续选区实验。
+
+## 2026-09-12：整项目原生音频读取及识别通过受限样本
+
+- 需求：继续整项目模式接入验证。用户协助一次跨窗口拖入 Subloom-Original；CUA 无法可靠定位跨窗口目标，不冒充自动拖放。
+- 改动：增加 Objective-C AudioProbe 和“验证最近项目音频”按钮，核对活动 UID、整项目覆盖、简单单片段和 30 秒上限，安全解析 XML，记录直接文件/书签结果，AVFoundation 后台解码和完整采样检查；构建 8 已安装。离线识别探针支持原生 PCM 输入、长度/有限值检查与哈希。
+- 实测：4 个 XML pasteboard 类型落盘；根节点版本分别 1.14/1.14/1.13/1.12。扩展内输出 8.68 秒、16kHz 单声道、138880 采样；构建 7/8 PCM 完全一致。直接打开失败513、书签解析失败256，但 AVFoundation 解码成功；机制未隔离。
+- 识别：仅用扩展实际 PCM，由外部本地 CPU Qwen/对齐转出完整测试口播。仍只读借用 VinciSub 模型/解释器，禁字节码与联网；没有改 VinciSub 文件。不是插件自动调用闭环。
+- 关键文件：native/Probe/AudioProbe.m、AudioProbeCLI.m、ProbeViewController.m；probes/recognize_fixture.py；tests/test_audio_probe.py；docs/native-audio-validation.md、docs/evidence/subpop-native-*.json、subpop-project-drop.json。
+- 验证：编译/签名通过；终端沙箱中的 AVFoundation reader-start -11800，普通本机获准执行后19项回归通过；构建8真实宿主完整解码通过。脱敏证据不含书签凭据。
+- 剩余：Caption/Title最短原时间线写回、校对同步、最终可听混音、多片段、持久访问、独立模型环境。未生成或写入新字幕；原测试项目和探针保留打开。

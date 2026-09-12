@@ -4,11 +4,12 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import hashlib
 from fractions import Fraction
 from readback import inspect
 
 
-def run(xml, asr, aligner, output):
+def run(xml, asr, aligner, output, pcm_path=None):
     snapshot = inspect(xml)
     expected = Path(__file__).resolve().parents[1] / '.subloom/verification/mandarin.mp4'
     if Path(snapshot['media']).resolve() != expected or snapshot['project'] != 'Subloom-Original':
@@ -21,10 +22,19 @@ def run(xml, asr, aligner, output):
     import torch
     from opencc import OpenCC
     from qwen_asr import Qwen3ASRModel
-    pcm = subprocess.run(['ffmpeg', '-v', 'error', '-ss', str(float(Fraction(snapshot['source_start']))),
-        '-i', snapshot['media'], '-t', str(float(Fraction(snapshot['duration']))),
-        '-vn', '-ac', '1', '-ar', '16000', '-f', 'f32le', 'pipe:1'], check=True, capture_output=True).stdout
+    if pcm_path is not None:
+        if not pcm_path.resolve().is_relative_to(expected.parent):
+            raise ValueError('PCM must be a copy in the isolated verification directory')
+        pcm = pcm_path.read_bytes()
+        if len(pcm) != Fraction(snapshot['duration'])*16000*4:
+            raise ValueError('PCM length must cover the complete fixture at 16kHz float32 mono')
+    else:
+        pcm = subprocess.run(['ffmpeg', '-v', 'error', '-ss', str(float(Fraction(snapshot['source_start']))),
+            '-i', snapshot['media'], '-t', str(float(Fraction(snapshot['duration']))),
+            '-vn', '-ac', '1', '-ar', '16000', '-f', 'f32le', 'pipe:1'], check=True, capture_output=True).stdout
     samples = np.frombuffer(pcm, dtype='<f4').copy()
+    if not np.isfinite(samples).all():
+        raise ValueError('Non-finite PCM samples')
     device = 'mps' if torch.backends.mps.is_available() else 'cpu'
     model = Qwen3ASRModel.from_pretrained(str(asr), dtype=torch.float32, device_map=device,
         attn_implementation='eager', max_inference_batch_size=1, max_new_tokens=512,
@@ -34,12 +44,14 @@ def run(xml, asr, aligner, output):
     rows = []
     for part in result:
         rows.append(dict(text=converter.convert(part.text), words=[dict(text=converter.convert(w.text), start=w.start_time, end=w.end_time) for w in part.time_stamps]))
-    output.write_text(json.dumps(dict(evidence='offline ASR of FCP export; not live Workflow Extension', snapshot=snapshot, device=device, results=rows), ensure_ascii=False, indent=2))
+    evidence = 'ASR of native-extension PCM via external test process; not automatic plugin workflow' if pcm_path else 'offline ASR of FCP export; not live Workflow Extension'
+    output.write_text(json.dumps(dict(evidence=evidence, snapshot=snapshot, pcm_sha256=hashlib.sha256(pcm).hexdigest(), device=device, results=rows), ensure_ascii=False, indent=2))
     print(output.read_text())
 
 
 if __name__ == '__main__':
     p=argparse.ArgumentParser()
     for name in ('xml','asr','aligner','output'):p.add_argument('--'+name,required=True,type=Path)
+    p.add_argument('--pcm',type=Path)
     a=p.parse_args()
-    run(a.xml,a.asr,a.aligner,a.output)
+    run(a.xml,a.asr,a.aligner,a.output,a.pcm)

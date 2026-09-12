@@ -1,6 +1,7 @@
 #import <Cocoa/Cocoa.h>
 #import <ProExtension/ProExtension.h>
 #import <ProExtensionHost/ProExtensionHost.h>
+#import "AudioProbe.h"
 
 static NSDictionary *Time(CMTime t) {
     return @{ @"value": @(t.value), @"timescale": @(t.timescale), @"flags": @(t.flags), @"epoch": @(t.epoch) };
@@ -49,6 +50,9 @@ static NSDictionary *Time(CMTime t) {
     NSButton *diagnose = [NSButton buttonWithTitle:@"诊断只读通信" target:self action:@selector(diagnose:)];
     diagnose.frame = NSMakeRect(190,325,160,30); diagnose.autoresizingMask = NSViewMinYMargin;
     [view addSubview:diagnose];
+    NSButton *audio = [NSButton buttonWithTitle:@"验证最近项目音频" target:self action:@selector(probeAudio:)];
+    audio.frame = NSMakeRect(360,325,240,30); audio.autoresizingMask = NSViewMinYMargin;
+    [view addSubview:audio];
     NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(16,16,588,296)];
     scroll.autoresizingMask = NSViewWidthSizable|NSViewHeightSizable; scroll.hasVerticalScroller = YES;
     self.output = [[NSTextView alloc] initWithFrame:scroll.bounds]; self.output.editable = NO;
@@ -68,6 +72,26 @@ static NSDictionary *Time(CMTime t) {
     [super viewWillDisappear];
 }
 - (void)refresh:(id)sender { [self snapshot:@"manual"]; }
+- (void)probeAudio:(NSButton *)sender {
+    NSURL *directory=[self evidenceDirectory];
+    NSArray<NSURL *> *files=[[NSFileManager defaultManager] contentsOfDirectoryAtURL:directory includingPropertiesForKeys:@[NSURLContentModificationDateKey] options:0 error:nil];
+    NSURL *latest=nil; NSDate *latestDate=nil;
+    for (NSURL *file in files) {
+        if (![file.lastPathComponent hasPrefix:@"drop-"] || ![file.pathExtension isEqual:@"fcpxml"]) continue;
+        NSDate *date=nil; [file getResourceValue:&date forKey:NSURLContentModificationDateKey error:nil];
+        if (!latest || [date compare:latestDate]==NSOrderedDescending) { latest=file; latestDate=date; }
+    }
+    FCPXObject *container=self.timeline.activeSequence.container;
+    NSString *uid=container.objectType==kFCPXObjectType_Project ? ((FCPXProject *)container).UID : nil;
+    if (!latest || !uid.length) { [self record:@{@"reason":@"audio-probe",@"status":@"missing dropped XML or active project"}]; return; }
+    NSData *xml=[NSData dataWithContentsOfURL:latest];
+    sender.enabled=NO;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0), ^{
+        NSMutableDictionary *result=[SubPopProbeAudio(xml,uid,directory) mutableCopy];
+        result[@"reason"]=@"audio-probe"; result[@"xmlFile"]=latest.lastPathComponent;
+        dispatch_async(dispatch_get_main_queue(), ^{ sender.enabled=YES; [self record:result]; });
+    });
+}
 // Read only the application's public libraries collection; never modifies the timeline.
 - (void)diagnose:(id)sender {
     NSArray<NSRunningApplication *> *apps = [NSRunningApplication runningApplicationsWithBundleIdentifier:self.host.bundleIdentifier];
