@@ -1,4 +1,4 @@
-"""MVP timeline plan: <=30 min, plain cuts/gaps and connected audio/video.
+"""MVP timeline plan: plain cuts/gaps and connected audio/video.
 
 Dialogue mode intentionally excludes music/effects roles. Never interpret live
 FCP solo monitoring, retimes, compounds or audio effects as supported mixing.
@@ -19,7 +19,6 @@ from .readback import seconds
 from .timeline_audio import flag
 
 RATE=16000
-MAX_SECONDS=1800
 
 def sample(value):
     return (value*RATE + Fraction(1,2)).__floor__()
@@ -33,7 +32,7 @@ def inspect(path, audio_mode='dialogue'):
     project=projects[0];seq=project.find('sequence')
     if seq is None or not project.get('uid'):raise ValueError('项目没有有效时间线')
     duration=seconds(seq.get('duration','0s'));tc=seconds(seq.get('tcStart','0s'))
-    if not 0<duration<=MAX_SECONDS:raise ValueError('当前支持 30 分钟内项目')
+    if duration<=0:raise ValueError('项目时长必须大于零')
     fmt=root.find(f"resources/format[@id='{seq.get('format')}']")
     if fmt is None:raise ValueError('缺少项目格式')
     frame=seconds(fmt.get('frameDuration','0s'))

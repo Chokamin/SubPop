@@ -15,6 +15,14 @@ int main(int argc,const char *argv[]) {
         controller.observedProjectUID=@"project-a";controller.observedProjectDuration=kCMTimeInvalid;if ([controller isolatedProjectActive]) return 9;
         controller.observedProjectDuration=CMTimeMake(9,1);if ([controller isolatedProjectActive]) return 10;
         controller.observedProjectDuration=controller.dropDuration;controller.observed=NO;if ([controller isolatedProjectActive]) return 11;
+        NSString *longInput=[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
+        [@"<fcpxml><project uid='project-a' name='Long project'/></fcpxml>" writeToFile:longInput atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        controller.observed=YES;controller.observedProjectDuration=CMTimeMake(7200,1);
+        controller.freshDropURL=[NSURL fileURLWithPath:longInput];[controller validateDroppedProject];
+        if (!controller.freshDropURL || ![controller isolatedProjectActive]) return 14;
+        controller.observedProjectDuration=kCMTimeZero;[controller validateDroppedProject];
+        if (controller.freshDropURL) return 15;
+        [[NSFileManager defaultManager] removeItemAtPath:longInput error:nil];
         NSArray *terms=[controller parseVocabulary:@" 小蚕，USB-C\n3.5%;小蚕"];
         if (![terms isEqual:@[@"小蚕",@"USB-C",@"3.5%"]]) return 12;
         if ([controller parseVocabulary:[@"x" stringByPaddingToLength:65 withString:@"x" startingAtIndex:0]]) return 13;

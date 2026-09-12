@@ -39,11 +39,20 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(len(self.inspect(root)['segments']),1)
         with self.assertRaises(ValueError):self.inspect(root,'all')
 
-    def test_30_minute_clock_and_fractional_frame_rate(self):
+    def test_long_project_clock_and_fractional_frame_rate(self):
         root,p,seq,clip=basic();seq.set('duration','1800s');spine=seq.find('spine');spine.remove(clip)
         ET.SubElement(spine,'gap',offset=seq.get('tcStart','0s'),duration='1800s',start='0s')
         self.assertEqual(self.inspect(root)['sampleCount'],1800*16000)
-        seq.set('duration','1801s');spine[0].set('duration','1801s')
+        for duration in (1801,2700,7200):
+            seq.set('duration',f'{duration}s');spine[0].set('duration',f'{duration}s')
+            plan=self.inspect(root)
+            self.assertEqual(plan['sampleCount'],duration*16000)
+            manifest={**plan,'captions':[{'text':'片尾字幕','start_frame':plan['totalFrames']-25,'end_frame':plan['totalFrames']}]}
+            for version in ('1.12','1.13','1.14'):
+                result=ET.fromstring(payload(manifest,version))
+                self.assertEqual(Fraction(result.find('clip').get('duration')[:-1]),duration)
+                self.assertEqual(Fraction(result.find('clip/spine/title').get('offset')[:-1]),duration-1)
+        seq.set('duration','0s')
         with self.assertRaises(ValueError):self.inspect(root)
         fmt=root.find(f"resources/format[@id='{seq.get('format')}']");fmt.set('frameDuration','1001/30000s')
         seq.set('duration','1001/10s');spine[0].set('duration','1001/10s')

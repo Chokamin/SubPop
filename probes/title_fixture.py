@@ -13,7 +13,7 @@ def payload(manifest, version='1.14'):
     generic='frameDuration' in manifest
     if not generic and (manifest['projectUID']!=UID or manifest['fps']!=25):raise ValueError('Isolated 25fps project only')
     frame=Fraction(manifest.get('frameDuration','1/25'));total=manifest.get('totalFrames',217)
-    if frame<=0 or type(total)!=int or not 0<total<=108000:raise ValueError('Invalid project timing')
+    if frame<=0 or type(total)!=int or total<=0:raise ValueError('Invalid project timing')
     def t(n):return str(n*frame)+'s' if generic else f'{n}/25s'
     style_values=manifest.get('style',{})
     font=style_values.get('font','Helvetica');size=style_values.get('fontSize',72 if generic else 28)

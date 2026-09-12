@@ -355,7 +355,7 @@ static NSDictionary *Time(CMTime t) {
 }
 - (void)showModelSettings:(id)sender {
     NSAlert *alert=[NSAlert new]; alert.messageText=@"使用帮助";
-    alert.informativeText=@"在主面板选择 Qwen3-ASR 0.6B 或 1.7B。选择会被记住，每次任务使用所选模型。缺少模型时，点击“模型管理”下载；“词库”可填写人名、品牌和专业词。\n\n默认仅识别对白角色。请在 FCP 将背景音乐设为“音乐”角色；需要保留全部声音时选择“所有音频”。\n\n视频类型不限，当前单次最多 30 分钟。支持普通剪切、单声道／立体声及连接音频。暂不支持变速、多机位、复合片段、音频效果或音量关键帧。";
+    alert.informativeText=@"在主面板选择 Qwen3-ASR 0.6B 或 1.7B。选择会被记住，每次任务使用所选模型。缺少模型时，点击“模型管理”下载；“词库”可填写人名、品牌和专业词。\n\n默认仅识别对白角色。请在 FCP 将背景音乐设为“音乐”角色；需要保留全部声音时选择“所有音频”。\n\n视频类型不限，单次项目不设固定时长上限。长视频会分段识别，可随时取消。支持普通剪切、单声道／立体声及连接音频。暂不支持变速、多机位、复合片段、音频效果或音量关键帧。";
     [alert addButtonWithTitle:@"完成"]; [alert addButtonWithTitle:@"重新准备识别"];
     [alert beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse result) { if (result==NSAlertSecondButtonReturn) [self connectWorker:nil]; }];
 }
@@ -605,7 +605,7 @@ static NSDictionary *Time(CMTime t) {
     NSString *activeUID=self.observedProjectUID;
     NSString *inputUID=projects.count==1 ? [projects[0] attributeForName:@"uid"].stringValue : nil;
     CMTime duration=self.observedProjectDuration;
-    BOOL valid=projects.count==1 && activeUID.length && [inputUID isEqual:activeUID] && CMTIME_IS_NUMERIC(duration) && CMTimeGetSeconds(duration)>0 && CMTimeGetSeconds(duration)<=1800;
+    BOOL valid=projects.count==1 && activeUID.length && [inputUID isEqual:activeUID] && CMTIME_IS_NUMERIC(duration) && CMTimeGetSeconds(duration)>0;
     [self record:@{@"reason":@"drop-validation",@"projectCount":@(projects.count),@"inputUID":inputUID ?: @"",@"activeUID":activeUID ?: @"",@"duration":Time(duration),@"accepted":@(valid),@"error":error.localizedDescription ?: @""}];
     if (!valid) { self.freshDropURL=nil;self.freshDropDate=nil; }
     else { self.dropName=[projects[0] attributeForName:@"name"].stringValue;self.dropUID=inputUID.copy;self.dropDuration=duration; }
