@@ -46,3 +46,10 @@
 - 关键文件：docs/evidence/subpop-selection-comparison.json、docs/sdk-probe-validation.md、tests/test_probes.py。
 - 验证：本轮真实宿主结果为选区未读通；构建/签名及 13 项回归通过，不当作选区宿主通过。
 - 剩余：回调/浏览/固定播放头正对照、浏览器媒体范围、FCP 冷启动、拖放音频及写回闭环。保留原项目 2–4 秒范围和探针供复核。
+
+## 2026-09-12：用户将当前版本改为整项目识别
+
+- 需求：暂不做选区，每次直接识别整个视频。
+- 决策：FCP 内按活动项目完整时间线识别；选区延期，不再阻塞当前版本。使用有效项目身份、sequence.startTime/duration 界定范围，不依赖 sequenceTimeRange。
+- 改动：更新 DECISIONS.md、HANDOFF.md、README.md 和接入报告。现有代码只有只读探针和隔离样本离线识别，未声称产品整段识别已实现；未改历史证据或宿主数据。
+- 下一步：验证整个项目对应的音频获取、时间映射及原时间线字幕写回；不继续选区实验。
