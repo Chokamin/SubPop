@@ -17,3 +17,12 @@
 - 关键文件：`native/Probe/Container.m`、`native/Probe/ProbeViewController.m`、`scripts/build_probe.py`、`tests/test_native_probe.py`、`docs/sdk-probe-validation.md`。
 - 验证结果：编译及签名校验通过，11 项测试全部通过。SDK 1.0.3 头文件无选区、片段枚举、角色状态、字幕写入接口。修正工具链自动选择 CLT 27 SDK 导致的链接错误，显式采用 Xcode 26.5 SDK。沙箱内签名误报经系统信任服务复核为 Apple Software/accepted。
 - 剩余问题：自动审批拒绝复制自签名 app 到 /Applications，要求本次安装确认；未安装/启动，不绕过，未做新 FCP 实测。等待确认后继续真实 host/拖放验证；独立 release notes PDF 未读。未改变 VinciSub 或用户 FCP 资源库。
+
+## 2026-09-12：更名 SubPop 并完成原生面板部分宿主验证
+
+- 需求：用户明确允许安装启动，并将产品改名为 SubPop。
+- 改动：应用显示名、原生类、bundle identifier、日志目录和构建测试更名；保留仓库物理路径与历史证据名称。安装并打开只读面板，补充 FCP inspection/automation 权限用于 SDK 通信排查；范围/播放头独立记录，不被空 sequence 隐藏。
+- 关键文件：`native/Probe/`、`scripts/build_probe.py`、`tests/test_native_probe.py`、`docs/sdk-probe-validation.md`、`docs/evidence/subpop-host-partial.json`。
+- 实测：FCP 12.3 标准版中原生菜单注册、面板加载、host 身份、观察者回调和日志通过；隔离原项目范围 start=3600 秒、duration=8.68 秒，播放头有效。activeSequence 为 nil；SDK Apple Events -600 根因未明。新增权限未修复，不宣称权限或 SDK 能力已定论。未写入新字幕。
+- 更正前两条历史记录：不能声称 SDK 已证实无选区。苹果概述提到 selected time range，属性语义需实测对照；此前排除结论撤回。自动审批的旧安装阻塞已由用户本轮明确授权解决。
+- 验证：11 项测试通过，构建/签名通过；单元测试不是 FCP 完整闭环。剩余：项目 UID、选区对照、拖入 XML、可听角色、原时间线 ASR 写回与编辑同步。未修改 VinciSub、未发布。

@@ -1,0 +1,31 @@
+{
+  "bundle": "com.apple.FinalCut",
+  "captionWriteAPI": "not exposed by SDK 1.0.3",
+  "clipEnumerationAPI": "not exposed by SDK 1.0.3",
+  "hasSequence": 0,
+  "host": "Final Cut Pro",
+  "playhead": {
+    "epoch": 0,
+    "flags": 1,
+    "timescale": 720000,
+    "value": 2592783376
+  },
+  "reason": "playheadTimeChanged",
+  "recordedAt": "2026-09-12T07:38:54Z",
+  "selectionAPI": "sequenceTimeRange semantics require host testing",
+  "sequenceRange": {
+    "duration": {
+      "epoch": 0,
+      "flags": 1,
+      "timescale": 12800,
+      "value": 111104
+    },
+    "start": {
+      "epoch": 0,
+      "flags": 1,
+      "timescale": 1,
+      "value": 3600
+    }
+  },
+  "version": "12.3"
+}

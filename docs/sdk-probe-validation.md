@@ -18,17 +18,17 @@
 - 容器：Library URL/name，Event UID/name，Project UID/name/sequence；对象有 container/objectType。
 - Sequence：name/startTime/duration/frameDuration/timecodeFormat。
 
-**此版本头文件未暴露选区、片段枚举、可听角色、字幕追加/更新 API。** 这是 SDK 静态证据。头文件不证明其他交换路径不可行，也不构成原生宿主已连接的证据。
+**此版本头文件未暴露独立选区字段、片段枚举、可听角色、字幕追加/更新 API。** 这是 SDK 静态证据。头文件不证明其他交换路径不可行，也不构成原生宿主已连接的证据。
 
 ## 构建产物
 
-`.subloom/build/Subloom Probe.app` 内嵌 `SubloomProbe.appex`，本地 ad-hoc 签名，arm64，最低 macOS 13。仅用于隔离验证，不是发布构建。
+`.subloom/build/SubPop Probe.app` 内嵌 `SubPopProbe.appex`，本地 ad-hoc 签名，arm64，最低 macOS 13。仅用于隔离验证，不是发布构建。
 
 - 原生 AppKit NSViewController：显示实时 JSON；SDK 观察者回调后读取状态，未收到回调时保持未知。
 - 只读记录项目及容器 UID、时间值/时基/flags/epoch；不将 sequenceTimeRange 标为选区。
 - XML drop receiver 接受 FCP XML 类型并记录实际 pasteboard 类型和文件。行为尚未实际拖放验证。
-- 日志目标为扩展沙箱 Application Support/SubloomProbe；安装后应按实际容器路径查证，不能先假定落盘成功。
-- 不调用播放头移动，不写 FCP 时间线，不使用 Apple Events，不请求网络/辅助功能权限。未复制 VinciSub 宿主适配或 UI。
+- 日志已实际落盘于扩展容器 com.chokamin.SubPopProbe.Extension 的 Data/Library/Application Support/SubPopProbe。
+- 不调用播放头移动，不写 FCP 时间线，不自行编写 AppleScript；SDK 内部使用 Apple Events，不请求网络/辅助功能权限。未复制 VinciSub 宿主适配或 UI。
 - 使用官方 libProExtension.a 和模板定义的 `_ProExtensionMain` 入口；不链接私有 FCP class symbols。
 
 最初编译误用 CLT macOS 27 SDK，旧链接器不识别 arm64e.x1；构建脚本改为显式采用 `xcrun --sdk macosx --show-sdk-path` 返回的 Xcode macOS 26.5 SDK，避免修改全局 Xcode 选择。
@@ -38,6 +38,12 @@
 - `python3 scripts/build_probe.py`：通过，clang 开启 Wall/Wextra/Werror（仅忽略未使用的回调参数）。
 - 11 项测试全部通过：原 8 项 + 编译 bundle metadata、arm64/SDK 入口、签名与沙箱 entitlements 3 项。
 - `codesign --verify --deep --strict`：通过。`otool -L` 只见系统依赖。
-- FCP 启动、host 连接、回调、项目 UID、拖入 XML、日志落盘 **全部未运行**。
-- 将应用复制到 `/Applications/Subloom Probe.app` 的动作被自动审批拒绝，理由是本地自签名应用安装和 FCP 扩展注册需要本次用户确认。未绕过；确认 `/Applications/Subloom Probe.app` 不存在。
-- 本轮没有打开或修改 FCP 资源库。需用户明确允许安装并启动这个只读探针后继续真实宿主测试。
+- 用户后续明确允许安装启动，更名后安装至 `/Applications/SubPop Probe.app`，容器与 FCP 原生菜单面板均实际打开成功。
+- FCP 12.3 标准版、隔离 Subloom-Original 时间线：host 名称/版本/bundle、观察者回调、日志落盘通过。实际回调读取到有效播放头和 sequenceTimeRange（start=3600 秒、duration=8.68 秒）。
+- **activeSequence 仍为 nil**，因此项目 UID/容器链未通过。系统日志出现 ProExtensionHost Apple Events `NSOSStatusErrorDomain -600`。这不是“项目未打开”的证据，也尚不能归因为权限问题。
+- 构建 2 加入 FCP `library.inspection` scripting-target；构建 3 加入 automation.apple-events entitlement/用途说明，仍未解决 activeSequence。范围与播放头此前未无条件记录，不能断言新增 entitlement 使其可读。
+- 实际快照见 `docs/evidence/subpop-host-partial.json`。没有开展 XML 拖放、选区对照、角色或字幕写回的新一轮测试。
+
+## 更正：选区能力仍待实测
+
+[苹果时间线交互概述](https://developer.apple.com/documentation/professional-video-applications/interacting-with-the-final-cut-pro-timeline) 明确描述 selected time range within the sequence，而属性页只写 sequence range。此前凭属性名称/头文件排除选区能力过早，现撤回该结论。必须在 FCP 内改变时间线范围，比较回调和值，再判断可用性。

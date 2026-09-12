@@ -1,6 +1,8 @@
-# Subloom
+# SubPop
 
-用于 Final Cut Pro 的本地简体中文字幕工具，当前处于**接入验证阶段**，已有只读 Workflow Extension 探针构建，尚未安装到 FCP 或完成 MVP。
+原名 Subloom，当前项目目录及历史验证数据仍保留原路径。
+
+用于 Final Cut Pro 的本地简体中文字幕工具，当前处于**接入验证阶段**，已有只读 Workflow Extension 探针构建，已安装并在 FCP 打开，时间线读取仍部分失败，尚未完成 MVP。
 
 请先读 [HANDOFF.md](HANDOFF.md)。完整能力、证据等级和未完成项见 [接入报告](docs/integration-validation.md)。
 

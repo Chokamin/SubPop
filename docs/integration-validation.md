@@ -19,7 +19,7 @@
 | 能力 | 证据和当前结论 | 尚需验证 |
 |---|---|---|
 | 当前项目/时间线 | 官方 FCPXProject 有 uid/name/sequence；FCPXSequence 有 startTime/duration/frameDuration；FCPXTimeline 有 activeSequence | SDK 原生扩展回调与身份读取尚未运行 |
-| 选定范围/无范围全项目 | sequenceTimeRange 文档定义为活动序列范围，不能当选区；公开方法列表未发现选区属性 | 选区读取路径尚未建立；不能用未知选区回退全项目 |
+| 选定范围/无范围全项目 | 官方概述明确提到 selected time range，属性页称 sequence range；语义需宿主选区对照实验确认 | 选区读取路径尚未建立；不能用未知选区回退全项目 |
 | 源音频/剪辑位置/映射 | FCP 实际导出 XML 含 media-rep URL、asset 起始、asset-clip offset/duration/role；简单片段成功内存解码识别 | 这需要已取得 XML，不是实时读取 API；多片段、嵌套、变速、音频效果、权限均未验证 |
 | 自动可听/多角色 | DTD 有 audio-channel-source / audio-role-source、enabled/active、mute、timeMap；角色状态与片段启用不能混为一谈 | 多角色选择、子角色、全局角色关闭、Solo、组件、混音效果尚未实测；自动模式保持 unknown |
 | 原始时间线写回与校对 | SRT 两条实际导入当前项目，简体角色正确，帧位置回读正确 | 无程序化字幕追加/修改 API 实证；后续插件内编辑同步、外部冲突、重复导入尚未验证 |

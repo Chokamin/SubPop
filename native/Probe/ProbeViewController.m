@@ -5,25 +5,25 @@
 static NSDictionary *Time(CMTime t) {
     return @{ @"value": @(t.value), @"timescale": @(t.timescale), @"flags": @(t.flags), @"epoch": @(t.epoch) };
 }
-@class SubloomProbeViewController;
-@interface SubloomDropView : NSView <NSDraggingDestination>
-@property (weak) SubloomProbeViewController *controller;
+@class SubPopProbeViewController;
+@interface SubPopDropView : NSView <NSDraggingDestination>
+@property (weak) SubPopProbeViewController *controller;
 @end
-@interface SubloomProbeViewController : NSViewController <FCPXTimelineObserver>
+@interface SubPopProbeViewController : NSViewController <FCPXTimelineObserver>
 @property id<FCPXHost> host;
 @property FCPXTimeline *timeline;
 @property NSTextView *output;
 @property BOOL observed;
 - (BOOL)receivePasteboard:(NSPasteboard *)pasteboard;
 @end
-@implementation SubloomDropView
+@implementation SubPopDropView
 - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender { return NSDragOperationCopy; }
 - (BOOL)performDragOperation:(id<NSDraggingInfo>)sender { return [self.controller receivePasteboard:sender.draggingPasteboard]; }
 @end
-@implementation SubloomProbeViewController
+@implementation SubPopProbeViewController
 - (NSURL *)evidenceDirectory {
     NSURL *base = [[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject;
-    NSURL *folder = [base URLByAppendingPathComponent:@"SubloomProbe"];
+    NSURL *folder = [base URLByAppendingPathComponent:@"SubPopProbe"];
     [[NSFileManager defaultManager] createDirectoryAtURL:folder withIntermediateDirectories:YES attributes:nil error:nil];
     return folder;
 }
@@ -37,10 +37,10 @@ static NSDictionary *Time(CMTime t) {
     [data writeToURL:[[self evidenceDirectory] URLByAppendingPathComponent:name] atomically:YES];
 }
 - (void)loadView {
-    SubloomDropView *view = [[SubloomDropView alloc] initWithFrame:NSMakeRect(0,0,620,430)];
+    SubPopDropView *view = [[SubPopDropView alloc] initWithFrame:NSMakeRect(0,0,620,430)];
     view.controller = self;
     [view registerForDraggedTypes:@[@"com.apple.finalcutpro.xml.v1-14", @"com.apple.finalcutpro.xml.v1-13", @"com.apple.finalcutpro.xml.v1-12", @"com.apple.finalcutpro.xml.v1-11", @"com.apple.finalcutpro.xml.v1-10", @"com.apple.finalcutpro.xml", NSPasteboardTypeFileURL]];
-    NSTextField *label = [NSTextField wrappingLabelWithString:@"Subloom 接入探针 · 只读\n将浏览器中的测试项目拖到此面板，检查交换数据。"];
+    NSTextField *label = [NSTextField wrappingLabelWithString:@"SubPop 接入探针 · 只读\n将浏览器中的测试项目拖到此面板，检查交换数据。"];
     label.frame = NSMakeRect(16,365,588,52); label.autoresizingMask = NSViewWidthSizable|NSViewMinYMargin;
     [view addSubview:label];
     NSButton *refresh = [NSButton buttonWithTitle:@"记录当前状态" target:self action:@selector(refresh:)];
@@ -68,12 +68,12 @@ static NSDictionary *Time(CMTime t) {
 - (void)snapshot:(NSString *)reason {
     if (!self.observed) { [self record:@{@"status":@"observer has not delivered state", @"reason":reason}]; return; }
     FCPXSequence *sequence = self.timeline.activeSequence;
-    NSMutableDictionary *result = [@{@"reason":reason, @"host":self.host.name ?: @"", @"version":self.host.versionString ?: @"", @"bundle":self.host.bundleIdentifier ?: @"", @"hasSequence":@(sequence != nil), @"selectionAPI":@"not exposed by SDK 1.0.3", @"clipEnumerationAPI":@"not exposed by SDK 1.0.3", @"captionWriteAPI":@"not exposed by SDK 1.0.3"} mutableCopy];
+    NSMutableDictionary *result = [@{@"reason":reason, @"host":self.host.name ?: @"", @"version":self.host.versionString ?: @"", @"bundle":self.host.bundleIdentifier ?: @"", @"hasSequence":@(sequence != nil), @"selectionAPI":@"sequenceTimeRange semantics require host testing", @"clipEnumerationAPI":@"not exposed by SDK 1.0.3", @"captionWriteAPI":@"not exposed by SDK 1.0.3"} mutableCopy];
+    CMTimeRange observedRange = self.timeline.sequenceTimeRange;
+    result[@"sequenceRange"] = @{@"start":Time(observedRange.start),@"duration":Time(observedRange.duration)};
+    result[@"playhead"] = Time(self.timeline.playheadTime);
     if (sequence) {
         result[@"sequence"] = @{ @"name":sequence.name ?: @"", @"start":Time(sequence.startTime), @"duration":Time(sequence.duration), @"frameDuration":Time(sequence.frameDuration) };
-        CMTimeRange range = self.timeline.sequenceTimeRange;
-        result[@"sequenceRange"] = @{@"start":Time(range.start),@"duration":Time(range.duration)};
-        result[@"playhead"] = Time(self.timeline.playheadTime);
         NSMutableArray *containers = [NSMutableArray new];
         FCPXObject *object = sequence.container;
         for (NSInteger depth=0; object && depth<5; depth++,object=object.container) {

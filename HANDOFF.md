@@ -1,46 +1,27 @@
-# Subloom 交接
+# SubPop 交接
 
 ## 当前状态（2026-09-12）
 
-独立项目和 Git 仓库已建立。阶段为接入验证，**理想闭环未通过，无可安装面板或完整 MVP**。
+产品已从 Subloom 更名为 **SubPop**。仓库物理目录、`.subloom` 缓存和历史测试项目保留原名。当前阶段为接入验证，理想闭环未通过，完整 MVP 未开发。
 
-已先读取 VinciSub 四份协作文档及研究范围说明，未修改其文件、安装或数据。详细报告见 `docs/integration-validation.md`。
+- 用户已明确授权安装和启动原生只读探针，无需重复确认。`/Applications/SubPop Probe.app` 已安装，FCP 12.3 标准版扩展菜单实际出现并能打开原生面板。
+- 当前打开的是隔离 `Subloom-Verification-20260912` 资源库的 `Subloom-Original`，探针面板保留打开。未接触其他资源库或修改 VinciSub。
+- host 身份、观察者回调、日志落盘通过；播放头和范围返回有效值，范围与 8.68 秒测试项目一致。但 activeSequence 为 nil，项目 UID 读取未通过，SDK 日志出现 Apple Events -600，根因待查。
+- 更正旧结论：苹果概述明确提到 selected time range，不能凭 sequenceTimeRange 名称排除选区能力。尚未做范围变化对照。
+- 前轮 SRT 原项目相对定位实测通过；同 UID XML 保留两者会新建项目。离线 Qwen 0.6B/对齐 CPU 实测通过，但 ASR 结果未写回，不能称端到端通过。
+- 11 项构建/单元/真实 XML 档案回归测试通过；不是新一轮字幕写入验收。
 
-- FCP 12.3 标准版，隔离资源库测试；结束已关闭测试资源库，恢复原先无打开资源库状态。测试资源库保留供后续续测。
-- 原生 SRT 通过 FCP 导入到当前 Subloom-Original，两条简体字幕时间准确、音视频位置保持；真实 XML 回读已保存。
-- 同 UID 修改 XML 触发替换/保留两者；保留两者新增 Subloom-Original 1，不是原时间线增量更新。
-- 从真实 FCP 导出快照读取简单源文件、内存解码、Qwen 0.6B/ForcedAligner 离线识别通过；实际 CPU，未写回 ASR 结果，不能报端到端通过。
-- 8 项回归测试通过。有理数时间、父级 offset、拒绝变速/组件/复杂片段及真实导出档案回归。单元测试不是新一轮 FCP 实测。
+## 下一步、风险与阻塞
 
-## 本轮新增：SDK 原生探针（2026-09-12）
+1. 排查 activeSequence 返回 nil / SDK Apple Events -600（版本、进程寻址、权限），不将其当作用户未打开项目。构建 2/3 的 inspection/automation 权限尝试未解决。
+2. 隔离项目中改变时间线范围，记录 sequenceTimeRange 回调和值；验证无选区时语义和浏览器范围区别。
+3. 实测项目拖入原生面板的 XML 类型、源路径、访问权限；角色/子角色/组件禁用、Solo、变速和复合片段仍全部待测。
+4. 补齐 Caption/Title 最短原时间线写回及校对同步实验，列出真实操作步骤后再交用户选产品路径。不得静默采用复杂导出导入或 XML 全项目替换。
+5. MPS、其他帧率、长音频、冲突恢复未测；正式产品不得依赖 VinciSub 解释器和缓存。
 
-- 已从下载目录取得真实 SDK 1.0.3 并验证苹果签名，解包到 `.subloom/sdk-expanded`，无需全局安装 SDK。
-- `native/Probe/` 原生只读扩展已构建为 `.subloom/build/Subloom Probe.app`；11 项测试通过。构建、签名和 bundle 检查不等于 FCP 宿主实测。
-- 自动审批拒绝将本地自签名应用安装到 `/Applications/Subloom Probe.app`，要求本次用户确认。应用尚未安装或启动，未绕过拦截。
-- 详细记录：`docs/sdk-probe-validation.md`。SDK 头文件确认没有选区、片段枚举、角色状态、字幕写入方法。
+## 关键文件和验证
 
-## 阻塞与风险
-
-- 当前阻塞为安装并启动已构建的只读探针所需的用户明确确认；SDK 下载阻塞已解决。官方独立 Release Notes PDF 尚未读取（包内未找到），模板与头文件已读。
-- FCPXTimeline 的 sequenceTimeRange 不是用户选区；公开列表未发现片段枚举、选区、字幕写入接口。SDK 头文件已确认；运行时行为仍待确认。
-- 自动可听角色、角色多选、复杂时间映射、Title 拖回、编辑同步全部未实测。不要静默回退全部音频或 XML 替换。
-- 本轮 ASR 临时只读借用 VinciSub 解释器与模型；正式产品必须独立安装和缓存。
-- 仅 25fps、简单片段、原生 SRT 相对插入实测。MPS、其他帧率、长音频、字幕冲突和恢复待测。
-
-## 下一步
-
-1. 用户明确允许安装并启动后，将 `.subloom/build/Subloom Probe.app` 安装至 `/Applications`，启动容器 app，再在 FCP 打开扩展；验证 host/timeline/project UID 和观察者事件。只用原隔离资源库。
-2. 在现有隔离资源库中验证选区有无可用接口；验证项目拖入扩展时真实 XML 内容和权限，不将浏览器范围当时间线范围。
-3. 扩展测试多角色、子角色、组件启用、role off、Solo、恒速/曲线变速、复合/同步/多机位。比较实际可听音频，未知状态拒绝自动生成。
-4. 原生 Caption 和 Title 各验证最短写回方式及真实用户步骤；只有可行路径完整实测后才交用户选择。
-5. 路径获选再开发精简主面板、独立编辑/词库/脚本/模型窗口。
-
-## 文件和命令
-
-- `probes/make_fixture.py`：创建隔离 XML/SRT。
-- `probes/readback.py`：只读单普通片段实验解析器，不是通用宿主适配。
-- `probes/recognize_fixture.py`：离线识别实验，命令参数见 README。
-- `.subloom/verification/`：忽略的测试资源库、媒体副本、原始导出、模型结果与下载失败文件。
-- `tests/fixtures/fcp-12.3-caption-readback.fcpxml`：去除 bookmark/私人路径后的真实 FCP 导出结构。
-- `docs/evidence/asr-cpu.json`：脱敏真实离线识别结果。
-- 先 `python3 scripts/build_probe.py`，再 `python3 -B -m unittest discover -s tests -v`；Git 提交前 `git diff --check`，检查暂存差异，提交后检查状态。
+- `native/Probe/`、`scripts/build_probe.py`：原生只读探针，SDK 项目内解包，未全局安装。
+- `docs/sdk-probe-validation.md`、`docs/evidence/subpop-host-partial.json`：最新宿主实测与限制。
+- `docs/integration-validation.md`、`docs/evidence/asr-cpu.json`：第一轮隔离 SRT/XML/离线识别。
+- 构建 `python3 scripts/build_probe.py`；测试 `python3 -B -m unittest discover -s tests -v`；提交前 `git diff --check` 并检查敏感信息，提交后检查状态。
