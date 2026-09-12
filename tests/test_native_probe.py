@@ -18,6 +18,11 @@ class NativeBundleTests(unittest.TestCase):
         self.assertTrue(info['CFBundleIdentifier'].startswith(container['CFBundleIdentifier']+'.'))
         self.assertTrue(info['NSAppleEventsUsageDescription'])
         self.assertTrue(container['NSAppleEventsUsageDescription'])
+        # The helper is a background agent; only the fixed start URL is public.
+        self.assertIs(container['LSUIElement'],True)
+        self.assertEqual(container['CFBundleURLTypes'],[
+            {'CFBundleURLName':'com.chokamin.SubPopProbe.start',
+             'CFBundleURLSchemes':['subpop-probe']}])
 
     def test_apple_silicon_and_sdk_entrypoint(self):
         binary=EXT/'Contents/MacOS/SubPopProbeExtension'
