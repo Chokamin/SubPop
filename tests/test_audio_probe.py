@@ -37,6 +37,21 @@ class AudioProbeTests(unittest.TestCase):
     def test_wrong_active_project_refused(self):
         self.assertEqual(self.probe(uid='different')['stage'],'active-project-uid-mismatch')
 
+    def test_source_audio_attributes_refused(self):
+        for key,value in (('srcEnable','video'),('srcEnable','invalid'),('audioStart','1s'),('audioDuration','2s')):
+            with self.subTest(key=key,value=value):
+                result=self.probe(lambda t:t.find('.//asset-clip').set(key,value))
+                self.assertEqual(result['stage'],'unverified-source-audio')
+
+    def test_real_host_audio_adjustments_refused(self):
+        from probes.snapshot import prepare
+        for name in ('audio-minus6db','audio-component-disabled'):
+            with self.subTest(name=name):
+                data,_=prepare((ROOT/f'tests/fixtures/fcp-12.3-{name}.fcpxml').read_bytes())
+                xml=self.directory/'host.fcpxml';xml.write_bytes(data)
+                result=json.loads(subprocess.check_output([str(self.binary),str(xml),UID,str(self.directory)],text=True))
+                self.assertEqual(result['stage'],'unverified-clip-features')
+
     def test_partial_project_refused(self):
         result = self.probe(lambda t: t.find('.//asset-clip').set('duration','2s'))
         self.assertEqual(result['stage'],'full-project-coverage-required')

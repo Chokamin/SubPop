@@ -39,6 +39,8 @@ NSDictionary *SubPopProbeAudio(NSData *xml, NSString *expectedUID, NSURL *output
     NSArray *clips=[spines[0] nodesForXPath:@"*" error:nil];
     if (clips.count!=1 || ![[clips[0] name] isEqual:@"asset-clip"]) return Failure(@"plain-clip-required",nil);
     NSXMLElement *clip=clips[0];
+    NSString *sourceEnable=Attr(clip,@"srcEnable");
+    if (([clip attributeForName:@"srcEnable"] && ![sourceEnable isEqual:@"all"] && ![sourceEnable isEqual:@"audio"]) || [clip attributeForName:@"audioStart"] || [clip attributeForName:@"audioDuration"]) return Failure(@"unverified-source-audio",nil);
     if ([[clip nodesForXPath:@"*[not(self::caption)]" error:nil] count] || [Attr(clip,@"enabled") isEqual:@"0"] || ![Attr(clip,@"audioRole") isEqual:@"dialogue"]) return Failure(@"unverified-clip-features",nil);
     NSXMLElement *asset=nil;
     for (NSXMLElement *candidate in [doc nodesForXPath:@"/fcpxml/resources/asset" error:nil]) {

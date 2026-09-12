@@ -41,6 +41,25 @@ class ProbeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.check_xml(lambda r:r.find('.//asset-clip').set('enabled','0'))
 
+    def test_source_audio_attributes_rejected(self):
+        for key,value in (('srcEnable','video'),('srcEnable','invalid'),('audioStart','1s'),('audioDuration','2s')):
+            with self.subTest(key=key,value=value),self.assertRaises(ValueError):
+                self.check_xml(lambda r:r.find('.//asset-clip').set(key,value))
+
+    def test_real_audio_changes_rejected_and_original_restored(self):
+        from probes.snapshot import prepare
+        root=Path(__file__).parent/'fixtures'
+        with tempfile.TemporaryDirectory() as d:
+            for name in ('audio-minus6db','audio-component-disabled'):
+                data,_=prepare((root/f'fcp-12.3-{name}.fcpxml').read_bytes())
+                path=Path(d)/'audio.fcpxml';path.write_bytes(data)
+                with self.subTest(name=name),self.assertRaises(ValueError):inspect(path)
+        def shape(e):
+            return e.tag,sorted(e.attrib.items()),(e.text or '').strip(),[shape(c) for c in e]
+        before=E.parse(root/'fcp-12.3-fresh-title-drop.fcpxml').find('.//project/sequence')
+        restored=E.parse(root/'fcp-12.3-audio-restored.fcpxml').find('.//project/sequence')
+        self.assertEqual(shape(before),shape(restored))
+
     def test_multiple_clips_rejected(self):
         with self.assertRaises(ValueError):
             self.check_xml(lambda r:E.SubElement(r.find('.//spine'),'gap'))

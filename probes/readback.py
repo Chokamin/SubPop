@@ -27,6 +27,8 @@ def inspect(path):
     if spine is None or len(spine) != 1 or spine[0].tag != 'asset-clip':
         raise ValueError('Probe supports one plain asset-clip only')
     clip = spine[0]
+    if clip.get('srcEnable', 'all') not in ('all', 'audio') or any(k in clip.attrib for k in ('audioStart', 'audioDuration')):
+        raise ValueError('Disabled source audio or split audio edits are unverified')
     if any(c.tag != 'caption' for c in clip):
         raise ValueError('Retime, components, effects and nested clips are unverified')
     if clip.get('enabled', '1') != '1' or clip.get('audioRole') != 'dialogue':
