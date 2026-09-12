@@ -17,3 +17,8 @@
 苹果[发送数据到 Final Cut Pro 的拖放说明](https://developer.apple.com/documentation/professional-video-applications/supporting-drag-and-drop-for-data-sent-to-final-cut-pro)支持按版本提供 FCPXML，以及将 clips 拖到当前项目时间线；插入位置由落点决定。本实现把多条 Title 包在 clip 内以符合根级语法，是否保持时间和便于编辑必须实测，尚未采用为产品写回路线。
 
 原始模板位于忽略目录 `.subloom/verification/basic-title-template.fcpxmld`，可能含原始媒体路径/书签，不提交。打包 fixture 没有这些信息。
+
+
+## 2026-09-12：首次拖放操作核对
+
+用户首次实际从FCP浏览器拖入了三条10秒“基础标题”，并非SubPop payload；当时没有title-drag-data日志。随后用户找到SubPop拖出区，因原项目已被临时标题延长到10秒，触发title-drag-refused（08:57:13Z）。这不属于FCP拒收payload。已通过FCP UI逐条删除三条误拖标题；UI及SDK确认原项目恢复8.68秒，mandarin与原五条Caption均保留，播放头回到起点。面板重新打开，已给出“独立小窗口三个按钮下方文字行，仅拖一次”的明确说明，等待再拖；仍未完成真实Title落轨。
