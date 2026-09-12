@@ -1,6 +1,6 @@
 # FCP 接入验证 · 2026-09-12
 
-后续进展：SDK 原生探针已获用户授权安装，项目 UID 已读通；构建 6 的局部选区对照仍返回全项目，选区读取未通过。详见 [SDK 记录](sdk-probe-validation.md)。整项目单片段的原生音频解码→外部识别现已通过，见 [整项目音频记录](native-audio-validation.md)。下文保留第一轮实测范围。
+后续进展：SDK 原生探针已获用户授权安装，项目 UID 已读通；构建 6 的局部选区对照仍返回全项目，选区读取未通过。详见 [SDK 记录](sdk-probe-validation.md)。整项目单片段的原生音频解码→外部识别现已通过，见 [整项目音频记录](native-audio-validation.md)。最新真实 ASR 字幕已通过原生 SRT 导入原项目，见 [写回记录](writeback-validation.md)。下文保留第一轮实测范围。
 
 ## 当前产品范围更新
 

@@ -62,6 +62,30 @@ if __name__=='__main__':unittest.main()
 
 
 class ActualHostEvidenceTests(unittest.TestCase):
+    def test_asr_writeback_preserves_original_project_and_captions(self):
+        import json
+        root=Path(__file__).resolve().parents[1]
+        baseline=inspect(root/'tests/fixtures/fcp-12.3-native-drop.fcpxml')
+        after=inspect(root/'tests/fixtures/fcp-12.3-asr-writeback.fcpxml')
+        proofread=inspect(root/'tests/fixtures/fcp-12.3-asr-proofread.fcpxml')
+        evidence=json.loads((root/'docs/evidence/subpop-asr-writeback.json').read_text())
+        self.assertEqual(baseline['uid'],after['uid'])
+        self.assertEqual(after['uid'],proofread['uid'])
+        self.assertEqual(len(after['captions']),5)
+        for original in baseline['captions']:self.assertIn(original,after['captions'])
+        for row in evidence['newCaptions']:
+            caption=next(c for c in after['captions'] if c['text']==row['text'])
+            self.assertEqual(Fraction(caption['relative_start']),Fraction(row['start_frame'],25))
+            self.assertEqual(Fraction(caption['duration']),Fraction(row['end_frame']-row['start_frame'],25))
+        a=E.parse(root/'tests/fixtures/fcp-12.3-native-drop.fcpxml')
+        b=E.parse(root/'tests/fixtures/fcp-12.3-asr-writeback.fcpxml')
+        for path in ('.//sequence','.//asset-clip'):self.assertEqual(a.find(path).attrib,b.find(path).attrib)
+        edits=[(x,y) for x,y in zip(after['captions'],proofread['captions']) if x!=y]
+        self.assertEqual(len(edits),1)
+        self.assertEqual(edits[0][1]['text'],'大家好，欢迎使用中文字幕工具！')
+        self.assertEqual(edits[0][0]['relative_start'],edits[0][1]['relative_start'])
+        self.assertEqual(edits[0][0]['duration'],edits[0][1]['duration'])
+
     def test_native_audio_and_asr_share_the_complete_project_pcm(self):
         # Joins archived live evidence; does not run FCP or the ASR model.
         import json

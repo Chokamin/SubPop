@@ -1,0 +1,43 @@
+{
+  "projectUID": "0D11EC79-ED11-4688-97A9-CB78621857DD",
+  "method": "FCP native SRT import UI; new caption role; not extension write API",
+  "existingCaptionsPreserved": true,
+  "clipAttributesUnchanged": true,
+  "sequenceAttributesUnchanged": true,
+  "newRole": "SRT 2?captionFormat=SRT.cmn-Hans",
+  "fps": 25,
+  "newCaptions": [
+    {
+      "text": "大家好，欢迎使用中文字幕工具。",
+      "start_frame": 0,
+      "end_frame": 80
+    },
+    {
+      "text": "今天我们测试语音识别，",
+      "start_frame": 84,
+      "end_frame": 140
+    },
+    {
+      "text": "并把生成的字幕导入达芬奇。",
+      "start_frame": 146,
+      "end_frame": 214
+    }
+  ],
+  "proofread": {
+    "before": {
+      "text": "大家好，欢迎使用中文字幕工具。",
+      "absolute_start": "3600",
+      "relative_start": "0",
+      "duration": "16/5"
+    },
+    "after": {
+      "text": "大家好，欢迎使用中文字幕工具！",
+      "absolute_start": "3600",
+      "relative_start": "0",
+      "duration": "16/5"
+    },
+    "restoredInUI": true,
+    "automaticSync": false
+  },
+  "sourcePCM": "341261a03f1f1e5a43cc95820bc2468366a1f81de66d83f293e1da95ee3739f2"
+}

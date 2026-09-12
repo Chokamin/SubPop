@@ -63,3 +63,13 @@
 - 关键文件：native/Probe/AudioProbe.m、AudioProbeCLI.m、ProbeViewController.m；probes/recognize_fixture.py；tests/test_audio_probe.py；docs/native-audio-validation.md、docs/evidence/subpop-native-*.json、subpop-project-drop.json。
 - 验证：编译/签名通过；终端沙箱中的 AVFoundation reader-start -11800，普通本机获准执行后19项回归通过；构建8真实宿主完整解码通过。脱敏证据不含书签凭据。
 - 剩余：Caption/Title最短原时间线写回、校对同步、最终可听混音、多片段、持久访问、独立模型环境。未生成或写入新字幕；原测试项目和探针保留打开。
+
+## 2026-09-12：真实 ASR 字幕导入原项目与校对回读
+
+- 需求：继续验证整项目识别后的原时间线写回。
+- 改动：新增受限 `probes/caption_fixture.py`，按标点分句、用真实词时间定边界并量化25fps，不按字数生成时间；新增断句和真实写回档案回归。
+- 宿主实测：在隔离 Subloom-Original 通过原生 SRT 导入，选中文简体/相对时间；已有同角色字幕触发添加/替换/新角色选择，选新角色。三条进入 SRT 2，原两条保留。UID、sequence和asset-clip全部属性不变，起点0/84/146帧、时长80/56/68帧准确。
+- 校对实测：FCP内将首句句号改感叹号，导出回读仅该文本变化；随后恢复句号并经UI确认。不是插件自动双向同步。
+- 关键文件：docs/writeback-validation.md、docs/evidence/subpop-asr-writeback.json/.srt、tests/fixtures/fcp-12.3-asr-writeback.fcpxml、fcp-12.3-asr-proofread.fcpxml。
+- 验证：构建/签名及24项回归通过；真实SRT导入和XML回读另行完成。未发布；未修改VinciSub；原项目保留新旧五条字幕，探针关闭，安装构建8。
+- 剩余：手动SRT写回五个操作阶段仍不是已采用产品方案；Title最短路径、自动识别串联、校对同步、稳定身份/去重、快照新鲜度、最终可听音频和独立模型环境待验证。
