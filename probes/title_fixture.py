@@ -16,7 +16,7 @@ def payload(manifest, version='1.14'):
     if frame<=0 or type(total)!=int or not 0<total<=108000:raise ValueError('Invalid project timing')
     def t(n):return str(n*frame)+'s' if generic else f'{n}/25s'
     style_values=manifest.get('style',{})
-    font=style_values.get('font','Helvetica');size=style_values.get('fontSize',48 if generic and int(manifest.get('height',360))>=720 else 28)
+    font=style_values.get('font','Helvetica');size=style_values.get('fontSize',72 if generic else 28)
     if font not in ('Helvetica','PingFang SC','Arial') or type(size) not in (int,float) or not 12<=size<=120:raise ValueError('Invalid title style')
     rows=manifest['captions']
     if not rows:raise ValueError('No titles')

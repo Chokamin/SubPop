@@ -221,3 +221,8 @@ UI：原生模型下拉、音频范围、较紧凑层次、滚动页面、取消
 开发计划重写于docs/MVP_PLAN.md，说明六模块已实现/证据/待验收及高级能力边界；README从历史探针状态改成真实本机候选版。新增模型补齐和本机安装更新脚本，仍依赖当前workspace、独立.venv及本机模型，不是公证的跨机发行包。全部证据索引docs/evidence/subpop-mvp-validation.json。
 
 补充：最终DTD检查发现下方Title的adjust-transform节点顺序错误，已改为置于text/style之后，增加官方DTD回归；复测67项通过。
+
+
+## 2026-09-12：构建18真实宿主闭环
+
+用户真实拖入被17误拒；18统一使用时间线观察回调的项目身份/时长，避免UI重复SDK查询导致状态不一致。增加明确的真实旧drop重检（保留时间，1小时，已拖出结果不重用）。使用本轮实际输入完成1.7B识别、3句面板校对、苹方36号、关闭重开同任务草稿恢复。用户已拖回，FCP拆分和XML回读通过，原视频和两Caption保留。视觉发现36偏小，FCP三条调72后可读，通用默认字号改72并扩充档位。核心文件ProbeViewController.m/title_fixture.py/PresentationTests.m/test_mvp_host.py；证据subpop-mvp-host-session.json。68项回归、构建/签名及原生harness通过。原始Subloom-Original未改，无音频共享。新修复后直接拖入回调与自然连续长素材验收仍未完成；不得重复要求已完成的输出拖放。详情HANDOFF末尾。

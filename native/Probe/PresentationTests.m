@@ -7,6 +7,14 @@ int main(int argc,const char *argv[]) {
         NSString *directory=@(argv[1]);
         NSDictionary *manifest=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:[directory stringByAppendingPathComponent:@"captions.json"]] options:0 error:nil];
         SubPopProbeViewController *controller=[SubPopProbeViewController new];
+        // UI identity guards use one observer-delivered snapshot, without live SDK calls.
+        controller.observed=YES;controller.observedProjectUID=@"project-a";controller.dropUID=@"project-a";
+        controller.observedProjectDuration=CMTimeMake(111104,12800);controller.dropDuration=CMTimeMake(217,25);
+        if (![controller isolatedProjectActive]) return 7;
+        controller.observedProjectUID=@"project-b";if ([controller isolatedProjectActive]) return 8;
+        controller.observedProjectUID=@"project-a";controller.observedProjectDuration=kCMTimeInvalid;if ([controller isolatedProjectActive]) return 9;
+        controller.observedProjectDuration=CMTimeMake(9,1);if ([controller isolatedProjectActive]) return 10;
+        controller.observedProjectDuration=controller.dropDuration;controller.observed=NO;if ([controller isolatedProjectActive]) return 11;
         controller.resultManifest=manifest;controller.captionRows=[NSMutableArray new];
         for (NSDictionary *row in manifest[@"captions"]) [controller.captionRows addObject:row.mutableCopy];
         NSMutableDictionary *payloads=[NSMutableDictionary new];

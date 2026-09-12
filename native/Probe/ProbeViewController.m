@@ -57,6 +57,8 @@ static NSDictionary *Time(CMTime t) {
 @property NSString *requestModelID;
 @property NSString *dropUID;
 @property CMTime dropDuration;
+@property NSString *observedProjectUID;
+@property CMTime observedProjectDuration;
 @property NSPopUpButton *modelPicker;
 @property NSPopUpButton *audioPicker;
 @property NSPopUpButton *fontPicker;
@@ -171,7 +173,7 @@ static NSDictionary *Time(CMTime t) {
     NSTableColumn *text=[[NSTableColumn alloc] initWithIdentifier:@"text"];text.title=@"字幕 · 双击校对";text.width=440;text.editable=YES;[self.captionTable addTableColumn:text];
     self.captionScroll=[NSScrollView new];self.captionScroll.documentView=self.captionTable;self.captionScroll.hasVerticalScroller=YES;self.captionScroll.borderType=NSBezelBorder;[stack addArrangedSubview:self.captionScroll];[self.captionScroll.heightAnchor constraintEqualToConstant:150].active=YES;self.captionScroll.hidden=YES;
     self.fontPicker=[[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];[self.fontPicker addItemsWithTitles:@[@"Helvetica",@"PingFang SC",@"Arial"]];self.fontPicker.target=self;self.fontPicker.action=@selector(styleChanged:);[self.fontPicker setAccessibilityLabel:@"字幕字体"];
-    self.sizePicker=[[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];[self.sizePicker addItemsWithTitles:@[@"28",@"36",@"48",@"64",@"80"]];self.sizePicker.target=self;self.sizePicker.action=@selector(styleChanged:);[self.sizePicker setAccessibilityLabel:@"字幕字号"];
+    self.sizePicker=[[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];[self.sizePicker addItemsWithTitles:@[@"28",@"36",@"48",@"64",@"72",@"80",@"96",@"120"]];self.sizePicker.target=self;self.sizePicker.action=@selector(styleChanged:);[self.sizePicker setAccessibilityLabel:@"字幕字号"];
     self.editorControls=[NSStackView stackViewWithViews:@[[self label:@"字幕样式" size:12 weight:NSFontWeightMedium],self.fontPicker,self.sizePicker]];self.editorControls.spacing=10;[stack addArrangedSubview:self.editorControls];self.editorControls.hidden=YES;
     self.resultView=[[SubPopTitleDragView alloc] initWithFrame:NSMakeRect(0,0,572,36)];self.resultView.controller=self;[self.resultView setAccessibilityElement:YES];[self.resultView setAccessibilityRole:NSAccessibilityGroupRole];[stack addArrangedSubview:self.resultView];[self.resultView.heightAnchor constraintEqualToConstant:36].active=YES;self.resultView.hidden=YES;
     NSView *actions=[[NSView alloc] initWithFrame:NSMakeRect(0,0,572,36)];
@@ -187,13 +189,12 @@ static NSDictionary *Time(CMTime t) {
 - (void)restoreSession {
     if (self.restoringSession || self.requestID || self.titlePayloads || !self.bridgeURL || !self.timeline || ![self workerAvailable]) return;
     NSDictionary *saved=[NSUserDefaults.standardUserDefaults dictionaryForKey:@"pendingSession"];
-    FCPXSequence *sequence=self.timeline.activeSequence;FCPXObject *container=sequence.container;
-    if (!saved || container.objectType!=kFCPXObjectType_Project || ![((FCPXProject *)container).UID isEqual:saved[@"projectUID"]] || !CMTIME_IS_NUMERIC(sequence.duration)) return;
+    if (!saved || !self.observed || ![self.observedProjectUID isEqual:saved[@"projectUID"]] || !CMTIME_IS_NUMERIC(self.observedProjectDuration)) return;
     CMTime duration=CMTimeMake([saved[@"durationValue"] longLongValue],[saved[@"durationScale"] intValue]);
-    if (!CMTIME_IS_NUMERIC(duration) || CMTimeCompare(sequence.duration,duration)!=0) return;
+    if (!CMTIME_IS_NUMERIC(duration) || CMTimeCompare(self.observedProjectDuration,duration)!=0) return;
     self.restoringSession=YES;self.dropUID=saved[@"projectUID"];self.dropDuration=duration;self.dropName=saved[@"projectName"];
     NSString *file=saved[@"inputFile"];
-    if ([file hasPrefix:@"drop-"] && [file.lastPathComponent isEqual:file]) { self.freshDropURL=[[self evidenceDirectory] URLByAppendingPathComponent:file];self.freshDropDate=NSDate.date; }
+    if ([file hasPrefix:@"drop-"] && [file.lastPathComponent isEqual:file]) { self.freshDropURL=[[self evidenceDirectory] URLByAppendingPathComponent:file];NSDate *captured=nil;[self.freshDropURL getResourceValue:&captured forKey:NSURLContentModificationDateKey error:nil];self.freshDropDate=captured; }
     self.requestID=saved[@"requestID"];self.requestSHA=saved[@"snapshotSHA"];self.requestModelID=saved[@"modelID"];self.requestGeneration=self.dropGeneration;self.displayState=@"validate";
     self.selectedModelID=self.requestModelID;
     for (NSMenuItem *item in self.modelPicker.itemArray) if ([item.representedObject isEqual:self.selectedModelID]) [self.modelPicker selectItem:item];
@@ -264,7 +265,7 @@ static NSDictionary *Time(CMTime t) {
         self.diagnostics=[NSPopover new]; self.diagnostics.behavior=NSPopoverBehaviorTransient;
         NSViewController *controller=[NSViewController new]; controller.view=[[NSView alloc] initWithFrame:NSMakeRect(0,0,540,360)];
         NSScrollView *scroll=[[NSScrollView alloc] initWithFrame:NSMakeRect(10,10,520,300)]; scroll.hasVerticalScroller=YES; scroll.documentView=self.output; [controller.view addSubview:scroll];
-        NSArray *names=@[@"记录状态",@"诊断通信",@"音频探针"]; SEL actions[]={@selector(refresh:),@selector(diagnose:),@selector(probeAudio:)};
+        NSArray *names=@[@"记录状态",@"重新检查上次拖入",@"音频探针"]; SEL actions[]={@selector(refresh:),@selector(recheckLastDrop:),@selector(probeAudio:)};
         for (NSUInteger i=0;i<3;i++) { NSButton *b=[NSButton buttonWithTitle:names[i] target:self action:actions[i]]; b.frame=NSMakeRect(10+i*174,322,164,28); [controller.view addSubview:b]; }
         self.diagnostics.contentViewController=controller;
     }
@@ -329,8 +330,8 @@ static NSDictionary *Time(CMTime t) {
     return sha;
 }
 - (BOOL)isolatedProjectActive {
-    FCPXSequence *sequence=self.timeline.activeSequence;FCPXObject *container=sequence.container;
-    return self.dropUID.length && container.objectType==kFCPXObjectType_Project && [((FCPXProject *)container).UID isEqual:self.dropUID] && CMTIME_IS_NUMERIC(sequence.duration) && CMTimeCompare(sequence.duration,self.dropDuration)==0;
+    CMTime duration=self.observedProjectDuration;
+    return self.observed && self.dropUID.length && [self.dropUID isEqual:self.observedProjectUID] && CMTIME_IS_NUMERIC(duration) && CMTimeCompare(duration,self.dropDuration)==0;
 }
 - (BOOL)workerAvailable {
     NSDictionary *service=[self readJSON:[self.bridgeURL URLByAppendingPathComponent:@"service.json"]];
@@ -414,7 +415,7 @@ static NSDictionary *Time(CMTime t) {
     self.requestID=request; self.requestSHA=sha; self.lastJobStage=nil; self.generateButton.enabled=NO;
     self.resultLoadAttempted=YES; self.titlePayloads=nil;
     [NSUserDefaults.standardUserDefaults setObject:@{@"requestID":request,@"snapshotSHA":sha,@"modelID":self.selectedModelID,@"projectUID":self.dropUID,@"projectName":self.dropName ?: @"",@"durationValue":@(self.dropDuration.value),@"durationScale":@(self.dropDuration.timescale),@"inputFile":latest.lastPathComponent} forKey:@"pendingSession"];
-    [self record:@{@"reason":@"worker-submit",@"status":@"submitted",@"requestID":request,@"snapshotDate":latestDate.description ?: @"",@"source":@"new drop in current session; edits after capture still require another drop"}];
+    [self record:@{@"reason":@"worker-submit",@"status":@"submitted",@"requestID":request,@"snapshotDate":latestDate.description ?: @"",@"source":@"received project snapshot; original capture date retained; edits after capture require another drop"}];
 }
 - (void)pollWorker:(NSTimer *)timer {
     [self updateInterface];
@@ -439,7 +440,7 @@ static NSDictionary *Time(CMTime t) {
             if (![[self sha256:data] isEqual:response[@"outputs"][name]]) { valid=NO; break; }
             payloads[version]=data;
         }
-        if (valid && payloads.count==3) { self.titlePayloads=payloads; self.resultDate=NSDate.date;self.resultManifest=response[@"manifest"];[self.sizePicker selectItemWithTitle:[self.resultManifest[@"height"] intValue]>=720 ? @"48" : @"28"];self.resultRequestID=self.requestID;self.captionRows=[NSMutableArray new];for (NSDictionary *row in response[@"manifest"][@"captions"]) [self.captionRows addObject:row.mutableCopy];
+        if (valid && payloads.count==3) { self.titlePayloads=payloads; self.resultDate=NSDate.date;self.resultManifest=response[@"manifest"];[self.sizePicker selectItemWithTitle:@"72"];self.resultRequestID=self.requestID;self.captionRows=[NSMutableArray new];for (NSDictionary *row in response[@"manifest"][@"captions"]) [self.captionRows addObject:row.mutableCopy];
             NSDictionary *draft=[self readJSON:[[self evidenceDirectory] URLByAppendingPathComponent:[@"draft-" stringByAppendingString:self.requestID]]];
             if ([draft[@"snapshotSHA"] isEqual:self.requestSHA] && [draft[@"modelID"] isEqual:self.requestModelID] && [draft[@"captions"] isKindOfClass:NSArray.class] && [draft[@"captions"] count]==self.captionRows.count) {
                 // Restore only text onto fresh, validated timing/payloads.
@@ -472,12 +473,8 @@ static NSDictionary *Time(CMTime t) {
 - (void)beginTitleDrag:(NSEvent *)event fromView:(NSView *)view {
     [self.view.window makeFirstResponder:nil];
     if (!self.titlePayloads || !self.resultDate) { [self record:@{@"reason":@"title-drag-refused",@"status":@"Load a valid completed result first"}]; return; }
-    FCPXSequence *sequence=self.timeline.activeSequence;
-    FCPXObject *container=sequence.container;
-    if (container.objectType!=kFCPXObjectType_Project ||
-        ![((FCPXProject *)container).UID isEqual:self.dropUID] ||
-        CMTimeCompare(sequence.duration,self.dropDuration)!=0) {
-        [self record:@{@"reason":@"title-drag-refused",@"status":@"Open the unchanged isolated 8.68s original project first"}]; return;
+    if (![self isolatedProjectActive]) {
+        [self record:@{@"reason":@"title-drag-refused",@"status":@"Open the unchanged source project first"}]; return;
     }
     NSPasteboardItem *item=[NSPasteboardItem new];
     [item setDataProvider:self forTypes:@[@"com.apple.finalcutpro.xml",@"com.apple.finalcutpro.xml.v1-14",@"com.apple.finalcutpro.xml.v1-13",@"com.apple.finalcutpro.xml.v1-12"]];
@@ -514,7 +511,7 @@ static NSDictionary *Time(CMTime t) {
     if (self.bridgeScoped) [self.bridgeURL stopAccessingSecurityScopedResource];
     self.freshDropURL=nil; self.freshDropDate=nil; self.titlePayloads=nil; self.resultDate=nil; self.dropGeneration++;
     self.bridgeScoped=NO; self.bridgeURL=nil; self.requestID=nil; [self updateInterface];
-    [self.timeline removeTimelineObserver:self]; self.timeline = nil; self.host = nil; self.observed = NO;
+    [self.timeline removeTimelineObserver:self]; self.timeline = nil; self.host = nil; self.observed = NO; self.observedProjectUID=nil;self.observedProjectDuration=kCMTimeInvalid;
     [super viewWillDisappear];
 }
 - (void)refresh:(id)sender { [self snapshot:@"manual"]; }
@@ -559,6 +556,9 @@ static NSDictionary *Time(CMTime t) {
 - (void)snapshot:(NSString *)reason {
     if (!self.observed) { [self record:@{@"status":@"observer has not delivered state", @"reason":reason}]; return; }
     FCPXSequence *sequence = self.timeline.activeSequence;
+    FCPXObject *project=sequence.container;
+    self.observedProjectUID=project.objectType==kFCPXObjectType_Project ? [((FCPXProject *)project).UID copy] : nil;
+    self.observedProjectDuration=sequence ? sequence.duration : kCMTimeInvalid;
     NSMutableDictionary *result = [@{@"reason":reason, @"host":self.host.name ?: @"", @"version":self.host.versionString ?: @"", @"bundle":self.host.bundleIdentifier ?: @"", @"hasSequence":@(sequence != nil), @"selectionAPI":@"sequenceTimeRange semantics require host testing", @"clipEnumerationAPI":@"not exposed by SDK 1.0.3", @"captionWriteAPI":@"not exposed by SDK 1.0.3"} mutableCopy];
     CMTimeRange observedRange = self.timeline.sequenceTimeRange;
     result[@"sequenceRange"] = @{@"start":Time(observedRange.start),@"duration":Time(observedRange.duration)};
@@ -581,6 +581,40 @@ static NSDictionary *Time(CMTime t) {
 - (void)activeSequenceChanged { self.freshDropURL=nil; self.titlePayloads=nil; self.dropGeneration++; self.observed=YES; [self snapshot:@"activeSequenceChanged"]; }
 - (void)sequenceTimeRangeChanged { self.observed=YES; [self snapshot:@"sequenceTimeRangeChanged"]; }
 - (void)playheadTimeChanged { self.observed=YES; [self snapshot:@"playheadTimeChanged"]; }
+- (void)validateDroppedProject {
+    NSError *error=nil;
+    NSData *data=[NSData dataWithContentsOfURL:self.freshDropURL options:0 error:&error];
+    NSXMLDocument *doc=data ? [[NSXMLDocument alloc] initWithData:data options:NSXMLNodeLoadExternalEntitiesNever error:&error] : nil;
+    NSArray *projects=[doc nodesForXPath:@"/fcpxml/project | /fcpxml/library/event/project" error:&error];
+    NSString *activeUID=self.observedProjectUID;
+    NSString *inputUID=projects.count==1 ? [projects[0] attributeForName:@"uid"].stringValue : nil;
+    CMTime duration=self.observedProjectDuration;
+    BOOL valid=projects.count==1 && activeUID.length && [inputUID isEqual:activeUID] && CMTIME_IS_NUMERIC(duration) && CMTimeGetSeconds(duration)>0 && CMTimeGetSeconds(duration)<=1800;
+    [self record:@{@"reason":@"drop-validation",@"projectCount":@(projects.count),@"inputUID":inputUID ?: @"",@"activeUID":activeUID ?: @"",@"duration":Time(duration),@"accepted":@(valid),@"error":error.localizedDescription ?: @""}];
+    if (!valid) { self.freshDropURL=nil;self.freshDropDate=nil; }
+    else { self.dropName=[projects[0] attributeForName:@"name"].stringValue;self.dropUID=inputUID.copy;self.dropDuration=duration; }
+}
+- (void)recheckLastDrop:(id)sender {
+    if (self.requestID || self.titlePayloads) return;
+    // Explicit recovery of a real drag record, never a fabricated new input.
+    NSDictionary *last=nil;NSString *lastDate=@"",*lastConsumedDate=@"";
+    for (NSURL *url in [[NSFileManager defaultManager] contentsOfDirectoryAtURL:[self evidenceDirectory] includingPropertiesForKeys:nil options:0 error:nil]) {
+        if (![url.pathExtension isEqual:@"json"]) continue;
+        NSDictionary *record=[self readJSON:url];NSString *date=record[@"recordedAt"];
+        if ([record[@"reason"] isEqual:@"title-drag-ended"] && [record[@"operation"] unsignedIntegerValue]!=NSDragOperationNone && [date isKindOfClass:NSString.class] && [date compare:lastConsumedDate]==NSOrderedDescending) lastConsumedDate=date;
+        if ([record[@"reason"] isEqual:@"drop"] && [date isKindOfClass:NSString.class] && [date compare:lastDate]==NSOrderedDescending) { last=record;lastDate=date; }
+    }
+    NSDate *date=[[NSISO8601DateFormatter new] dateFromString:lastDate];
+    if (!date || date.timeIntervalSinceNow>0 || -date.timeIntervalSinceNow>3600 || [lastConsumedDate compare:lastDate]!=NSOrderedAscending) return;
+    NSString *file=nil;
+    for (NSDictionary *item in last[@"xml"]) if ([item[@"saved"] boolValue] && (!file || [item[@"type"] isEqual:@"com.apple.finalcutpro.xml.v1-14"])) file=item[@"file"];
+    if (![file hasPrefix:@"drop-"] || ![file.lastPathComponent isEqual:file]) return;
+    self.freshDropURL=[[self evidenceDirectory] URLByAppendingPathComponent:file];self.freshDropDate=date;self.dropGeneration++;
+    [self validateDroppedProject];
+    self.displayState=self.freshDropURL ? @"input" : @"invalid-input";
+    [self record:@{@"reason":@"recheck-real-drop",@"originalRecordedAt":lastDate,@"accepted":@(self.freshDropURL!=nil)}];
+    [self.diagnostics close];[self updateInterface];
+}
 - (BOOL)receivePasteboard:(NSPasteboard *)pasteboard {
     if (self.requestID) return NO;
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];
@@ -597,15 +631,7 @@ static NSDictionary *Time(CMTime t) {
         if (ok && (!self.freshDropURL || [type isEqual:@"com.apple.finalcutpro.xml.v1-14"])) { self.freshDropURL=url; self.freshDropDate=NSDate.date; }
         [saved addObject:@{@"type":type,@"bytes":@(data.length),@"saved":@(ok),@"file":name,@"error":error.localizedDescription ?: @""}];
     }
-    if (self.freshDropURL) {
-        NSData *data=[NSData dataWithContentsOfURL:self.freshDropURL];
-        NSXMLDocument *doc=[[NSXMLDocument alloc] initWithData:data options:NSXMLNodeLoadExternalEntitiesNever error:nil];
-        NSArray *projects=[doc nodesForXPath:@"/fcpxml/project | /fcpxml/library/event/project" error:nil];
-        FCPXSequence *sequence=self.timeline.activeSequence;FCPXObject *container=sequence.container;
-        NSString *activeUID=container.objectType==kFCPXObjectType_Project ? ((FCPXProject *)container).UID : nil;
-        if (projects.count!=1 || !activeUID.length || ![[projects[0] attributeForName:@"uid"].stringValue isEqual:activeUID] || !CMTIME_IS_NUMERIC(sequence.duration) || CMTimeGetSeconds(sequence.duration)<=0 || CMTimeGetSeconds(sequence.duration)>1800) { self.freshDropURL=nil;self.freshDropDate=nil; }
-        else { self.dropName=[projects[0] attributeForName:@"name"].stringValue;self.dropUID=activeUID;self.dropDuration=sequence.duration; }
-    }
+    if (self.freshDropURL) [self validateDroppedProject];
     [self record:@{@"reason":@"drop",@"types":pasteboard.types ?: @[],@"xml":saved}];
     return self.freshDropURL!=nil;
 }

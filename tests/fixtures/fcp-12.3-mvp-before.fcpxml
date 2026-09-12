@@ -1,0 +1,33 @@
+<fcpxml version="1.14">
+  <resources>
+    <format id="r1" frameDuration="1/25s" width="640" height="360" colorSpace="1-1-1 (Rec. 709)" />
+    <asset id="r2" name="mandarin" uid="EB757423CC373D1C25ABA22F3E30F499" start="0s" duration="8680/1000s" hasVideo="1" format="r3" hasAudio="1" videoSources="1" audioSources="1" audioChannels="1" audioRate="16000">
+      <media-rep kind="original-media" sig="EB757423CC373D1C25ABA22F3E30F499" src="file:///TEST_MEDIA/mandarin.mp4" />
+    </asset>
+    <format id="r3" frameDuration="512/12800s" width="640" height="360" colorSpace="6-1-6 (Rec. 601 (NTSC))" />
+  </resources>
+  <project name="Subloom-Original 1" uid="810BBE85-2CFB-4719-906E-BEA30A757510" modDate="2026-09-12 15:03:17 +0800">
+    <sequence format="r1" duration="111104/12800s" tcStart="3600s" tcFormat="NDF" audioLayout="stereo" audioRate="48k">
+      <spine>
+        <asset-clip ref="r2" offset="3600s" name="mandarin" duration="111104/12800s" tcFormat="NDF" audioRole="dialogue">
+          <caption lane="1" offset="1s" name="XML修改探针" start="3600s" duration="1s" role="SRT?captionFormat=SRT.cmn-Hans">
+            <text placement="bottom">
+              <text-style ref="ts1">XML修改探针</text-style>
+            </text>
+            <text-style-def id="ts1">
+              <text-style font=".AppleSystemUIFont" fontSize="13" fontFace="Regular" fontColor="1 1 1 1" backgroundColor="0 0 0 1" />
+            </text-style-def>
+          </caption>
+          <caption lane="1" offset="4s" name="保留 3.5% 和 USB-C" start="3600s" duration="30/25s" role="SRT?captionFormat=SRT.cmn-Hans">
+            <text placement="bottom">
+              <text-style ref="ts2">保留 3.5% 和 USB-C</text-style>
+            </text>
+            <text-style-def id="ts2">
+              <text-style font=".AppleSystemUIFont" fontSize="13" fontFace="Regular" fontColor="1 1 1 1" backgroundColor="0 0 0 1" />
+            </text-style-def>
+          </caption>
+        </asset-clip>
+      </spine>
+    </sequence>
+  </project>
+</fcpxml>
