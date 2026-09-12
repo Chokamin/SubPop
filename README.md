@@ -1,6 +1,6 @@
 # Subloom
 
-用于 Final Cut Pro 的本地简体中文字幕工具，当前处于**接入验证阶段**，尚无可安装的 Workflow Extension 或完整 MVP。
+用于 Final Cut Pro 的本地简体中文字幕工具，当前处于**接入验证阶段**，已有只读 Workflow Extension 探针构建，尚未安装到 FCP 或完成 MVP。
 
 请先读 [HANDOFF.md](HANDOFF.md)。完整能力、证据等级和未完成项见 [接入报告](docs/integration-validation.md)。
 
@@ -16,7 +16,9 @@
 
 ## 测试
 
-`python3 -B -m unittest discover -s tests -v`
+先 `python3 scripts/build_probe.py`，再 `python3 -B -m unittest discover -s tests -v`。
+
+构建使用项目 `.subloom/sdk-expanded` 中的官方 SDK，首次通过 `pkgutil --expand-full` 解包（不会执行安装脚本）。原生 bundle 测试要求已构建，不会自动安装应用。详情见 [SDK 探针记录](docs/sdk-probe-validation.md)。
 
 `probes/make_fixture.py` 生成测试 XML/SRT，要求 `.subloom/verification/mandarin.mp4` 已存在。该媒体是从 VinciSub 测试媒体复制的独立副本。
 

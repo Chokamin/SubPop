@@ -9,3 +9,11 @@
 - 验证结果：8 项单元/档案回归测试通过；夹具按 FCP 自带 1.14 DTD 校验通过。FCP 隔离原项目内两条 SRT 中文字幕相对定位准确，实际导出含中文简体角色；同 UID XML 修改导入弹出替换/保留两者，后者新增项目、原字幕不变。源路径来自实际 FCP 导出，ffmpeg 内存解码、Qwen 0.6B/对齐离线 CPU 实测通过。ASR 结果未写回，不称完整闭环。
 - 安全与范围：全部 FCP 写入仅独立 Subloom-Verification-20260912 资源库；未写用户已有项目。VinciSub 只读借用解释器和模型，禁用字节码与联网，媒体独立复制，Git 工作区仍干净。未发布 GitHub、未购买。结束关闭测试资源库并确认 FCP 未载入任何项，保留独立测试数据供续测。
 - 剩余问题：SDK 安装/原生扩展运行；当前选区、自动可听和多角色；Title、精确自动写回及校对同步；MPS 与复杂映射。未擅自采用文件导出导入作为产品方案。后续先补齐探针再交用户选择可行路径。
+
+## 2026-09-12：SDK 校验与原生只读扩展构建
+
+- 需求：用户已下载 SDK，继续最小原生接入验证。
+- 改动：只读挂载官方 SDK 并在项目内解包，校验苹果签名；读取实际头文件和模板，新增 AppKit 容器应用、只读时间线观察器、XML 拖入记录器及可重现构建脚本。
+- 关键文件：`native/Probe/Container.m`、`native/Probe/ProbeViewController.m`、`scripts/build_probe.py`、`tests/test_native_probe.py`、`docs/sdk-probe-validation.md`。
+- 验证结果：编译及签名校验通过，11 项测试全部通过。SDK 1.0.3 头文件无选区、片段枚举、角色状态、字幕写入接口。修正工具链自动选择 CLT 27 SDK 导致的链接错误，显式采用 Xcode 26.5 SDK。沙箱内签名误报经系统信任服务复核为 Apple Software/accepted。
+- 剩余问题：自动审批拒绝复制自签名 app 到 /Applications，要求本次安装确认；未安装/启动，不绕过，未做新 FCP 实测。等待确认后继续真实 host/拖放验证；独立 release notes PDF 未读。未改变 VinciSub 或用户 FCP 资源库。
