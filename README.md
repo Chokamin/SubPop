@@ -19,15 +19,17 @@
 
 ## 下载与发行状态
 
-公开仓库：[Chokamin/SubPop](https://github.com/Chokamin/SubPop)。安装包将发布到 [Releases](https://github.com/Chokamin/SubPop/releases)。目前尚无正式、已签名公证的安装包，请勿把源码压缩包当作安装程序。
+公开仓库：[Chokamin/SubPop](https://github.com/Chokamin/SubPop)。安装包见 [Releases](https://github.com/Chokamin/SubPop/releases)。首个 PKG 为 `v0.1.0.29` 公开测试版，约 461 MB，适用 Apple Silicon 与 macOS 15+，FCP 实测版本为 12.3。尚未完成 Developer ID 签名及 Apple 公证，macOS 可能阻止安装；请勿把源码压缩包当作安装程序。
 
-面板顶部“检查更新”手动查询 GitHub 正式 Releases；有新版本且包含 PKG/DMG 时提供下载页。不会自动安装，也不上传音频或项目信息。发行标签采用 `v0.1.0.28`（最后一段是构建号）；测试版不向普通用户提示更新。
+PKG 安装到 `/Applications/SubPop.app`，包含独立 Python 与识别依赖；首次打开 SubPop 后，从 FCP 扩展菜单进入，授权默认任务文件夹并下载模型。模型和个人数据保存在 `~/Library/Application Support/SubPop`，不依赖开发仓库。已装旧开发版的测试者应先退出并移走旧 `SubPop Probe.app`，避免同一扩展出现两份；旧开发目录中的模型和任务不会自动迁移。
+
+面板顶部“检查更新”手动查询 GitHub 正式 Releases；有新版本且包含 PKG/DMG 时提供下载页。不会自动安装，也不上传音频或项目信息。发行标签采用 `v0.1.0.29`（最后一段是构建号）；测试版不向普通用户提示更新。
 
 模型目前从 Hugging Face 固定版本下载，支持续传与 SHA-256 校验。默认优先使用第三方 HF-Mirror 国内镜像，失败后尝试 Hugging Face 官方源；可在模型管理改为仅官方源。所有来源共享相同固定版本与校验值。GitHub、镜像和官方源在不同网络下的可访问性不保证。下载后识别离线运行。
 
 ## 本机开发安装与更新
 
-当前机器已安装 `/Applications/SubPop Probe.app`，独立运行环境、模型和缓存位于此仓库。不能移动或删除仓库后继续运行；跨机器独立安装包尚未制作。
+当前机器已安装 `/Applications/SubPop Probe.app`，独立运行环境、模型和缓存位于此仓库。不能移动或删除仓库后继续运行；此段仅针对旧开发安装，Release PKG 使用应用内运行环境。
 
 维护更新：关闭 SubPop 面板后执行 `python3 scripts/install_local.py`，再从 FCP“窗口 → 扩展 → SubPop Probe”重开。更新保留模型和授权；若旧进程仍被 FCP 缓存，需要重新启动该扩展。普通使用无需终端或手动启动后台。
 

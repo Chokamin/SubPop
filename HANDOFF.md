@@ -299,3 +299,12 @@ run_job提取共用finalize，失败在generate-titles的完全相同snapshotSHA
 新增Updates.h/Updates.inc，顶部检查更新按钮，匿名HTTPS读取Chokamin/SubPop GitHub正式latest Release；比较vMAJOR.MINOR.PATCH.BUILD，排除测试版，有pkg/dmg才提示打开下载页，无发行/失败/最新各有状态，不自动执行安装。新增network.client entitlement仅为显式更新检查；回归更新原“无网络权限”假设。公开仓库由用户授权创建，模型/SDK/运行缓存/测试视频/密钥不入Git。历史凭据模式扫描0命中。
 
 download_sources.py白名单国内HF-Mirror优先失败尝试HF官方，用户可选择仅官方。native Preferences新增源选择与状态来源，随请求冻结；worker校验source值。transfer原固定revision/size/SHA校验及断点续传保留，取消不触发备用下载。镜像是第三方公益源，不称官方；四ASR+aligner配置实测取回SHA均匹配（本机网络，非大陆多运营商实测，未完整重复下载10GB权重）。证据docs/evidence/subpop-mirror-config-check.json。全部99项测试通过，AppKit布局及版本比较测试通过。构建29安装签名通过，空闲容器与扩展重启。打包仍暂停，无正式Release安装包。
+
+
+## 2026-09-12：独立 PKG 公开测试版 0.1.0.29
+
+用户授权继续打包并发布 Release。package_release.py 从应用 plist 读取版本，分离 installer resources 防止重复嵌入载荷，流式计算 SHA。打包独立 Python、ASR 依赖、probes/config/audio CLI，应用内代码与每用户 Application Support/SubPop 数据分离；不包含模型、媒体、词库或任务。README 写明新旧安装区别与手动移走旧开发 app 以免同 bundle ID 重复。
+
+构建29重建、99项测试、原生布局及三版本编辑测试通过；独立环境四引擎 import 通过，在独立数据目录实际 SenseVoice 识别短片生成4条 Title。最终 PKG 461228394字节，SHA256 44de69b14c6e34c2a43dd7a888b970735ba28aeb60191f7a40356f7146213d5d。pkgbuild 出现 write permission 警告但成功退出；随后 expand-full 解包逐项对比37021个文件的内容/权限/链接全部一致，深度签名验证通过，解包环境 worker 启动通过。新增 scripts/verify_release.py 可重复校验，证据 docs/evidence/subpop-package29.json。
+
+发布目标 Chokamin/SubPop 的 v0.1.0.29 prerelease，未签 Developer ID/未公证，正式更新检查故意排除测试版。未在干净另一台Mac安装验收、未本轮改写FCP项目或替换本机开发安装；不能声称普通用户无阻碍一键安装。

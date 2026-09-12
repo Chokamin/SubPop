@@ -1,4 +1,4 @@
-"""Build a relocatable, model-free internal-test PKG (Developer ID required for public release)."""
+"""Build a relocatable, model-free unsigned preview PKG (Developer ID required for trusted distribution)."""
 from pathlib import Path
 import hashlib
 import json
@@ -19,6 +19,8 @@ def build():
     APP.parent.mkdir(parents=True);DIST.mkdir(exist_ok=True)
     shutil.copytree(ROOT/'.subloom/build/SubPop Probe.app',APP,symlinks=True)
     RUNTIME.mkdir()
+    info=plistlib.loads((APP/'Contents/Info.plist').read_bytes())
+    version=info['CFBundleShortVersionString']+'.'+info['CFBundleVersion']
     python=(ROOT/'.venv/bin/python').resolve().parent.parent
     shutil.copytree(python,RUNTIME/'.venv',symlinks=True,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
     source=ROOT/'.venv/lib/python3.12/site-packages'
@@ -41,15 +43,17 @@ def build():
     run('codesign','--force','--sign','-',APP)
     run('codesign','--verify','--deep','--strict',APP)
     component=STAGE/'SubPop-component.pkg'
-    run('pkgbuild','--root',STAGE/'payload','--identifier','com.chokamin.SubPop.installer','--version','0.1.0.27','--install-location','/','--ownership','recommended',component)
-    welcome=STAGE/'Welcome.html'
-    welcome.write_text('<html><meta charset="utf-8"><body><h1>SubPop 内部测试版</h1><p>安装 FCP 扩展和独立本机识别环境。适用于 Apple Silicon、macOS 15 或更高版本。FCP 集成当前实测版本为 12.3。</p><p>安装后打开应用程序中的 SubPop，再从 Final Cut Pro 扩展菜单打开。首次允许默认任务文件夹，进入模型管理下载所需模型。</p><p>此包尚未完成 Developer ID 签名及 Apple 公证，不是公开发行版。安装不包含模型、测试视频、词库或历史字幕。</p></body></html>')
+    run('pkgbuild','--root',STAGE/'payload','--identifier','com.chokamin.SubPop.installer','--version',version,'--install-location','/','--ownership','recommended',component)
+    resources=STAGE/'resources';resources.mkdir()
+    welcome=resources/'Welcome.html'
+    welcome.write_text('<html><meta charset="utf-8"><body><h1>SubPop 公开测试版</h1><p>安装 FCP 扩展和独立本机识别环境。适用于 Apple Silicon、macOS 15 或更高版本。FCP 集成当前实测版本为 12.3。</p><p>安装后打开应用程序中的 SubPop，再从 Final Cut Pro 扩展菜单打开。首次允许默认任务文件夹，进入模型管理下载所需模型。</p><p>此包尚未完成 Developer ID 签名及 Apple 公证，仅供测试使用。安装不包含模型、测试视频、词库或历史字幕。</p></body></html>')
     xml=STAGE/'distribution.xml'
-    xml.write_text('''<?xml version="1.0" encoding="utf-8"?>
-<installer-gui-script minSpecVersion="2"><title>SubPop</title><welcome file="Welcome.html"/><options customize="never" require-scripts="false" hostArchitectures="arm64"/><volume-check><allowed-os-versions><os-version min="15.0"/></allowed-os-versions></volume-check><choices-outline><line choice="default"/></choices-outline><choice id="default" visible="false"><pkg-ref id="com.chokamin.SubPop.installer"/></choice><pkg-ref id="com.chokamin.SubPop.installer" version="0.1.0.27">SubPop-component.pkg</pkg-ref></installer-gui-script>''')
-    output=DIST/'SubPop-0.1.0-27-arm64-test.pkg'
-    run('productbuild','--distribution',xml,'--resources',STAGE,'--package-path',STAGE,output)
-    digest=hashlib.sha256(output.read_bytes()).hexdigest()
+    xml.write_text(f'''<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2"><title>SubPop</title><welcome file="Welcome.html"/><options customize="never" require-scripts="false" hostArchitectures="arm64"/><volume-check><allowed-os-versions><os-version min="15.0"/></allowed-os-versions></volume-check><choices-outline><line choice="default"/></choices-outline><choice id="default" visible="false"><pkg-ref id="com.chokamin.SubPop.installer"/></choice><pkg-ref id="com.chokamin.SubPop.installer" version="{version}">SubPop-component.pkg</pkg-ref></installer-gui-script>''')
+    output=DIST/f'SubPop-{version}-arm64-test.pkg'
+    run('productbuild','--distribution',xml,'--resources',resources,'--package-path',STAGE,output)
+    with output.open('rb') as stream:
+        digest=hashlib.file_digest(stream,'sha256').hexdigest()
     (DIST/(output.name+'.sha256')).write_text(digest+'  '+output.name+'\n')
     print(json.dumps(dict(package=str(output),bytes=output.stat().st_size,sha256=digest,notarized=False)))
 
