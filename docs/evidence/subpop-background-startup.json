@@ -1,0 +1,45 @@
+{
+  "build": 15,
+  "date": "2026-09-12",
+  "authorization": {
+    "user_reply": "允许",
+    "scopes": [
+      "workspace root",
+      "workspace/.subloom/verification/bridge"
+    ],
+    "method": "Confirmed both native NSOpenPanel dialogs; no bookmark bytes recorded"
+  },
+  "first_start": {
+    "worker_pid": 67024,
+    "status": "idle",
+    "heartbeat": 1789214025.2143471,
+    "fcp_label": "● Qwen3-ASR 0.6B · 本机就绪"
+  },
+  "cold_start": {
+    "stopped_pids": [
+      66604,
+      66951,
+      67024
+    ],
+    "trigger": "FCP Window > Extensions > SubPop Probe only",
+    "worker_pid": 67569,
+    "observed_service": {
+      "protocol": 1,
+      "pid": 67569,
+      "heartbeat": 1789214151.224619,
+      "status": "idle"
+    },
+    "folder_dialogs_repeated": false,
+    "manual_helper_or_python_start": false,
+    "fcp_label": "● Qwen3-ASR 0.6B · 本机就绪"
+  },
+  "model_dialog_verified": true,
+  "source_changes": false,
+  "timeline_changes": false,
+  "limitations": [
+    "No OS reboot or FCP process restart tested",
+    "No new project drop or recognition run in this verification",
+    "Only Qwen3-ASR 0.6B selectable implementation; switching unavailable",
+    "Fixed isolated 8.68-second project restriction remains"
+  ]
+}
