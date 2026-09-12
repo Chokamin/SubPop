@@ -1,4 +1,4 @@
-"""Local project worker. One fixed workspace, no network, no arbitrary commands."""
+"""Fixed-workspace worker. Recognition is offline; model downloads are explicit."""
 import fcntl
 import hashlib
 import json
@@ -13,6 +13,7 @@ import xml.etree.ElementTree as ET
 
 from .run_job import ROOT, save
 from .title_fixture import UID
+from .vocabulary import validate as validate_vocabulary
 from .models import DEFAULT_MODEL_ID, model_spec, resolve_model, availability
 
 BRIDGE=ROOT/'.subloom/verification/bridge'
@@ -28,7 +29,7 @@ def request_input(directory):
     if directory.is_symlink() or not valid_id(directory.name):raise ValueError('Invalid request directory')
     request=directory/'request.json';xml=directory/'input.fcpxml'
     if request.is_symlink() or xml.is_symlink():raise ValueError('Linked input refused')
-    if request.stat().st_size>4096 or not 0<xml.stat().st_size<=MAX_XML:raise ValueError('Invalid input size')
+    if request.stat().st_size>16384 or not 0<xml.stat().st_size<=MAX_XML:raise ValueError('Invalid input size')
     data=json.loads(request.read_text())
     if data.get('requestID')!=directory.name or not isinstance(data.get('projectUID'),str) or not data.get('projectUID'):raise ValueError('Wrong request identity')
     raw=xml.read_bytes()
@@ -36,6 +37,7 @@ def request_input(directory):
     if b'<!ENTITY' in raw.upper():raise ValueError('XML entities refused')
     projects=ET.fromstring(raw).findall('.//project')
     if len(projects)!=1 or projects[0].get('uid')!=data['projectUID']:raise ValueError('Snapshot project identity mismatch')
+    validate_vocabulary(data.get('vocabulary',[]))
     model_spec(data.get('modelID', DEFAULT_MODEL_ID))
     if data.get('audioMode','dialogue') not in ('dialogue','all'):raise ValueError('Invalid audio mode')
     return xml
@@ -44,7 +46,7 @@ def request_input(directory):
 def job_command(directory):
     model_id = json.loads((directory/'request.json').read_text()).get('modelID', DEFAULT_MODEL_ID)
     resolve_model(model_id)
-    return [sys.executable, '-B', '-m', 'probes.run_job', '--xml', str(directory/'input.fcpxml'), '--model', model_id, '--audio-mode', json.loads((directory/'request.json').read_text()).get('audioMode','dialogue')]
+    return [sys.executable, '-B', '-m', 'probes.run_job', '--xml', str(directory/'input.fcpxml'), '--model', model_id, '--audio-mode', json.loads((directory/'request.json').read_text()).get('audioMode','dialogue'), '--vocabulary-file',str(directory/'request.json')]
 
 
 def publish_result(directory, job):
@@ -57,6 +59,7 @@ def publish_result(directory, job):
     if model_id != expected_model:raise ValueError('Result model mismatch')
     request_data=json.loads((directory/'request.json').read_text()) if (directory/'request.json').exists() else {'projectUID':UID}
     if status['projectUID']!=request_data['projectUID']:raise ValueError('Wrong project')
+    if status.get('vocabulary',[])!=validate_vocabulary(request_data.get('vocabulary',[])):raise ValueError('Result vocabulary mismatch')
     if status['status']=='blocked-no-audio':
         save(directory/'response.json',{'requestID':directory.name,'modelID':model_id,'status':'blocked-no-audio',
              'stage':'silent','projectUID':status['projectUID'],'jobID':job.name,'snapshotSHA256':status['snapshotSHA256']})
@@ -78,15 +81,41 @@ def publish_result(directory, job):
          'outputs':status['outputs'],'snapshotSHA256':status['snapshotSHA256'],'pcmSHA256':status['pcmSHA256'],'manifest':json.loads((job/'captions.json').read_text())})
 
 
+def model_request(directory):
+    if directory.is_symlink() or not valid_id(directory.name):raise ValueError('Invalid model request')
+    path=directory/'request.json'
+    if path.is_symlink() or path.stat().st_size>4096:raise ValueError('Invalid model request file')
+    value=json.loads(path.read_text())
+    if value.get('requestID')!=directory.name or value.get('kind')!='model' or value.get('operation') not in ('install','remove'):raise ValueError('Invalid model operation')
+    model_spec(value.get('modelID'))
+    return value
+
+
 def serve():
     BRIDGE.mkdir(parents=True,exist_ok=True);os.chmod(BRIDGE,0o700)
     lock=(BRIDGE/'worker.lock').open('w')
     fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
     active=None;log=None;request=None;offset=0;buffer='';ready=None;started=0;job_error=None
+    model_process=None;model_directory=None;model_started=0
     try:
         while True:
-            save(BRIDGE/'service.json',{'protocol':2,'models':availability(),'pid':os.getpid(),'heartbeat':time.time(),
-                                      'status':'busy' if active else 'idle'})
+            model_state={}
+            if model_directory:
+                try:model_state=json.loads((model_directory/'response.json').read_text())
+                except (OSError,ValueError):pass
+            if model_process:
+                code=model_process.poll()
+                if time.monotonic()-model_started>86400 and code is None:
+                    model_process.terminate();model_process.wait(timeout=5);code=-1
+                if code is not None:
+                    if model_state.get('status') not in ('ready','failed','cancelled'):
+                        model_state.update(status='failed',stage='failed',error='下载进程中断，请重试')
+                        save(model_directory/'response.json',model_state)
+                    model_process=None
+            save(BRIDGE/'service.json',{'protocol':3,'models':availability(),'modelTask':model_state,'pid':os.getpid(),'heartbeat':time.time(),
+                                      'status':'busy' if active or model_process else 'idle'})
+            if model_process:
+                time.sleep(0.5);continue
             if active:
                 code=active.poll()
                 log.flush()
@@ -122,9 +151,17 @@ def serve():
                         # Recovery of an interrupted worker is explicit, never silently rerun.
                         previous=json.loads(response.read_text())
                         if previous.get('status') in ('running','queued'):
-                            save(response,{'requestID':candidate.name,'status':'failed','stage':'worker-restarted','error':'Previous worker interrupted; start a new request'})
+                            save(response,{'requestID':candidate.name,'status':'failed','stage':'worker-restarted','error':'上次任务已中断，请重试'})
                         continue
                     try:
+                        request_path=candidate/'request.json'
+                        if request_path.is_symlink() or request_path.stat().st_size>16384:raise ValueError('Invalid request size or link')
+                        raw_request=json.loads(request_path.read_text())
+                        if raw_request.get('kind')=='model':
+                            task=model_request(candidate);model_directory=candidate
+                            save(response,{'requestID':candidate.name,'modelID':task['modelID'],'operation':task['operation'],'status':'running','stage':'connecting'})
+                            model_process=subprocess.Popen([sys.executable,'-B','-m','probes.model_download','--request',str(candidate)],cwd=ROOT,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True)
+                            model_started=time.monotonic();break
                         xml=request_input(candidate)
                         request=candidate;offset=0;buffer='';ready=None;job_error=None
                         save(response,{'requestID':candidate.name,'status':'running','stage':'starting'})
@@ -137,12 +174,16 @@ def serve():
                     break
             time.sleep(0.5)
     finally:
+        if model_process and model_process.poll() is None:
+            model_process.terminate()
+            try:model_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:model_process.kill();model_process.wait()
         if active and active.poll() is None:
             os.killpg(active.pid,signal.SIGTERM)
             try:active.wait(timeout=5)
             except subprocess.TimeoutExpired:os.killpg(active.pid,signal.SIGKILL);active.wait()
         if log:log.close()
-        save(BRIDGE/'service.json',{'protocol':2,'status':'stopped','heartbeat':0})
+        save(BRIDGE/'service.json',{'protocol':3,'status':'stopped','heartbeat':0})
 
 if __name__=='__main__':
     def stop(signum,frame):raise SystemExit(0)

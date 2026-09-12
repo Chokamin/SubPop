@@ -226,3 +226,8 @@ UI：原生模型下拉、音频范围、较紧凑层次、滚动页面、取消
 ## 2026-09-12：构建18真实宿主闭环
 
 用户真实拖入被17误拒；18统一使用时间线观察回调的项目身份/时长，避免UI重复SDK查询导致状态不一致。增加明确的真实旧drop重检（保留时间，1小时，已拖出结果不重用）。使用本轮实际输入完成1.7B识别、3句面板校对、苹方36号、关闭重开同任务草稿恢复。用户已拖回，FCP拆分和XML回读通过，原视频和两Caption保留。视觉发现36偏小，FCP三条调72后可读，通用默认字号改72并扩充档位。核心文件ProbeViewController.m/title_fixture.py/PresentationTests.m/test_mvp_host.py；证据subpop-mvp-host-session.json。68项回归、构建/签名及原生harness通过。原始Subloom-Original未改，无音频共享。新修复后直接拖入回调与自然连续长素材验收仍未完成；不得重复要求已完成的输出拖放。详情HANDOFF末尾。
+
+
+## 2026-09-12：构建19词库和模型管理
+
+用户要求词库、模型管理和首次下载动画；并指出用途说明像视频类型限制。新增Preferences.inc原生词库/模型sheet、vocabulary.py提示规则、model_download.py固定版本SHA校验/续传/取消/独立进程，worker协议3串行管理模型与ASR。词库任务冻结到Qwen context，真实0.6B旧隔离快照ASR ready3；FCP保存/去重/重开验证后清空测试词。两模型切换、真实配置下载、大文件暂停/续传/动画通过；完整权重备份恢复，最终两模型可用/选择1.7B，非完整多GB冷机首装测试。78项测试及原生harness通过。主界面“帮助/词库/模型管理”，底部“音频不上传 · 字幕可逐句编辑”，真正30分钟/复杂结构限制留帮助。证据subpop-vocabulary-model-manager.json；无FCP媒体写入/共享，无奇奇字幕数据修改。构建19已安装，详见HANDOFF末尾。

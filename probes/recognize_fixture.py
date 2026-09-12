@@ -12,7 +12,9 @@ except ImportError:
     from project import inspect
 
 
-def run(xml, asr, aligner, output, pcm_path=None, device="cpu", verbose=True, audio_mode="dialogue"):
+def run(xml, asr, aligner, output, pcm_path=None, device="cpu", verbose=True, audio_mode="dialogue", vocabulary=None):
+    from .vocabulary import context
+    hints=context(vocabulary or [])
     snapshot = inspect(xml,audio_mode)
     expected = Path(__file__).resolve().parents[1] / '.subloom/verification'
     for key in ('HF_HUB_OFFLINE', 'TRANSFORMERS_OFFLINE', 'HF_HUB_DISABLE_TELEMETRY'):
@@ -54,7 +56,7 @@ def run(xml, asr, aligner, output, pcm_path=None, device="cpu", verbose=True, au
         chunk_index+=1
         print(json.dumps({'stage':'recognize','progress':round(end/len(samples),4),'chunk':chunk_index}),flush=True)
         if np.max(np.abs(chunk),initial=0)>1e-7:
-            parts=model.transcribe(audio=(chunk,16000),language='Chinese',return_time_stamps=True)
+            parts=model.transcribe(audio=(chunk,16000),language='Chinese',return_time_stamps=True,context=hints)
             for part in parts:
                 if not part.text.strip():continue
                 rows.append(dict(text=converter.convert(part.text),words=[dict(text=converter.convert(w.text),start=w.start_time+cursor/16000,end=min(w.end_time+cursor/16000,len(samples)/16000)) for w in part.time_stamps]))

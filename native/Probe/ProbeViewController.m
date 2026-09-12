@@ -77,6 +77,17 @@ static NSDictionary *Time(CMTime t) {
 @property BOOL restoringSession;
 @property NSPopover *diagnostics;
 @property NSButton *diagnosticsButton;
+@property NSButton *vocabularyButton;
+@property NSButton *modelsButton;
+@property NSArray *requestVocabulary;
+@property NSAlert *modelAlert;
+@property NSMutableDictionary *modelRows;
+@property NSProgressIndicator *downloadProgress;
+@property NSProgressIndicator *downloadSpinner;
+@property NSTextField *downloadLabel;
+@property NSButton *downloadCancel;
+@property NSString *modelRequestID;
+@property NSString *vocabularyDraft;
 - (void)updateInterface;
 - (BOOL)canDragResult;
 - (BOOL)receivePasteboard:(NSPasteboard *)pasteboard;
@@ -177,12 +188,14 @@ static NSDictionary *Time(CMTime t) {
     self.editorControls=[NSStackView stackViewWithViews:@[[self label:@"字幕样式" size:12 weight:NSFontWeightMedium],self.fontPicker,self.sizePicker]];self.editorControls.spacing=10;[stack addArrangedSubview:self.editorControls];self.editorControls.hidden=YES;
     self.resultView=[[SubPopTitleDragView alloc] initWithFrame:NSMakeRect(0,0,572,36)];self.resultView.controller=self;[self.resultView setAccessibilityElement:YES];[self.resultView setAccessibilityRole:NSAccessibilityGroupRole];[stack addArrangedSubview:self.resultView];[self.resultView.heightAnchor constraintEqualToConstant:36].active=YES;self.resultView.hidden=YES;
     NSView *actions=[[NSView alloc] initWithFrame:NSMakeRect(0,0,572,36)];
-    self.engineSettings=[NSButton buttonWithTitle:@"设置" target:self action:@selector(showModelSettings:)];self.engineSettings.bezelStyle=NSBezelStyleRounded;self.engineSettings.frame=NSMakeRect(0,2,64,30);[actions addSubview:self.engineSettings];
-    self.diagnosticsButton=[NSButton buttonWithTitle:@"诊断" target:self action:@selector(showDiagnostics:)];self.diagnosticsButton.bordered=NO;self.diagnosticsButton.frame=NSMakeRect(68,2,60,30);[actions addSubview:self.diagnosticsButton];
+    self.engineSettings=[NSButton buttonWithTitle:@"帮助" target:self action:@selector(showModelSettings:)];self.engineSettings.bezelStyle=NSBezelStyleRounded;self.engineSettings.frame=NSMakeRect(0,2,64,30);[actions addSubview:self.engineSettings];
+    self.diagnosticsButton=[NSButton buttonWithTitle:@"诊断" target:self action:@selector(showDiagnostics:)];self.diagnosticsButton.bordered=NO;self.diagnosticsButton.frame=NSMakeRect(64,2,50,30);[actions addSubview:self.diagnosticsButton];
+    self.vocabularyButton=[NSButton buttonWithTitle:@"词库" target:self action:@selector(showVocabulary:)];self.vocabularyButton.bezelStyle=NSBezelStyleRounded;self.vocabularyButton.frame=NSMakeRect(114,2,84,30);[actions addSubview:self.vocabularyButton];
+    self.modelsButton=[NSButton buttonWithTitle:@"模型管理" target:self action:@selector(showModels:)];self.modelsButton.bezelStyle=NSBezelStyleRounded;self.modelsButton.frame=NSMakeRect(202,2,92,30);[actions addSubview:self.modelsButton];
     self.cancelButton=[NSButton buttonWithTitle:@"取消" target:self action:@selector(cancelJob:)];self.cancelButton.bezelStyle=NSBezelStyleRounded;self.cancelButton.frame=NSMakeRect(298,2,90,30);self.cancelButton.autoresizingMask=NSViewMinXMargin;[actions addSubview:self.cancelButton];
     self.generateButton=[NSButton buttonWithTitle:@"开始识别" target:self action:@selector(primaryAction:)];self.generateButton.bezelStyle=NSBezelStyleRounded;self.generateButton.controlSize=NSControlSizeLarge;self.generateButton.keyEquivalent=@"\r";self.generateButton.frame=NSMakeRect(400,0,172,34);self.generateButton.autoresizingMask=NSViewMinXMargin;[actions addSubview:self.generateButton];
     [stack addArrangedSubview:actions];[actions.heightAnchor constraintEqualToConstant:36].active=YES;
-    self.scopeLabel=[self label:@"30 分钟内口播／教程 · 本机识别 · Title 字幕" size:11 weight:NSFontWeightRegular];self.scopeLabel.textColor=NSColor.secondaryLabelColor;[stack addArrangedSubview:self.scopeLabel];
+    self.scopeLabel=[self label:@"音频不上传 · 字幕可逐句编辑" size:11 weight:NSFontWeightRegular];self.scopeLabel.textColor=NSColor.secondaryLabelColor;[stack addArrangedSubview:self.scopeLabel];
     for (NSView *row in stack.arrangedSubviews) [row.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active=YES;
     self.output=[[NSTextView alloc] initWithFrame:NSMakeRect(0,0,520,300)];self.output.editable=NO;self.output.font=[NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightRegular];self.displayState=@"idle";[document.bottomAnchor constraintEqualToAnchor:stack.bottomAnchor constant:20].active=YES;[self updateInterface];
 }
@@ -195,7 +208,7 @@ static NSDictionary *Time(CMTime t) {
     self.restoringSession=YES;self.dropUID=saved[@"projectUID"];self.dropDuration=duration;self.dropName=saved[@"projectName"];
     NSString *file=saved[@"inputFile"];
     if ([file hasPrefix:@"drop-"] && [file.lastPathComponent isEqual:file]) { self.freshDropURL=[[self evidenceDirectory] URLByAppendingPathComponent:file];NSDate *captured=nil;[self.freshDropURL getResourceValue:&captured forKey:NSURLContentModificationDateKey error:nil];self.freshDropDate=captured; }
-    self.requestID=saved[@"requestID"];self.requestSHA=saved[@"snapshotSHA"];self.requestModelID=saved[@"modelID"];self.requestGeneration=self.dropGeneration;self.displayState=@"validate";
+    self.requestVocabulary=saved[@"vocabulary"] ?: @[];self.requestID=saved[@"requestID"];self.requestSHA=saved[@"snapshotSHA"];self.requestModelID=saved[@"modelID"];self.requestGeneration=self.dropGeneration;self.displayState=@"validate";
     self.selectedModelID=self.requestModelID;
     for (NSMenuItem *item in self.modelPicker.itemArray) if ([item.representedObject isEqual:self.selectedModelID]) [self.modelPicker selectItem:item];
     self.restoringSession=NO;
@@ -291,6 +304,7 @@ static NSDictionary *Time(CMTime t) {
 }
 - (void)updateInterface {
     [self restoreSession];
+    [self updateModelManager];
     BOOL connected=[self workerAvailable], fresh=self.freshDropURL && self.freshDropDate;
     NSString *state=self.displayState ?: @"idle";
     if (([state isEqual:@"input"] && !fresh) || ([state isEqual:@"ready"] && ![self canDragResult])) state=@"expired";
@@ -307,14 +321,15 @@ static NSDictionary *Time(CMTime t) {
     self.serviceLabel.textColor=connected ? NSColor.systemGreenColor : NSColor.secondaryLabelColor;
     self.dropTitle.stringValue=fresh ? (self.dropName ?: @"项目已导入") : @"拖入你的项目";
     self.dropDetail.stringValue=fresh ? [NSString stringWithFormat:@"整段 %.1f 秒 · 修改时间线后请重新拖入",CMTimeGetSeconds(self.dropDuration)] : @"从 FCP 浏览器拖入 · 识别整段视频";
-    BOOL busy=self.requestID!=nil;
+    BOOL busy=self.requestID!=nil;BOOL managing=[self modelOperationBusy];
     BOOL preparing=[state isEqual:@"preparing"];
     self.generateButton.title=preparing ? @"正在准备…" : (busy ? @"正在处理…" : (connected ? @"开始识别" : @"准备本机识别"));
-    self.generateButton.enabled=!preparing && !busy && (!connected || (fresh && [self isolatedProjectActive] && [self selectedModelAvailable]));
-    self.modelPicker.enabled=!busy;self.audioPicker.enabled=!busy;self.cancelButton.hidden=!busy;
+    self.generateButton.enabled=!managing && !preparing && !busy && (!connected || (fresh && [self isolatedProjectActive] && [self selectedModelAvailable]));
+    self.vocabularyButton.enabled=!busy;self.vocabularyButton.title=[NSString stringWithFormat:@"词库 · %lu",(unsigned long)[self effectiveVocabulary].count];
+    self.modelPicker.enabled=!busy && !managing;self.audioPicker.enabled=!busy;self.cancelButton.hidden=!busy;
     BOOL hasRows=self.titlePayloads && self.captionRows.count;
     self.captionScroll.hidden=!hasRows;self.editorControls.hidden=!hasRows;self.resultView.hidden=!hasRows;
-    if (connected && ![self selectedModelAvailable] && !busy) { self.statusTitle.stringValue=@"所选模型尚未就绪";self.statusDetail.stringValue=@"请选择已安装的模型；模型文件缺失时不会自动切换模型。"; }
+    if (connected && ![self selectedModelAvailable] && !busy) { self.statusTitle.stringValue=@"所选模型尚未就绪";self.statusDetail.stringValue=@"点击“模型管理”下载，或选择已安装的模型。"; }
     if (busy || preparing) [self.spinner startAnimation:nil]; else [self.spinner stopAnimation:nil];
     BOOL ready=[self canDragResult]; [self.resultView setAccessibilityLabel:ready ? @"拖回字幕到 Final Cut Pro" : @"字幕拖出区，识别完成后可用"]; [self.resultView setNeedsDisplay:YES];
 }
@@ -336,11 +351,11 @@ static NSDictionary *Time(CMTime t) {
 - (BOOL)workerAvailable {
     NSDictionary *service=[self readJSON:[self.bridgeURL URLByAppendingPathComponent:@"service.json"]];
     NSNumber *heartbeat=service[@"heartbeat"];
-    return [heartbeat isKindOfClass:NSNumber.class] && fabs(NSDate.date.timeIntervalSince1970-heartbeat.doubleValue)<10 && [service[@"protocol"] isEqual:@2];
+    return [heartbeat isKindOfClass:NSNumber.class] && fabs(NSDate.date.timeIntervalSince1970-heartbeat.doubleValue)<10 && [service[@"protocol"] isEqual:@3];
 }
 - (void)showModelSettings:(id)sender {
-    NSAlert *alert=[NSAlert new]; alert.messageText=@"识别模型";
-    alert.informativeText=@"在主面板选择 Qwen3-ASR 0.6B 或 1.7B。选择会被记住，每次任务使用所选模型。\n\n默认仅识别对白角色。请在 FCP 将背景音乐设为“音乐”角色；需要保留全部声音时选择“所有音频”。\n\n支持 30 分钟内普通剪切、单声道／立体声及连接音频。暂不支持变速、多机位、复合片段、音频效果或音量关键帧。";
+    NSAlert *alert=[NSAlert new]; alert.messageText=@"使用帮助";
+    alert.informativeText=@"在主面板选择 Qwen3-ASR 0.6B 或 1.7B。选择会被记住，每次任务使用所选模型。缺少模型时，点击“模型管理”下载；“词库”可填写人名、品牌和专业词。\n\n默认仅识别对白角色。请在 FCP 将背景音乐设为“音乐”角色；需要保留全部声音时选择“所有音频”。\n\n视频类型不限，当前单次最多 30 分钟。支持普通剪切、单声道／立体声及连接音频。暂不支持变速、多机位、复合片段、音频效果或音量关键帧。";
     [alert addButtonWithTitle:@"完成"]; [alert addButtonWithTitle:@"重新准备识别"];
     [alert beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse result) { if (result==NSAlertSecondButtonReturn) [self connectWorker:nil]; }];
 }
@@ -384,7 +399,7 @@ static NSDictionary *Time(CMTime t) {
     }];
 }
 - (void)startWorkerJob:(id)sender {
-    if (self.requestID) return;
+    if (self.requestID || [self modelOperationBusy]) return;
     if (!self.bridgeURL || ![self workerAvailable] || ![self isolatedProjectActive]) {
         [self record:@{@"reason":@"worker-submit",@"status":@"connect-service-and-open-isolated-project-first"}]; return;
     }
@@ -408,13 +423,14 @@ static NSDictionary *Time(CMTime t) {
     BOOL ok=[[NSFileManager defaultManager] createDirectoryAtURL:directory withIntermediateDirectories:NO attributes:nil error:&error];
     if (ok) ok=[data writeToURL:[directory URLByAppendingPathComponent:@"input.fcpxml"] options:NSDataWritingAtomic error:&error];
     NSString *sha=[self sha256:data];
-    NSDictionary *manifest=@{@"requestID":request,@"projectUID":self.dropUID,@"xmlSHA256":sha,@"modelID":self.selectedModelID,@"audioMode":self.audioPicker.indexOfSelectedItem==0 ? @"dialogue" : @"all"};
+    self.requestVocabulary=[self effectiveVocabulary];
+    NSDictionary *manifest=@{@"vocabulary":self.requestVocabulary,@"requestID":request,@"projectUID":self.dropUID,@"xmlSHA256":sha,@"modelID":self.selectedModelID,@"audioMode":self.audioPicker.indexOfSelectedItem==0 ? @"dialogue" : @"all"};
     if (ok) ok=[[NSJSONSerialization dataWithJSONObject:manifest options:0 error:nil] writeToURL:[directory URLByAppendingPathComponent:@"request.json"] options:NSDataWritingAtomic error:&error];
     if (!ok) { [self record:@{@"reason":@"worker-submit",@"status":@"write-failed",@"error":error.localizedDescription ?: @""}]; return; }
     self.jobProgress=nil;self.visibleError=nil;self.requestGeneration=self.dropGeneration; self.requestModelID=self.selectedModelID;self.cancelButton.enabled=YES;
     self.requestID=request; self.requestSHA=sha; self.lastJobStage=nil; self.generateButton.enabled=NO;
     self.resultLoadAttempted=YES; self.titlePayloads=nil;
-    [NSUserDefaults.standardUserDefaults setObject:@{@"requestID":request,@"snapshotSHA":sha,@"modelID":self.selectedModelID,@"projectUID":self.dropUID,@"projectName":self.dropName ?: @"",@"durationValue":@(self.dropDuration.value),@"durationScale":@(self.dropDuration.timescale),@"inputFile":latest.lastPathComponent} forKey:@"pendingSession"];
+    [NSUserDefaults.standardUserDefaults setObject:@{@"vocabulary":self.requestVocabulary,@"requestID":request,@"snapshotSHA":sha,@"modelID":self.selectedModelID,@"projectUID":self.dropUID,@"projectName":self.dropName ?: @"",@"durationValue":@(self.dropDuration.value),@"durationScale":@(self.dropDuration.timescale),@"inputFile":latest.lastPathComponent} forKey:@"pendingSession"];
     [self record:@{@"reason":@"worker-submit",@"status":@"submitted",@"requestID":request,@"snapshotDate":latestDate.description ?: @"",@"source":@"received project snapshot; original capture date retained; edits after capture require another drop"}];
 }
 - (void)pollWorker:(NSTimer *)timer {
@@ -430,7 +446,7 @@ static NSDictionary *Time(CMTime t) {
     self.jobProgress=[response[@"progress"] isKindOfClass:NSNumber.class] ? response[@"progress"] : nil;
     if ([response[@"status"] isEqual:@"ready"]) {
         NSMutableDictionary *payloads=[NSMutableDictionary new];
-        BOOL valid=[response[@"modelID"] isEqual:self.requestModelID] && self.requestGeneration==self.dropGeneration && [self isolatedProjectActive] && [response[@"snapshotSHA256"] isEqual:self.requestSHA] &&
+        BOOL valid=[(response[@"manifest"][@"vocabulary"] ?: @[]) isEqual:(self.requestVocabulary ?: @[])] && [response[@"modelID"] isEqual:self.requestModelID] && self.requestGeneration==self.dropGeneration && [self isolatedProjectActive] && [response[@"snapshotSHA256"] isEqual:self.requestSHA] &&
             [response[@"projectUID"] isEqual:self.dropUID] &&
             [response[@"payloads"] isKindOfClass:NSDictionary.class] && [response[@"outputs"] isKindOfClass:NSDictionary.class];
         if (valid) for (NSString *version in @[@"1.12",@"1.13",@"1.14"]) {
@@ -635,4 +651,5 @@ static NSDictionary *Time(CMTime t) {
     [self record:@{@"reason":@"drop",@"types":pasteboard.types ?: @[],@"xml":saved}];
     return self.freshDropURL!=nil;
 }
+#include "Preferences.inc"
 @end

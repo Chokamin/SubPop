@@ -15,6 +15,9 @@ int main(int argc,const char *argv[]) {
         controller.observedProjectUID=@"project-a";controller.observedProjectDuration=kCMTimeInvalid;if ([controller isolatedProjectActive]) return 9;
         controller.observedProjectDuration=CMTimeMake(9,1);if ([controller isolatedProjectActive]) return 10;
         controller.observedProjectDuration=controller.dropDuration;controller.observed=NO;if ([controller isolatedProjectActive]) return 11;
+        NSArray *terms=[controller parseVocabulary:@" 小蚕，USB-C\n3.5%;小蚕"];
+        if (![terms isEqual:@[@"小蚕",@"USB-C",@"3.5%"]]) return 12;
+        if ([controller parseVocabulary:[@"x" stringByPaddingToLength:65 withString:@"x" startingAtIndex:0]]) return 13;
         controller.resultManifest=manifest;controller.captionRows=[NSMutableArray new];
         for (NSDictionary *row in manifest[@"captions"]) [controller.captionRows addObject:row.mutableCopy];
         NSMutableDictionary *payloads=[NSMutableDictionary new];

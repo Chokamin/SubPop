@@ -1,0 +1,69 @@
+{
+  "build": 19,
+  "date": "2026-09-12",
+  "vocabulary": {
+    "nativeSaveDedupReopenPassed": true,
+    "testTermsClearedAfterValidation": true,
+    "requestID": "d5452b08-30b1-4aff-9e1c-88d97824f55c",
+    "jobID": "26198f7b-a585-4219-be9f-cac64a79629b",
+    "status": "ready",
+    "modelID": "qwen3-asr-0.6b",
+    "frozenHints": [
+      "中文字幕工具",
+      "USB-C",
+      "3.5%"
+    ],
+    "titleCount": 3,
+    "source": "Backend request using prior isolated XML; not a new FCP drag or new Title writeback",
+    "nativeInvalidInputRetainedAndCancelPassed": true
+  },
+  "models": {
+    "nativeManagerOpened": true,
+    "nativeSwitchBothDirectionsPassed": true,
+    "initialMissingConfigRepairRequest": "f747c758-92e2-4ebf-9972-40f5a06240b3",
+    "realDownloadPause": {
+      "firstPause": {
+        "requestID": "9746507d-30e8-49d7-b835-6b1dd1e9de52",
+        "modelID": "qwen3-asr-0.6b",
+        "operation": "install",
+        "status": "cancelled",
+        "stage": "cancelled",
+        "completedBytes": 126877696,
+        "totalBytes": 3720574187,
+        "progress": 0.0341016438923114,
+        "file": "model.safetensors",
+        "bytesPerSecond": 8525042.188439703,
+        "error": "已暂停下载，重试可继续"
+      },
+      "partialBytes": 129499136,
+      "secondPause": {
+        "requestID": "2d0b5a05-71ab-4aca-bee7-3c42e7582567",
+        "modelID": "qwen3-asr-0.6b",
+        "operation": "install",
+        "status": "cancelled",
+        "stage": "cancelled",
+        "completedBytes": 323747840,
+        "totalBytes": 3720574187,
+        "progress": 0.08701555827893508,
+        "file": "model.safetensors",
+        "bytesPerSecond": 14258225.433828076,
+        "error": "已暂停下载，重试可继续"
+      },
+      "resumedPartialBytes": 323747840
+    },
+    "nativeSpinnerAndProgressObserved": true,
+    "finalRepairRequest": "855b30ac-2ffa-4732-bcc2-a2e0e356ab74",
+    "finalStatus": "ready",
+    "bothModelsAvailable": true,
+    "weightsRestoredFromOwnBackup": true,
+    "partialCacheCleared": true,
+    "notes": "Actual pinned config download and partial large-weight HTTP resume tested. Full weights retained as reversible backup, restored before final checksum verification; not a complete multi-GB cold install benchmark. First install including missing shared aligner tested with bounded transfer fixtures.",
+    "selectionAndCompletionRestoredAfterExtensionRestart": true
+  },
+  "validation": {
+    "pythonTests": 78,
+    "nativeVocabularyAndEditingHarnessPassed": true
+  },
+  "uiCopy": "音频不上传 · 字幕可逐句编辑",
+  "noFCPMediaOrTimelineWrites": true
+}

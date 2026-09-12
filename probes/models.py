@@ -45,5 +45,7 @@ def availability(root=ROOT):
             installed, reason = True, ''
         except (ValueError, OSError):
             installed, reason = False, '模型文件缺失或不完整'
-        result.append({'id': spec['id'], 'installed': installed, 'reason': reason})
+        try:check_files(spec,root);present=True
+        except (ValueError,OSError):present=False
+        result.append({'id': spec['id'], 'installed': installed, 'asrInstalled':present, 'hasFiles':(root/'.subloom/models'/spec['directory']).exists(), 'reason': reason, 'sizeBytes':sum(spec['files'].values())})
     return result
