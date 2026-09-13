@@ -33,6 +33,9 @@ def build(application_identity=None, installer_identity=None):
     (RUNTIME/'.subloom/build').mkdir(parents=True)
     shutil.copy2(ROOT/'.subloom/build/SubPopAudioProbeCLI',RUNTIME/'.subloom/build/SubPopAudioProbeCLI')
     shutil.copy2(ROOT/'requirements-asr.lock.txt',RUNTIME/'requirements-asr.lock.txt')
+    from slim_runtime import slim
+    report=slim(RUNTIME)
+    print(json.dumps({'runtimeBefore':report['beforeBytes'],'runtimeAfter':report['afterBytes']}),flush=True)
     # Bundled standalone Python uses @executable_path for libpython; never copy the development venv link.
     for path in RUNTIME.rglob('*'):
         if path.is_symlink() and not path.resolve().is_relative_to(RUNTIME.resolve()):
@@ -50,7 +53,7 @@ def build(application_identity=None, installer_identity=None):
         run('codesign','--force','--sign','-',APP)
     run('codesign','--verify','--deep','--strict',APP)
     component=STAGE/'SubPop-component.pkg'
-    run('pkgbuild','--root',STAGE/'payload','--identifier','com.chokamin.SubPop.installer','--version',version,'--install-location','/','--ownership','recommended',component)
+    run('pkgbuild','--root',STAGE/'payload','--identifier','com.chokamin.SubPop.installer','--version',version,'--compression','latest','--min-os-version','15.0','--install-location','/','--ownership','recommended',component)
     resources=STAGE/'resources';resources.mkdir()
     welcome=resources/'Welcome.html'
     welcome.write_text('<html><meta charset="utf-8"><body><h1>SubPop 公开测试版</h1><p>安装 FCP 扩展和独立本机识别环境。适用于 Apple Silicon、macOS 15 或更高版本。FCP 集成当前实测版本为 12.3。</p><p>安装后打开应用程序中的 SubPop，再从 Final Cut Pro 扩展菜单打开。首次允许默认任务文件夹，进入模型管理下载所需模型。</p><p>此包尚未完成 Developer ID 签名及 Apple 公证，仅供测试使用。安装不包含模型、测试视频、词库或历史字幕。</p></body></html>')
