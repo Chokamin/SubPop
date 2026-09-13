@@ -11,7 +11,7 @@
 
 </div>
 
-> **公开测试中**：当前版本为 0.1.0.29。安装包尚未完成 Developer ID 签名和 Apple 公证，macOS 可能阻止安装或启动。签名版发布后会在这里更新说明。
+> **公开测试中**：当前版本为 0.1.0.30。安装包已完成 Developer ID 签名与 Apple 公证，并通过 Gatekeeper 安装检查。功能仍处于公开测试阶段，使用限制见下文。
 
 ## 字幕制作，留在剪辑流程里
 
@@ -30,7 +30,7 @@
 | Mac | Apple Silicon（M 系列芯片） |
 | 系统 | macOS 15 或更高版本 |
 | 剪辑软件 | Final Cut Pro；当前实测版本为 12.3 |
-| 安装包 | PKG，约 461 MB；模型另行下载 |
+| 安装包 | PKG，约 462 MB；模型另行下载 |
 
 在 [Releases](https://github.com/Chokamin/SubPop/releases) 下载以 `.pkg` 结尾的附件，按安装向导完成安装。GitHub 自动提供的 **Source code** 是源码，不是安装程序。
 
