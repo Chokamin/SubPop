@@ -1,5 +1,11 @@
 // AppKit regression harness. No FCP host, no windows, no timeline writes.
 #import "ProbeViewController.m"
+@interface SubPopDragObserverTests : SubPopProbeViewController
+@property NSUInteger snapshotCount;
+@end
+@implementation SubPopDragObserverTests
+- (void)snapshot:(NSString *)reason { self.snapshotCount++; }
+@end
 int main(int argc,const char *argv[]) {
     @autoreleasepool {
         if (argc!=2) return 2;
@@ -49,6 +55,49 @@ int main(int argc,const char *argv[]) {
             NSXMLNode *text=[b[0] nodesForXPath:@"text/text-style" error:nil].firstObject;
             if (![text.stringValue isEqual:@"校对 & <保留> 3.5% USB-C"]) return 6;
         }
+        // Delayed pasteboard requests must survive result cleanup and later edits.
+        NSMutableData *mutable=[controller.titlePayloads[@"1.14"] mutableCopy];
+        NSMutableDictionary *source=[controller.titlePayloads mutableCopy];source[@"1.14"]=mutable;
+        NSData *expected=mutable.copy;
+        SubPopTitleDragProvider *provider=[[SubPopTitleDragProvider alloc] initWithPayloads:source];
+        [mutable setLength:0];[source removeAllObjects];controller.titlePayloads=nil;
+        for (NSString *type in @[@"com.apple.finalcutpro.xml",@"com.apple.finalcutpro.xml.v1-14",@"com.apple.finalcutpro.xml.v1-13",@"com.apple.finalcutpro.xml.v1-12"]) {
+            NSPasteboardItem *item=[NSPasteboardItem new];
+            [provider pasteboard:nil item:item provideDataForType:type];
+            NSString *version=[type hasSuffix:@"v1-12"] ? @"1.12" : ([type hasSuffix:@"v1-13"] ? @"1.13" : @"1.14");
+            NSData *wanted=[version isEqual:@"1.14"] ? expected : provider.payloads[version];
+            if (![[item dataForType:type] isEqual:wanted]) return 16;
+        }
+        NSPasteboardItem *promised=[NSPasteboardItem new];
+        __weak SubPopTitleDragProvider *retainedProvider;
+        @autoreleasepool {
+            SubPopTitleDragProvider *temporary=[[SubPopTitleDragProvider alloc] initWithPayloads:provider.payloads];
+            retainedProvider=temporary;
+            if (![promised setDataProvider:temporary forTypes:@[@"com.apple.finalcutpro.xml.v1-14"]]) return 21;
+        }
+        if (!retainedProvider || ![[promised dataForType:@"com.apple.finalcutpro.xml.v1-14"] isEqual:expected]) return 22;
+        provider.isCurrentProject=^BOOL { return NO; };
+        NSPasteboardItem *blocked=[NSPasteboardItem new];
+        [provider pasteboard:nil item:blocked provideDataForType:@"com.apple.finalcutpro.xml.v1-14"];
+        if (blocked.types.count) return 23;
+        provider.isCurrentProject=nil;
+        NSPasteboardItem *unknown=[NSPasteboardItem new];
+        [provider pasteboard:nil item:unknown provideDataForType:@"public.text"];
+        if (unknown.types.count) return 17;
+        SubPopDragObserverTests *observer=[SubPopDragObserverTests new];
+        for (int i=0;i<1000;i++) [observer playheadTimeChanged];
+        if (observer.snapshotCount!=1) return 18;
+        observer.titlePayloads=payloads;observer.dropGeneration=7;
+        [observer sequenceTimeRangeChanged];
+        if (observer.snapshotCount!=2) return 19;
+        [observer activeSequenceChanged];
+        if (observer.snapshotCount!=3 || observer.titlePayloads || observer.dropGeneration!=8) return 20;
+        CFTimeInterval started=CACurrentMediaTime();
+        for (int i=0;i<100;i++) {
+            NSPasteboardItem *item=[NSPasteboardItem new];
+            [provider pasteboard:nil item:item provideDataForType:@"com.apple.finalcutpro.xml.v1-14"];
+        }
+        printf("Cached pasteboard transfer: 100 requests, %lu bytes each, %.3f ms total; delayed-data and observer guards passed.\n",(unsigned long)expected.length,(CACurrentMediaTime()-started)*1000);
         puts("AppKit proofreading: all 3 XML versions updated, timing preserved, XML text escaped, font and size applied.");
         return 0;
     }

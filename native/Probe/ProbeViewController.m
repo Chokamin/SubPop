@@ -7,6 +7,7 @@
 #import "StudioChrome.h"
 #import "RuntimePaths.h"
 #import "Updates.h"
+#import "TitleDragProvider.h"
 
 static NSDictionary *Time(CMTime t) {
     return @{ @"value": @(t.value), @"timescale": @(t.timescale), @"flags": @(t.flags), @"epoch": @(t.epoch) };
@@ -27,7 +28,7 @@ static NSDictionary *Time(CMTime t) {
 @property BOOL hovered;
 @property (weak) SubPopProbeViewController *controller;
 @end
-@interface SubPopProbeViewController : NSViewController <FCPXTimelineObserver, NSDraggingSource, NSPasteboardItemDataProvider, NSTableViewDataSource, NSTableViewDelegate>
+@interface SubPopProbeViewController : NSViewController <FCPXTimelineObserver, NSDraggingSource, NSTableViewDataSource, NSTableViewDelegate>
 @property id<FCPXHost> host;
 @property FCPXTimeline *timeline;
 @property NSTextView *output;
@@ -486,7 +487,11 @@ static NSDictionary *Time(CMTime t) {
         [self record:@{@"reason":@"title-drag-refused",@"status":@"Open the unchanged source project first"}]; return;
     }
     NSPasteboardItem *item=[NSPasteboardItem new];
-    [item setDataProvider:self forTypes:@[@"com.apple.finalcutpro.xml",@"com.apple.finalcutpro.xml.v1-14",@"com.apple.finalcutpro.xml.v1-13",@"com.apple.finalcutpro.xml.v1-12"]];
+    SubPopTitleDragProvider *provider=[[SubPopTitleDragProvider alloc] initWithPayloads:self.titlePayloads];
+    __weak SubPopProbeViewController *weakSelf=self;
+    NSUInteger generation=self.dropGeneration;
+    provider.isCurrentProject=^BOOL { return weakSelf.dropGeneration==generation && [weakSelf isolatedProjectActive]; };
+    [item setDataProvider:provider forTypes:@[@"com.apple.finalcutpro.xml",@"com.apple.finalcutpro.xml.v1-14",@"com.apple.finalcutpro.xml.v1-13",@"com.apple.finalcutpro.xml.v1-12"]];
     NSDraggingItem *drag=[[NSDraggingItem alloc] initWithPasteboardWriter:item];
     NSImage *image=[[NSImage alloc] initWithSize:NSMakeSize(270,36)];
     [image lockFocus]; [[NSColor controlBackgroundColor] setFill]; NSRectFill(NSMakeRect(0,0,270,36));
@@ -496,12 +501,6 @@ static NSDictionary *Time(CMTime t) {
     [view beginDraggingSessionWithItems:@[drag] event:event source:self];
 }
 - (NSDragOperation)draggingSession:(NSDraggingSession *)session sourceOperationMaskForDraggingContext:(NSDraggingContext)context { return NSDragOperationCopy; }
-- (void)pasteboard:(NSPasteboard *)pasteboard item:(NSPasteboardItem *)item provideDataForType:(NSPasteboardType)type {
-    NSString *version=[type hasSuffix:@"v1-12"] ? @"1.12" : ([type hasSuffix:@"v1-13"] ? @"1.13" : @"1.14");
-    NSData *data=self.titlePayloads[version];
-    if (data) [item setData:data forType:type];
-    [self record:@{@"reason":@"title-drag-data",@"type":type,@"version":version,@"bytes":@(data.length)}];
-}
 - (void)draggingSession:(NSDraggingSession *)session endedAtPoint:(NSPoint)point operation:(NSDragOperation)operation {
     if (operation!=NSDragOperationNone) { [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.titlePayloads=nil; self.resultDate=nil;self.freshDropURL=nil;self.captionRows=nil; }
     [self record:@{@"reason":@"title-drag-ended",@"operation":@(operation),@"status":@"Host XML readback required; operation alone is not writeback proof"}];
@@ -589,7 +588,11 @@ static NSDictionary *Time(CMTime t) {
 }
 - (void)activeSequenceChanged { self.freshDropURL=nil; self.titlePayloads=nil; self.dropGeneration++; self.observed=YES; [self snapshot:@"activeSequenceChanged"]; }
 - (void)sequenceTimeRangeChanged { self.observed=YES; [self snapshot:@"sequenceTimeRangeChanged"]; }
-- (void)playheadTimeChanged { self.observed=YES; [self snapshot:@"playheadTimeChanged"]; }
+- (void)playheadTimeChanged {
+    // Captions are anchored to the whole project, never to the playhead.
+    // Active-sequence and time-range observers continue to update identity/duration immediately.
+    if (!self.observed) { self.observed=YES; [self snapshot:@"initialPlayheadState"]; }
+}
 - (void)validateDroppedProject {
     NSError *error=nil;
     NSData *data=[NSData dataWithContentsOfURL:self.freshDropURL options:0 error:&error];
