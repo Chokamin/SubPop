@@ -87,3 +87,9 @@ Build 32 减少拖回字幕时的同步日志写入、界面刷新和播放头�
 欢迎通过 [GitHub Issues](https://github.com/Chokamin/SubPop/issues) 反馈问题。请说明 macOS、FCP 和 SubPop 版本、使用的模型、复现步骤及错误提示；不必上传私人视频。
 
 本仓库公开插件源码与模型清单，模型权重不随源码或安装包分发。各模型与第三方依赖遵循其原有许可。内部交接记录和本机验收日志仅在开发机器保留。
+
+### Tap5a 自适应底框（开发版 Build 33）
+
+识别完成后，在拖回卡片下方的「字幕样式」选择「Tap5a · 自适应底框」。首次选择已安装的 `Tap5a Autosize Text Background.moti`，之后会记住位置。切换复用当前识别结果及 SubPop 内的校对文字，无需重新识别；可随时切回基础字幕。拖回后文字和底框仍可在 FCP 中编辑。
+
+需要自行安装 [Tap5a Autosize Text Background](https://github.com/tap5a/free-final-cut-pro-x-plugins)，SubPop 不附带或修改第三方模板。此功能生成新的字幕片段，不会替换已经拖入 FCP 的旧字幕，也不会读取你后来在 FCP 中做的文字修改。

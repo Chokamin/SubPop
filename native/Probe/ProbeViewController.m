@@ -8,6 +8,7 @@
 #import "RuntimePaths.h"
 #import "Updates.h"
 #import "TitleDragProvider.h"
+#import "TitleTemplates.h"
 
 static NSDictionary *Time(CMTime t) {
     return @{ @"value": @(t.value), @"timescale": @(t.timescale), @"flags": @(t.flags), @"epoch": @(t.epoch) };
@@ -74,6 +75,10 @@ static NSDictionary *Time(CMTime t) {
 @property CMTime observedProjectDuration;
 @property NSPopUpButton *modelPicker;
 @property NSPopUpButton *audioPicker;
+@property NSPopUpButton *templatePicker;
+@property NSStackView *templateControls;
+@property NSURL *tap5aURL;
+@property BOOL tap5aScoped;
 @property NSPopUpButton *fontPicker;
 @property NSPopUpButton *sizePicker;
 @property NSTextField *modelDetail;
@@ -197,7 +202,7 @@ static NSDictionary *Time(CMTime t) {
 }
 - (void)saveDraft {
     if (!self.resultRequestID || !self.titlePayloads || !self.captionRows) return;
-    NSDictionary *draft=@{@"requestID":self.resultRequestID,@"snapshotSHA":self.requestSHA ?: @"",@"modelID":self.requestModelID ?: @"",@"captions":self.captionRows,@"font":self.fontPicker.titleOfSelectedItem,@"fontSize":self.sizePicker.titleOfSelectedItem};
+    NSDictionary *draft=@{@"requestID":self.resultRequestID,@"snapshotSHA":self.requestSHA ?: @"",@"modelID":self.requestModelID ?: @"",@"captions":self.captionRows,@"font":self.fontPicker.titleOfSelectedItem,@"fontSize":self.sizePicker.titleOfSelectedItem,@"titleTemplate":@(self.templatePicker.indexOfSelectedItem==1)};
     NSData *data=[NSJSONSerialization dataWithJSONObject:draft options:0 error:nil];[data writeToURL:[[self evidenceDirectory] URLByAppendingPathComponent:[@"draft-" stringByAppendingString:self.resultRequestID]] atomically:YES];
 }
 - (NSDictionary *)selectedModel {
@@ -234,12 +239,48 @@ static NSDictionary *Time(CMTime t) {
     if (!text.length || text.length>500) { NSBeep();return; }
     self.captionRows[row][@"text"]=text;[self rebuildTitles];
 }
+- (BOOL)resolveTap5a {
+    if (self.tap5aURL && SubPopValidTap5a(self.tap5aURL)) return YES;
+    NSData *bookmark=[NSUserDefaults.standardUserDefaults dataForKey:@"tap5aTemplateBookmark"];
+    BOOL stale=NO;
+    NSURL *url=bookmark ? [NSURL URLByResolvingBookmarkData:bookmark options:NSURLBookmarkResolutionWithSecurityScope relativeToURL:nil bookmarkDataIsStale:&stale error:nil] : nil;
+    BOOL scoped=[url startAccessingSecurityScopedResource];
+    if (url && SubPopValidTap5a(url)) {
+        if (self.tap5aScoped) [self.tap5aURL stopAccessingSecurityScopedResource];
+        self.tap5aURL=url;self.tap5aScoped=scoped;
+        if (stale) { NSData *fresh=[url bookmarkDataWithOptions:NSURLBookmarkCreationWithSecurityScope includingResourceValuesForKeys:nil relativeToURL:nil error:nil];if (fresh) [NSUserDefaults.standardUserDefaults setObject:fresh forKey:@"tap5aTemplateBookmark"]; }
+        return YES;
+    }
+    if (scoped) [url stopAccessingSecurityScopedResource];return NO;
+}
+- (void)templateChanged:(id)sender {
+    [self.view.window makeFirstResponder:nil];
+    if (self.templatePicker.indexOfSelectedItem==1 && ![self resolveTap5a]) {
+        NSOpenPanel *panel=[NSOpenPanel openPanel];panel.canChooseDirectories=NO;panel.allowsMultipleSelection=NO;
+        panel.message=@"首次使用请选择已安装的 Tap5a Autosize Text Background.moti，之后会记住位置。";
+        panel.prompt=@"使用此模板";
+        struct passwd *entry=getpwuid(getuid());NSString *home=entry ? [NSString stringWithUTF8String:entry->pw_dir] : NSHomeDirectory();
+        panel.directoryURL=[NSURL fileURLWithPath:[home stringByAppendingPathComponent:@"Movies/Motion Templates.localized/Titles.localized/Tap5a/Tap5a Autosize Text Background"]];
+        if ([panel runModal]!=NSModalResponseOK) { [self.templatePicker selectItemAtIndex:0];[self rebuildTitles];return; }
+        if (!SubPopValidTap5a(panel.URL)) {
+            [self.templatePicker selectItemAtIndex:0];[self rebuildTitles];
+            NSAlert *alert=[NSAlert new];alert.messageText=@"请选择已安装的 Tap5a 自适应底框模板";alert.informativeText=@"需要 Titles.localized 目录中的 Tap5a Autosize Text Background.moti；其他模板暂不支持。";[alert runModal];return;
+        }
+        NSData *bookmark=[panel.URL bookmarkDataWithOptions:NSURLBookmarkCreationWithSecurityScope includingResourceValuesForKeys:nil relativeToURL:nil error:nil];
+        if (bookmark) [NSUserDefaults.standardUserDefaults setObject:bookmark forKey:@"tap5aTemplateBookmark"];
+        if (self.tap5aScoped) [self.tap5aURL stopAccessingSecurityScopedResource];
+        self.tap5aURL=panel.URL;self.tap5aScoped=[panel.URL startAccessingSecurityScopedResource];
+    }
+    [self rebuildTitles];
+}
 - (void)styleChanged:(id)sender { [self rebuildTitles]; }
 - (void)rebuildTitles {
     if (!self.titlePayloads) return;
     NSMutableDictionary *updated=[NSMutableDictionary new];
     for (NSString *version in self.titlePayloads) {
         NSXMLDocument *doc=[[NSXMLDocument alloc] initWithData:self.titlePayloads[version] options:NSXMLNodeLoadExternalEntitiesNever error:nil];
+        if (!doc) return;
+        SubPopSetTitleTemplate(doc,self.templatePicker.indexOfSelectedItem==1 ? SubPopTap5aUID(self.tap5aURL) : nil);
         NSArray *titles=[doc nodesForXPath:@"/fcpxml/clip/spine/title" error:nil];
         if (titles.count!=self.captionRows.count) return;
         for (NSUInteger i=0;i<titles.count;i++) {
@@ -310,6 +351,7 @@ static NSDictionary *Time(CMTime t) {
     self.vocabularyButton.enabled=!busy;self.vocabularyButton.title=[NSString stringWithFormat:@"词库 · %lu",(unsigned long)[self effectiveVocabulary].count];
     self.modelPicker.enabled=!busy && !managing;self.audioPicker.enabled=!busy;self.cancelButton.hidden=!busy;
     BOOL hasRows=self.titlePayloads && self.captionRows.count;
+    self.templateControls.hidden=!hasRows;
     BOOL newlyReady=hasRows && self.resultView.hidden;
     if (newlyReady || !hasRows) self.reviewExpanded=NO;
     self.captionScroll.hidden=!hasRows || !self.reviewExpanded;self.editorControls.hidden=!hasRows || !self.reviewExpanded;self.resultView.hidden=!hasRows;self.reviewHeader.hidden=!hasRows;
@@ -450,10 +492,11 @@ static NSDictionary *Time(CMTime t) {
             if (![[self sha256:data] isEqual:response[@"outputs"][name]]) { valid=NO; break; }
             payloads[version]=data;
         }
-        if (valid && payloads.count==3) { self.titlePayloads=payloads; self.resultDate=NSDate.date;self.resultManifest=response[@"manifest"];[self.sizePicker selectItemWithTitle:@"72"];self.resultRequestID=self.requestID;self.captionRows=[NSMutableArray new];for (NSDictionary *row in response[@"manifest"][@"captions"]) [self.captionRows addObject:row.mutableCopy];
+        if (valid && payloads.count==3) { self.titlePayloads=payloads; self.resultDate=NSDate.date;self.resultManifest=response[@"manifest"];[self.sizePicker selectItemWithTitle:@"72"];[self.templatePicker selectItemAtIndex:0];self.resultRequestID=self.requestID;self.captionRows=[NSMutableArray new];for (NSDictionary *row in response[@"manifest"][@"captions"]) [self.captionRows addObject:row.mutableCopy];
             NSDictionary *draft=[self readJSON:[[self evidenceDirectory] URLByAppendingPathComponent:[@"draft-" stringByAppendingString:self.requestID]]];
             if ([draft[@"snapshotSHA"] isEqual:self.requestSHA] && [draft[@"modelID"] isEqual:self.requestModelID] && [draft[@"captions"] isKindOfClass:NSArray.class] && [draft[@"captions"] count]==self.captionRows.count) {
-                // Restore only text onto fresh, validated timing/payloads.
+                // Restore only text and presentation onto fresh, validated timing/payloads.
+                if ([draft[@"titleTemplate"] boolValue] && [self resolveTap5a]) [self.templatePicker selectItemAtIndex:1];
                 for (NSUInteger i=0;i<self.captionRows.count;i++) { id text=draft[@"captions"][i][@"text"];if ([text isKindOfClass:NSString.class] && [text length]>0 && [text length]<=500) self.captionRows[i][@"text"]=text; }
                 if ([self.fontPicker itemWithTitle:draft[@"font"]]) [self.fontPicker selectItemWithTitle:draft[@"font"]];
                 if ([self.sizePicker itemWithTitle:draft[@"fontSize"]]) [self.sizePicker selectItemWithTitle:draft[@"fontSize"]];
@@ -486,6 +529,11 @@ static NSDictionary *Time(CMTime t) {
     if (![self isolatedProjectActive]) {
         [self record:@{@"reason":@"title-drag-refused",@"status":@"Open the unchanged source project first"}]; return;
     }
+    NSString *previousTemplatePath=self.tap5aURL.path;
+    if (self.templatePicker.indexOfSelectedItem==1 && ![self resolveTap5a]) {
+        NSAlert *alert=[NSAlert new];alert.messageText=@"Tap5a 模板已移动或无法读取";alert.informativeText=@"请重新选择 Tap5a 样式并定位已安装模板，或切换为基础字幕。";[alert runModal];return;
+    }
+    if (self.templatePicker.indexOfSelectedItem==1 && ![previousTemplatePath isEqual:self.tap5aURL.path]) [self rebuildTitles];
     NSPasteboardItem *item=[NSPasteboardItem new];
     SubPopTitleDragProvider *provider=[[SubPopTitleDragProvider alloc] initWithPayloads:self.titlePayloads];
     __weak SubPopProbeViewController *weakSelf=self;
@@ -515,6 +563,7 @@ static NSDictionary *Time(CMTime t) {
     [self restoreBridge];
 }
 - (void)viewWillDisappear {
+    if (self.tap5aScoped) [self.tap5aURL stopAccessingSecurityScopedResource];self.tap5aScoped=NO;self.tap5aURL=nil;
     [self.bridgeTimer invalidate]; self.bridgeTimer=nil;
     if (self.bridgeScoped) [self.bridgeURL stopAccessingSecurityScopedResource];
     self.freshDropURL=nil; self.freshDropDate=nil; self.titlePayloads=nil; self.resultDate=nil; self.dropGeneration++;

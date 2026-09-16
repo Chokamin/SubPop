@@ -55,6 +55,40 @@ int main(int argc,const char *argv[]) {
             NSXMLNode *text=[b[0] nodesForXPath:@"text/text-style" error:nil].firstObject;
             if (![text.stringValue isEqual:@"校对 & <保留> 3.5% USB-C"]) return 6;
         }
+        // Convert existing results without ASR; preserve edited text and every timing attribute.
+        NSString *tempRoot=[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
+        NSURL *validURL=[NSURL fileURLWithPath:[tempRoot stringByAppendingPathComponent:@"Titles.localized/Tap5a/Template/Tap5a Autosize Text Background.moti"]];
+        [NSFileManager.defaultManager createDirectoryAtURL:validURL.URLByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:nil];
+        [@"<ozml><publishSettings><target object='1825821409'/><target object='10924'/><target object='10924'/></publishSettings></ozml>" writeToURL:validURL atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        if (!SubPopValidTap5a(validURL)) return 31;
+        [@"<ozml/>" writeToURL:validURL atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        if (SubPopValidTap5a(validURL)) return 32;
+        [NSFileManager.defaultManager removeItemAtPath:tempRoot error:nil];
+        NSDictionary *basic=controller.titlePayloads;
+        controller.templatePicker=[[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];[controller.templatePicker addItemsWithTitles:@[@"Basic",@"Tap5a"]];
+        controller.tap5aURL=[NSURL fileURLWithPath:@"/tmp/Titles.localized/Tap5a/Tap5a Autosize Text Background/Tap5a Autosize Text Background.moti"];
+        if (SubPopTap5aUID([NSURL fileURLWithPath:@"/tmp/Other.moti"])) return 24;
+        [controller.templatePicker selectItemAtIndex:1];[controller rebuildTitles];
+        for (NSString *v in basic) {
+            NSXMLDocument *before=[[NSXMLDocument alloc] initWithData:basic[v] options:0 error:nil];
+            NSXMLDocument *after=[[NSXMLDocument alloc] initWithData:controller.titlePayloads[v] options:0 error:nil];
+            NSXMLElement *effect=[after nodesForXPath:@"/fcpxml/resources/effect[@id='r2']" error:nil].firstObject;
+            if (![[effect attributeForName:@"uid"].stringValue isEqual:SubPopTap5aUID(controller.tap5aURL)]) return 25;
+            NSArray *a=[before nodesForXPath:@"//title" error:nil],*b=[after nodesForXPath:@"//title" error:nil];
+            if (a.count!=b.count) return 26;
+            for (NSUInteger i=0;i<a.count;i++) {
+                for (NSString *key in @[@"offset",@"start",@"duration",@"ref"]) if (![[a[i] attributeForName:key].stringValue isEqual:[b[i] attributeForName:key].stringValue]) return 27;
+                if (![[a[i] nodesForXPath:@"text" error:nil].firstObject.XMLString isEqual:[b[i] nodesForXPath:@"text" error:nil].firstObject.XMLString]) return 28;
+                NSArray *params=[b[i] nodesForXPath:@"param[@key='9999/10658/100/1825821409/2/100'][@value='1']" error:nil];if (params.count!=1) return 29;
+            }
+            [controller.titlePayloads[v] writeToFile:[directory stringByAppendingPathComponent:[NSString stringWithFormat:@"Tap5a-%@.fcpxml",v]] atomically:YES];
+        }
+        [controller.templatePicker selectItemAtIndex:0];[controller rebuildTitles];
+        for (NSString *v in basic) {
+            NSXMLDocument *after=[[NSXMLDocument alloc] initWithData:controller.titlePayloads[v] options:0 error:nil];
+            if ([after nodesForXPath:@"//title/param" error:nil].count || ![[[after nodesForXPath:@"/fcpxml/resources/effect/@uid" error:nil] firstObject].stringValue isEqual:SubPopBasicTitleUID]) return 30;
+        }
+        printf("Tap5a conversion: text, timing, background enabled, and round-trip to Basic passed.\n");
         // Delayed pasteboard requests must survive result cleanup and later edits.
         NSMutableData *mutable=[controller.titlePayloads[@"1.14"] mutableCopy];
         NSMutableDictionary *source=[controller.titlePayloads mutableCopy];source[@"1.14"]=mutable;
