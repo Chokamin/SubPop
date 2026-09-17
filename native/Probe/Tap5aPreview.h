@@ -46,6 +46,10 @@ static NSDictionary *SubPopPreviewSource(NSData *data, double seconds) {
 @interface SubPopStylePreview : NSView
 @property BOOL showsSafeArea;
 @property NSWindow *fullscreenWindow;
+@property (weak) NSWindow *fullscreenSourceWindow;
+@property CGFloat fullscreenSourceAlpha;
+@property (weak) NSWindow *fullscreenSourceParent;
+@property CGFloat fullscreenParentAlpha;
 @property (weak) SubPopStylePreview *fullscreenOwner;
 - (void)showFullscreen;
 - (void)closeFullscreen:(id)sender;
@@ -69,9 +73,17 @@ static NSDictionary *SubPopPreviewSource(NSData *data, double seconds) {
     preview.frameImage=self.frameImage;preview.style=self.style;preview.caption=self.caption;preview.projectWidth=self.projectWidth;preview.placeholder=self.placeholder;preview.showsSafeArea=self.showsSafeArea;preview.fullscreenOwner=self;preview.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
     window.contentView=preview;self.fullscreenWindow=window;
     NSButton *close=[NSButton buttonWithTitle:@"退出全屏" target:self action:@selector(closeFullscreen:)];close.keyEquivalent=@"\033";close.keyEquivalentModifierMask=0;close.bezelStyle=NSBezelStyleRounded;close.bordered=YES;close.frame=NSMakeRect(preview.bounds.size.width-150,preview.bounds.size.height-48,134,30);close.autoresizingMask=NSViewMinXMargin|NSViewMinYMargin;[preview addSubview:close];
+    // Hide the hosted sheet while previewing: host-side modal ordering can
+    // otherwise place it above even a high-level extension window. Keep the
+    // sheet session and its unsaved controls intact until preview closes.
+    self.fullscreenSourceWindow=self.window;
+    self.fullscreenSourceAlpha=self.fullscreenSourceWindow.alphaValue;
+    self.fullscreenSourceParent=self.fullscreenSourceWindow.sheetParent;
+    self.fullscreenParentAlpha=self.fullscreenSourceParent.alphaValue;
+    self.fullscreenSourceWindow.alphaValue=0;self.fullscreenSourceParent.alphaValue=0;
     [window makeKeyAndOrderFront:nil];[window orderFrontRegardless];[window makeFirstResponder:preview];
 }
-- (void)closeFullscreen:(id)sender {if (self.fullscreenOwner) {[self.fullscreenOwner closeFullscreen:sender];return;}[self.fullscreenWindow orderOut:nil];[self.fullscreenWindow close];self.fullscreenWindow=nil;[self.window makeKeyAndOrderFront:nil];}
+- (void)closeFullscreen:(id)sender {if (self.fullscreenOwner) {[self.fullscreenOwner closeFullscreen:sender];return;}if (!self.fullscreenWindow) return;[self.fullscreenWindow orderOut:nil];[self.fullscreenWindow close];self.fullscreenWindow=nil;self.fullscreenSourceParent.alphaValue=self.fullscreenParentAlpha;self.fullscreenSourceWindow.alphaValue=self.fullscreenSourceAlpha;[self.fullscreenSourceWindow makeKeyAndOrderFront:nil];self.fullscreenSourceWindow=nil;self.fullscreenSourceParent=nil;}
 - (void)cancelOperation:(id)sender {[self closeFullscreen:sender];}
 - (void)keyDown:(NSEvent *)event {if (event.keyCode==53 && self.fullscreenOwner) [self closeFullscreen:nil];else [super keyDown:event];}
 - (void)drawRect:(NSRect)dirty {
