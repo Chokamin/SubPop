@@ -5,6 +5,7 @@
 @end
 @implementation SubPopDragObserverTests
 - (void)snapshot:(NSString *)reason { self.snapshotCount++; }
+- (void)record:(NSDictionary *)value {}
 @end
 int main(int argc,const char *argv[]) {
     @autoreleasepool {
@@ -110,6 +111,18 @@ int main(int argc,const char *argv[]) {
             if (![promised setDataProvider:temporary forTypes:@[@"com.apple.finalcutpro.xml.v1-14"]]) return 21;
         }
         if (!retainedProvider || ![[promised dataForType:@"com.apple.finalcutpro.xml.v1-14"] isEqual:expected]) return 22;
+        NSPasteboardItem *prepared=[provider preparedItem];
+        if (prepared.types.count!=4) return 33;
+        provider.isCurrentProject=^BOOL { return NO; };
+        if ([provider preparedItem]) return 34;
+        if (![[prepared dataForType:@"com.apple.finalcutpro.xml"] isEqual:expected]) return 35;
+        SubPopDragObserverTests *retention=[SubPopDragObserverTests new];
+        retention.titlePayloads=payloads;retention.resultDate=NSDate.date;retention.captionRows=[NSMutableArray arrayWithObject:@{@"text":@"保留识别结果"}];
+        retention.freshDropURL=[NSURL fileURLWithPath:@"/tmp/retained-input.fcpxml"];
+        for (NSNumber *operation in @[@(NSDragOperationNone),@(NSDragOperationCopy),@(NSDragOperationEvery)]) {
+            [retention draggingSession:(NSDraggingSession *)[NSObject new] endedAtPoint:NSZeroPoint operation:operation.unsignedIntegerValue];
+            if (!retention.titlePayloads || !retention.resultDate || !retention.captionRows || !retention.freshDropURL) return 36;
+        }
         provider.isCurrentProject=^BOOL { return NO; };
         NSPasteboardItem *blocked=[NSPasteboardItem new];
         [provider pasteboard:nil item:blocked provideDataForType:@"com.apple.finalcutpro.xml.v1-14"];

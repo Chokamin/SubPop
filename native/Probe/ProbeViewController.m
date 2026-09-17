@@ -534,12 +534,12 @@ static NSDictionary *Time(CMTime t) {
         NSAlert *alert=[NSAlert new];alert.messageText=@"Tap5a 模板已移动或无法读取";alert.informativeText=@"请重新选择 Tap5a 样式并定位已安装模板，或切换为基础字幕。";[alert runModal];return;
     }
     if (self.templatePicker.indexOfSelectedItem==1 && ![previousTemplatePath isEqual:self.tap5aURL.path]) [self rebuildTitles];
-    NSPasteboardItem *item=[NSPasteboardItem new];
     SubPopTitleDragProvider *provider=[[SubPopTitleDragProvider alloc] initWithPayloads:self.titlePayloads];
     __weak SubPopProbeViewController *weakSelf=self;
     NSUInteger generation=self.dropGeneration;
     provider.isCurrentProject=^BOOL { return weakSelf.dropGeneration==generation && [weakSelf isolatedProjectActive]; };
-    [item setDataProvider:provider forTypes:@[@"com.apple.finalcutpro.xml",@"com.apple.finalcutpro.xml.v1-14",@"com.apple.finalcutpro.xml.v1-13",@"com.apple.finalcutpro.xml.v1-12"]];
+    NSPasteboardItem *item=[provider preparedItem];
+    if (!item) return;
     NSDraggingItem *drag=[[NSDraggingItem alloc] initWithPasteboardWriter:item];
     NSImage *image=[[NSImage alloc] initWithSize:NSMakeSize(270,36)];
     [image lockFocus]; [[NSColor controlBackgroundColor] setFill]; NSRectFill(NSMakeRect(0,0,270,36));
@@ -550,7 +550,9 @@ static NSDictionary *Time(CMTime t) {
 }
 - (NSDragOperation)draggingSession:(NSDraggingSession *)session sourceOperationMaskForDraggingContext:(NSDraggingContext)context { return NSDragOperationCopy; }
 - (void)draggingSession:(NSDraggingSession *)session endedAtPoint:(NSPoint)point operation:(NSDragOperation)operation {
-    if (operation!=NSDragOperationNone) { [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.titlePayloads=nil; self.resultDate=nil;self.freshDropURL=nil;self.captionRows=nil; }
+    // A drag operation is not proof that FCP inserted the titles. Keep the result
+    // and recovery session available; project observers still invalidate stale input.
+    [self saveDraft];
     [self record:@{@"reason":@"title-drag-ended",@"operation":@(operation),@"status":@"Host XML readback required; operation alone is not writeback proof"}];
 }
 - (void)viewDidAppear {

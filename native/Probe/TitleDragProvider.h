@@ -4,6 +4,7 @@
 @interface SubPopTitleDragProvider : NSObject <NSPasteboardItemDataProvider>
 @property (copy) BOOL (^isCurrentProject)(void);
 @property (readonly) NSDictionary<NSString *, NSData *> *payloads;
+- (NSPasteboardItem *)preparedItem;
 - (instancetype)initWithPayloads:(NSDictionary<NSString *, NSData *> *)payloads;
 @end
 @implementation SubPopTitleDragProvider
@@ -14,6 +15,16 @@
         _payloads=snapshot.copy;
     }
     return self;
+}
+- (NSPasteboardItem *)preparedItem {
+    if (self.isCurrentProject && !self.isCurrentProject()) return nil;
+    NSPasteboardItem *item=[NSPasteboardItem new];
+    for (NSString *type in @[@"com.apple.finalcutpro.xml",@"com.apple.finalcutpro.xml.v1-14",@"com.apple.finalcutpro.xml.v1-13",@"com.apple.finalcutpro.xml.v1-12"]) {
+        NSString *version=[type hasSuffix:@"v1-12"] ? @"1.12" : ([type hasSuffix:@"v1-13"] ? @"1.13" : @"1.14");
+        NSData *data=self.payloads[version];
+        if (!data.length || ![item setData:data forType:type]) return nil;
+    }
+    return item;
 }
 - (void)pasteboard:(NSPasteboard *)pasteboard item:(NSPasteboardItem *)item provideDataForType:(NSPasteboardType)type {
     if (self.isCurrentProject && !self.isCurrentProject()) return;
