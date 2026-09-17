@@ -1,15 +1,44 @@
 #import <Cocoa/Cocoa.h>
 #import "RuntimePaths.h"
-// Background model runner. The FCP extension is the only regular user window.
+// Background model runner and independent fullscreen preview host.
+@interface SubPopFullscreenWindow : NSWindow
+@end
+@implementation SubPopFullscreenWindow
+- (BOOL)canBecomeKeyWindow {return YES;}
+@end
 @interface SubPopAppDelegate : NSObject <NSApplicationDelegate>
 @property NSTask *worker;
 @property NSURL *workspace;
 @property BOOL choosingFolder;
+@property NSWindow *previewWindow;
 @end
 @implementation SubPopAppDelegate
 - (void)applicationDidFinishLaunching:(NSNotification *)notification { [self startEngine]; }
 - (void)application:(NSApplication *)application openURLs:(NSArray<NSURL *> *)urls {
-    for (NSURL *url in urls) if ([url.scheme isEqual:@"subpop-probe"] && [url.host isEqual:@"start"]) [self startEngine];
+    for (NSURL *url in urls) if ([url.scheme isEqual:@"subpop-probe"]) {if ([url.host isEqual:@"start"]) [self startEngine];else if ([url.host isEqual:@"preview"]) [self showPreview:url];}
+}
+- (void)showPreview:(NSURL *)url {
+    NSString *path=nil;for (NSURLQueryItem *item in [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO].queryItems) if ([item.name isEqual:@"file"]) path=item.value;
+    struct passwd *entry=getpwuid(getuid());if (!entry || !path) return;
+    NSString *root=[[NSString stringWithUTF8String:entry->pw_dir] stringByAppendingPathComponent:@"Library/Containers/com.chokamin.SubPopProbe.Extension/Data/Library/Caches/SubPopPreview"];
+    if (![path.stringByDeletingLastPathComponent.stringByStandardizingPath isEqual:root] || ![path.pathExtension isEqual:@"png"] || ![[NSUUID alloc] initWithUUIDString:path.lastPathComponent.stringByDeletingPathExtension]) return;
+    NSImage *image=[[NSImage alloc] initWithContentsOfFile:path];if (!image) return;
+    // Decode before removing the transient frame. Nothing is uploaded or retained.
+    NSImage *decoded=[[NSImage alloc] initWithData:image.TIFFRepresentation];[NSFileManager.defaultManager removeItemAtPath:path error:nil];if (!decoded) return;
+    [self.previewWindow close];
+    NSScreen *screen=NSScreen.mainScreen;
+    NSWindow *window=[[SubPopFullscreenWindow alloc] initWithContentRect:screen.frame styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];
+    window.appearance=[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];window.releasedWhenClosed=NO;window.backgroundColor=NSColor.blackColor;window.level=NSPopUpMenuWindowLevel+1;
+    window.collectionBehavior=NSWindowCollectionBehaviorMoveToActiveSpace|NSWindowCollectionBehaviorFullScreenAuxiliary;
+    NSView *content=[[NSView alloc] initWithFrame:NSMakeRect(0,0,screen.frame.size.width,screen.frame.size.height)];
+    NSImageView *view=[[NSImageView alloc] initWithFrame:content.bounds];view.image=decoded;view.imageScaling=NSImageScaleProportionallyUpOrDown;view.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;[content addSubview:view];
+    NSButton *close=[NSButton buttonWithTitle:@"退出全屏" target:self action:@selector(closePreview:)];close.bezelStyle=NSBezelStyleRounded;close.bordered=YES;close.frame=NSMakeRect(content.bounds.size.width-150,content.bounds.size.height-48,134,30);close.keyEquivalent=@"\033";close.keyEquivalentModifierMask=0;close.autoresizingMask=NSViewMinXMargin|NSViewMinYMargin;[content addSubview:close];
+    window.contentView=content;self.previewWindow=window;
+    [NSApp activateIgnoringOtherApps:YES];[window makeKeyAndOrderFront:nil];[window orderFrontRegardless];
+}
+- (void)closePreview:(id)sender {
+    [self.previewWindow orderOut:nil];[self.previewWindow close];self.previewWindow=nil;
+    [[NSRunningApplication runningApplicationsWithBundleIdentifier:@"com.apple.FinalCut"].firstObject activateWithOptions:NSApplicationActivateIgnoringOtherApps];
 }
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)flag { [self startEngine]; return NO; }
 - (void)startEngine {

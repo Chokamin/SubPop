@@ -46,10 +46,6 @@ static NSDictionary *SubPopPreviewSource(NSData *data, double seconds) {
 @interface SubPopStylePreview : NSView
 @property BOOL showsSafeArea;
 @property NSWindow *fullscreenWindow;
-@property (weak) NSWindow *fullscreenSourceWindow;
-@property CGFloat fullscreenSourceAlpha;
-@property (weak) NSWindow *fullscreenSourceParent;
-@property CGFloat fullscreenParentAlpha;
 @property (weak) SubPopStylePreview *fullscreenOwner;
 - (void)showFullscreen;
 - (void)closeFullscreen:(id)sender;
@@ -71,19 +67,28 @@ static NSDictionary *SubPopPreviewSource(NSData *data, double seconds) {
     window.level=NSPopUpMenuWindowLevel+1;window.backgroundColor=NSColor.blackColor;window.hidesOnDeactivate=YES;
     SubPopStylePreview *preview=[[SubPopStylePreview alloc] initWithFrame:NSMakeRect(0,0,screen.frame.size.width,screen.frame.size.height)];
     preview.frameImage=self.frameImage;preview.style=self.style;preview.caption=self.caption;preview.projectWidth=self.projectWidth;preview.placeholder=self.placeholder;preview.showsSafeArea=self.showsSafeArea;preview.fullscreenOwner=self;preview.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
+    // In FCP, view-service windows are reparented by the host. Render locally,
+    // then let the containing app own and activate the actual preview window.
+    if ([NSBundle.mainBundle.bundleIdentifier isEqual:@"com.chokamin.SubPopProbe.Extension"]) {
+        NSBitmapImageRep *bitmap=[preview bitmapImageRepForCachingDisplayInRect:preview.bounds];
+        [preview cacheDisplayInRect:preview.bounds toBitmapImageRep:bitmap];
+        NSURL *folder=[[[NSFileManager defaultManager] URLsForDirectory:NSCachesDirectory inDomains:NSUserDomainMask].firstObject URLByAppendingPathComponent:@"SubPopPreview"];
+        [NSFileManager.defaultManager createDirectoryAtURL:folder withIntermediateDirectories:YES attributes:nil error:nil];
+        NSURL *file=[folder URLByAppendingPathComponent:[NSUUID.UUID.UUIDString stringByAppendingPathExtension:@"png"]];
+        NSError *writeError=nil;
+        if (![[bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToURL:file options:NSDataWritingAtomic error:&writeError]) {NSLog(@"Preview render failed: %@",writeError);return;}
+        NSURLComponents *request=[NSURLComponents componentsWithString:@"subpop-probe://preview"];
+        request.queryItems=@[[NSURLQueryItem queryItemWithName:@"file" value:file.path]];
+        NSWorkspaceOpenConfiguration *config=NSWorkspaceOpenConfiguration.configuration;config.activates=YES;
+        NSURL *container=[NSBundle.mainBundle.bundleURL URLByDeletingLastPathComponent];container=[[container URLByDeletingLastPathComponent] URLByDeletingLastPathComponent];
+        [NSWorkspace.sharedWorkspace openURLs:@[request.URL] withApplicationAtURL:container configuration:config completionHandler:^(NSRunningApplication *app,NSError *error) {if(error) {NSLog(@"Preview open failed: %@",error);[NSFileManager.defaultManager removeItemAtURL:file error:nil];}}];
+        return;
+    }
     window.contentView=preview;self.fullscreenWindow=window;
     NSButton *close=[NSButton buttonWithTitle:@"退出全屏" target:self action:@selector(closeFullscreen:)];close.keyEquivalent=@"\033";close.keyEquivalentModifierMask=0;close.bezelStyle=NSBezelStyleRounded;close.bordered=YES;close.frame=NSMakeRect(preview.bounds.size.width-150,preview.bounds.size.height-48,134,30);close.autoresizingMask=NSViewMinXMargin|NSViewMinYMargin;[preview addSubview:close];
-    // Hide the hosted sheet while previewing: host-side modal ordering can
-    // otherwise place it above even a high-level extension window. Keep the
-    // sheet session and its unsaved controls intact until preview closes.
-    self.fullscreenSourceWindow=self.window;
-    self.fullscreenSourceAlpha=self.fullscreenSourceWindow.alphaValue;
-    self.fullscreenSourceParent=self.fullscreenSourceWindow.sheetParent;
-    self.fullscreenParentAlpha=self.fullscreenSourceParent.alphaValue;
-    self.fullscreenSourceWindow.alphaValue=0;self.fullscreenSourceParent.alphaValue=0;
     [window makeKeyAndOrderFront:nil];[window orderFrontRegardless];[window makeFirstResponder:preview];
 }
-- (void)closeFullscreen:(id)sender {if (self.fullscreenOwner) {[self.fullscreenOwner closeFullscreen:sender];return;}if (!self.fullscreenWindow) return;[self.fullscreenWindow orderOut:nil];[self.fullscreenWindow close];self.fullscreenWindow=nil;self.fullscreenSourceParent.alphaValue=self.fullscreenParentAlpha;self.fullscreenSourceWindow.alphaValue=self.fullscreenSourceAlpha;[self.fullscreenSourceWindow makeKeyAndOrderFront:nil];self.fullscreenSourceWindow=nil;self.fullscreenSourceParent=nil;}
+- (void)closeFullscreen:(id)sender {if (self.fullscreenOwner) {[self.fullscreenOwner closeFullscreen:sender];return;}if (!self.fullscreenWindow) return;[self.fullscreenWindow orderOut:nil];[self.fullscreenWindow close];self.fullscreenWindow=nil;[self.window makeKeyAndOrderFront:nil];}
 - (void)cancelOperation:(id)sender {[self closeFullscreen:sender];}
 - (void)keyDown:(NSEvent *)event {if (event.keyCode==53 && self.fullscreenOwner) [self closeFullscreen:nil];else [super keyDown:event];}
 - (void)drawRect:(NSRect)dirty {
