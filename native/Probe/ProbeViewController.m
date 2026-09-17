@@ -280,7 +280,7 @@ static NSDictionary *Time(CMTime t) {
     for (NSString *version in self.titlePayloads) {
         NSXMLDocument *doc=[[NSXMLDocument alloc] initWithData:self.titlePayloads[version] options:NSXMLNodeLoadExternalEntitiesNever error:nil];
         if (!doc) return;
-        SubPopSetTitleTemplate(doc,self.templatePicker.indexOfSelectedItem==1 ? SubPopTap5aUID(self.tap5aURL) : nil);
+        SubPopSetTitleTemplate(doc,self.templatePicker.indexOfSelectedItem==1 ? self.tap5aURL : nil);
         NSArray *titles=[doc nodesForXPath:@"/fcpxml/clip/spine/title" error:nil];
         if (titles.count!=self.captionRows.count) return;
         for (NSUInteger i=0;i<titles.count;i++) {

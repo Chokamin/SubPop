@@ -14,11 +14,14 @@ static BOOL SubPopValidTap5a(NSURL *url) {
     NSXMLDocument *doc=[[NSXMLDocument alloc] initWithData:data options:NSXMLNodeLoadExternalEntitiesNever error:nil];
     return [doc.rootElement.name isEqual:@"ozml"] && [doc nodesForXPath:@"//publishSettings/target[@object='1825821409']" error:nil].count==1 && [doc nodesForXPath:@"//publishSettings/target[@object='10924']" error:nil].count==2;
 }
-static void SubPopSetTitleTemplate(NSXMLDocument *doc, NSString *tap5aUID) {
+static void SubPopSetTitleTemplate(NSXMLDocument *doc, NSURL *tap5aURL) {
+    NSString *tap5aUID=SubPopTap5aUID(tap5aURL);
     NSXMLElement *effect=[doc nodesForXPath:@"/fcpxml/resources/effect[@id='r2']" error:nil].firstObject;
     [effect attributeForName:@"uid"].stringValue=tap5aUID ?: SubPopBasicTitleUID;
     [effect attributeForName:@"name"].stringValue=tap5aUID ? @"Tap5a Autosize Text Background" : @"基本字幕";
     [effect removeAttributeForName:@"src"];
+    // Match FCP export: a user-installed Motion title needs both UID and source URL.
+    if (tap5aUID) [effect addAttribute:[NSXMLNode attributeWithName:@"src" stringValue:tap5aURL.absoluteString]];
     for (NSXMLElement *title in [doc nodesForXPath:@"/fcpxml/clip/spine/title" error:nil]) {
         // Only SubPop-owned flat title payloads enter this function.
         for (NSXMLNode *param in [title elementsForName:@"param"]) [param detach];

@@ -74,7 +74,7 @@ int main(int argc,const char *argv[]) {
             NSXMLDocument *before=[[NSXMLDocument alloc] initWithData:basic[v] options:0 error:nil];
             NSXMLDocument *after=[[NSXMLDocument alloc] initWithData:controller.titlePayloads[v] options:0 error:nil];
             NSXMLElement *effect=[after nodesForXPath:@"/fcpxml/resources/effect[@id='r2']" error:nil].firstObject;
-            if (![[effect attributeForName:@"uid"].stringValue isEqual:SubPopTap5aUID(controller.tap5aURL)]) return 25;
+            if (![[effect attributeForName:@"uid"].stringValue isEqual:SubPopTap5aUID(controller.tap5aURL)] || ![[effect attributeForName:@"src"].stringValue isEqual:controller.tap5aURL.absoluteString]) return 25;
             NSArray *a=[before nodesForXPath:@"//title" error:nil],*b=[after nodesForXPath:@"//title" error:nil];
             if (a.count!=b.count) return 26;
             for (NSUInteger i=0;i<a.count;i++) {
@@ -87,7 +87,7 @@ int main(int argc,const char *argv[]) {
         [controller.templatePicker selectItemAtIndex:0];[controller rebuildTitles];
         for (NSString *v in basic) {
             NSXMLDocument *after=[[NSXMLDocument alloc] initWithData:controller.titlePayloads[v] options:0 error:nil];
-            if ([after nodesForXPath:@"//title/param" error:nil].count || ![[[after nodesForXPath:@"/fcpxml/resources/effect/@uid" error:nil] firstObject].stringValue isEqual:SubPopBasicTitleUID]) return 30;
+            if ([after nodesForXPath:@"/fcpxml/resources/effect/@src" error:nil].count || [after nodesForXPath:@"//title/param" error:nil].count || ![[[after nodesForXPath:@"/fcpxml/resources/effect/@uid" error:nil] firstObject].stringValue isEqual:SubPopBasicTitleUID]) return 30;
         }
         printf("Tap5a conversion: text, timing, background enabled, and round-trip to Basic passed.\n");
         // Delayed pasteboard requests must survive result cleanup and later edits.
