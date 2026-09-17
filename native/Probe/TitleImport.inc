@@ -16,7 +16,12 @@
     // These titles use features common to all supported payload versions.
     NSData *snapshot=self.titlePayloads[@"1.12"];
     NSError *error=nil;
-    NSData *data=SubPopTitleImportXML(snapshot,self.dropName,&error);
+    // Reserve a persistent import number, including retries; never reuse names
+    // after relaunch or when importing the same recognition with new styling.
+    NSInteger previous=[NSUserDefaults.standardUserDefaults integerForKey:@"titleImportSequence"];
+    NSUInteger sequence=(NSUInteger)MAX(0,previous)+1;
+    [NSUserDefaults.standardUserDefaults setInteger:(NSInteger)sequence forKey:@"titleImportSequence"];
+    NSData *data=SubPopTitleImportXML(snapshot,self.dropName,sequence,&error);
     NSURL *applicationURL=[NSWorkspace.sharedWorkspace URLForApplicationWithBundleIdentifier:@"com.apple.FinalCut"];
     if (!data || !applicationURL) {
         self.importMessage=error.localizedDescription ?: @"找不到 Final Cut Pro，请确认它已安装后重试。";[self updateInterface];return;

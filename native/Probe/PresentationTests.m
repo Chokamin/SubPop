@@ -105,14 +105,18 @@ int main(int argc,const char *argv[]) {
             }
             [controller.titlePayloads[v] writeToFile:[directory stringByAppendingPathComponent:[NSString stringWithFormat:@"Tap5a-%@.fcpxml",v]] atomically:YES];
             NSError *importError=nil;
-            NSData *importData=SubPopTitleImportXML(controller.titlePayloads[v],@"项目 & <测试>",&importError);
+            NSData *importData=SubPopTitleImportXML(controller.titlePayloads[v],@"项目 & <测试>",1,&importError);
             NSXMLDocument *importDoc=[[NSXMLDocument alloc] initWithData:importData options:NSXMLNodeLoadExternalEntitiesNever error:nil];
             NSString *importXML=[[NSString alloc] initWithData:importData encoding:NSUTF8StringEncoding];
             if (!importData || importError || [importXML containsString:@"standalone=\"yes\""]) return 33;
             NSArray *importTitles=[importDoc nodesForXPath:@"/fcpxml/event/clip/spine/title" error:nil];
             if (importTitles.count!=b.count || [importDoc nodesForXPath:@"//project|//library|/fcpxml/clip" error:nil].count) return 34;
             if (![[importDoc nodesForXPath:@"/fcpxml/event/@name" error:nil].firstObject.stringValue isEqual:@"SubPop 字幕"] ||
-                ![[importDoc nodesForXPath:@"/fcpxml/event/clip/@name" error:nil].firstObject.stringValue isEqual:@"项目 & <测试> · Tap5a 字幕"]) return 35;
+                ![[importDoc nodesForXPath:@"/fcpxml/event/clip/@name" error:nil].firstObject.stringValue isEqual:@"项目 & <测试> · Tap5a 字幕 001"]) return 35;
+            NSData *second=SubPopTitleImportXML(controller.titlePayloads[v],@"项目 & <测试>",2,nil);
+            NSXMLDocument *secondDoc=[[NSXMLDocument alloc] initWithData:second options:NSXMLNodeLoadExternalEntitiesNever error:nil];
+            if (![[secondDoc nodesForXPath:@"/fcpxml/event/clip/@name" error:nil].firstObject.stringValue isEqual:@"项目 & <测试> · Tap5a 字幕 002"]) return 62;
+            if ([secondDoc nodesForXPath:@"/fcpxml/event/clip/@uid" error:nil].count) return 63;
             for (NSUInteger i=0;i<b.count;i++) {
                 NSXMLElement *original=b[i],*imported=importTitles[i];
                 for (NSString *key in @[@"offset",@"start",@"duration",@"ref"]) if (![[original attributeForName:key].stringValue isEqual:[imported attributeForName:key].stringValue]) return 36;
@@ -122,7 +126,7 @@ int main(int argc,const char *argv[]) {
         }
         for (NSString *bad in @[@"",@"<fcpxml><project/></fcpxml>",@"<fcpxml><clip><spine/></clip></fcpxml>"]) {
             NSError *error=nil;
-            if (SubPopTitleImportXML([bad dataUsingEncoding:NSUTF8StringEncoding],@"Test",&error) || !error) return 38;
+            if (SubPopTitleImportXML([bad dataUsingEncoding:NSUTF8StringEncoding],@"Test",1,&error) || !error) return 38;
         }
         puts("Tap5a file import: all versions preserve titles and timing; no project/library writes; invalid results rejected.");
         [controller.templatePicker selectItemAtIndex:0];[controller rebuildTitles];

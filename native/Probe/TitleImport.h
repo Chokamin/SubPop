@@ -1,7 +1,7 @@
 #import <Cocoa/Cocoa.h>
 
 // Import a new browser clip, never a project or a replacement timeline.
-static NSData *SubPopTitleImportXML(NSData *payload, NSString *projectName, NSError **error) {
+static NSData *SubPopTitleImportXML(NSData *payload, NSString *projectName, NSUInteger sequence, NSError **error) {
     NSXMLDocument *doc=payload.length ? [[NSXMLDocument alloc] initWithData:payload options:NSXMLNodeLoadExternalEntitiesNever error:error] : nil;
     NSArray *clips=[doc nodesForXPath:@"/fcpxml/clip" error:nil];
     NSXMLElement *clip=clips.firstObject;
@@ -12,7 +12,7 @@ static NSData *SubPopTitleImportXML(NSData *payload, NSString *projectName, NSEr
         return nil;
     }
     [clip detach];
-    [clip attributeForName:@"name"].stringValue=[NSString stringWithFormat:@"%@ · Tap5a 字幕",projectName.length ? projectName : @"SubPop"];
+    [clip attributeForName:@"name"].stringValue=[NSString stringWithFormat:@"%@ · Tap5a 字幕 %03lu",projectName.length ? projectName : @"SubPop",(unsigned long)sequence];
     NSXMLElement *event=[NSXMLElement elementWithName:@"event"];
     [event addAttribute:[NSXMLNode attributeWithName:@"name" stringValue:@"SubPop 字幕"]];
     [event addChild:clip];[doc.rootElement addChild:event];
