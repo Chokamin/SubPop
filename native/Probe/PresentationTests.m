@@ -69,7 +69,7 @@ int main(int argc,const char *argv[]) {
         controller.templatePicker=[[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];[controller.templatePicker addItemsWithTitles:@[@"Basic",@"Tap5a"]];
         controller.tap5aURL=[NSURL fileURLWithPath:@"/tmp/Titles.localized/Tap5a/Tap5a Autosize Text Background/Tap5a Autosize Text Background.moti"];
         if (SubPopTap5aUID([NSURL fileURLWithPath:@"/tmp/Other.moti"])) return 24;
-        controller.tap5aStyle=SubPopNormalizeTap5aStyle(@{@"roundness":@30,@"opacity":@65,@"width":@12,@"border":@1,@"top":@25,@"backgroundColor":@[@0.1,@0.2,@0.3]});
+        controller.tap5aStyle=SubPopNormalizeTap5aStyle(@{@"textFace":@"Bold",@"kerning":@3.5,@"lineSpacing":@12,@"textColor":@[@1,@0.5,@0],@"roundness":@30,@"opacity":@65,@"width":@12,@"border":@1,@"top":@25,@"backgroundColor":@[@0.1,@0.2,@0.3]});
         NSDictionary *invalid=SubPopNormalizeTap5aStyle(@{@"roundness":@999,@"width":@(-1),@"top":@(NAN),@"backgroundColor":@[@1]});
         if ([invalid[@"roundness"] doubleValue]!=100 || [invalid[@"width"] doubleValue]!=3 || [invalid[@"top"] doubleValue]!=10 || ![invalid[@"backgroundColor"] isEqual:@[@0,@0,@0]]) return 41;
         [controller.templatePicker selectItemAtIndex:1];[controller rebuildTitles];
@@ -85,6 +85,9 @@ int main(int argc,const char *argv[]) {
                 if (![[a[i] nodesForXPath:@"text" error:nil].firstObject.XMLString isEqual:[b[i] nodesForXPath:@"text" error:nil].firstObject.XMLString]) return 28;
                 NSArray *params=[b[i] nodesForXPath:@"param[@key='9999/10658/100/1825821409/2/100'][@value='1']" error:nil];if (params.count!=1) return 29;
                 if ([b[i] nodesForXPath:@"param[@name='Roundness'][@value='0.3']" error:nil].count!=1 || [b[i] nodesForXPath:@"param[@name='Top'][@value='0.25']" error:nil].count!=1 || [b[i] nodesForXPath:@"param[@name='Color'][@value='0.1 0.2 0.3']" error:nil].count!=1) return 42;
+                NSXMLElement *ts=[b[i] nodesForXPath:@"text-style-def/text-style" error:nil].firstObject;
+                if (![[ts attributeForName:@"kerning"].stringValue isEqual:@"3.5"] || ![[ts attributeForName:@"lineSpacing"].stringValue isEqual:@"12"] || ![[ts attributeForName:@"fontColor"].stringValue isEqual:@"1 0.5 0 1"]) return 44;
+                if ([ts nodesForXPath:@"param[@key='MotionTextStyle:SimpleValues']/param[@key='tracking'][@value='3.5']" error:nil].count!=1) return 45;
                 NSXMLElement *width=[b[i] nodesForXPath:@"param[@name='Width']" error:nil].firstObject;
                 if (fabs([width attributeForName:@"value"].stringValue.doubleValue - 9.0/97)>1e-8) return 43;
             }

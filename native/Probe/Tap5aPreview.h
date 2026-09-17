@@ -58,10 +58,12 @@ static NSDictionary *SubPopPreviewSource(NSData *data, double seconds) {
         [self.placeholder ?: @"正在读取视频画面…" drawInRect:NSInsetRect(self.bounds,16,30) withAttributes:attrs];
     }
     NSDictionary *s=SubPopNormalizeTap5aStyle(self.style);
-    CGFloat scale=canvas.size.width/MAX(1920,self.projectWidth),fontSize=MAX(9,self.fontSize*scale);
-    NSFont *font=[NSFont fontWithName:self.fontName ?: @"Helvetica" size:fontSize] ?: [NSFont systemFontOfSize:fontSize];
-    NSMutableParagraphStyle *paragraph=[NSMutableParagraphStyle new];paragraph.alignment=NSTextAlignmentCenter;
-    NSDictionary *attrs=@{NSFontAttributeName:font,NSForegroundColorAttributeName:NSColor.whiteColor,NSParagraphStyleAttributeName:paragraph};
+    CGFloat scale=canvas.size.width/MAX(1920,self.projectWidth),fontSize=MAX(1,[s[@"textSize"] doubleValue]*scale);
+    NSString *postscript=s[@"textFont"];for (NSArray *member in SubPopFontMembers(s[@"textFont"])) if ([member[1] isEqual:s[@"textFace"]]) postscript=member[0];
+    NSFont *font=[NSFont fontWithName:postscript size:fontSize] ?: [NSFont systemFontOfSize:fontSize];
+    NSMutableParagraphStyle *paragraph=[NSMutableParagraphStyle new];paragraph.alignment=NSTextAlignmentCenter;paragraph.lineSpacing=[s[@"lineSpacing"] doubleValue]*scale;
+    NSArray *color=s[@"textColor"];
+    NSDictionary *attrs=@{NSFontAttributeName:font,NSForegroundColorAttributeName:[NSColor colorWithSRGBRed:[color[0] doubleValue] green:[color[1] doubleValue] blue:[color[2] doubleValue] alpha:1],NSParagraphStyleAttributeName:paragraph,NSKernAttributeName:@([s[@"kerning"] doubleValue]*scale)};
     NSString *text=self.caption.length ? self.caption : @"让字幕跟上你的表达";
     NSRect measured=[text boundingRectWithSize:NSMakeSize(canvas.size.width*.86,100) options:NSStringDrawingUsesLineFragmentOrigin attributes:attrs];
     CGFloat left=[s[@"left"] doubleValue]*scale,right=[s[@"right"] doubleValue]*scale,top=[s[@"top"] doubleValue]*scale,bottom=[s[@"bottom"] doubleValue]*scale;

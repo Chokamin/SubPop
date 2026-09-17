@@ -69,9 +69,10 @@ int main(int argc,const char *argv[]) {
         [c.templatePicker selectItemAtIndex:1];c.resultRequestID=@"style-test";[window orderFront:nil];
         if (argc==4) c.freshDropURL=[NSURL fileURLWithPath:@(argv[3])];
         [c showTap5aStyle:nil];
-        if (c.tap5aStyleControls.count!=13 || !window.attachedSheet) return 21;
-        [c fillTap5aStyleControls:@{@"roundness":@30,@"top":@25}];
+        if (c.tap5aStyleControls.count!=19 || !window.attachedSheet) return 21;
+        [c fillTap5aStyleControls:@{@"roundness":@30,@"top":@25,@"textFont":@"Helvetica",@"textFace":@"Bold",@"textSize":@83,@"kerning":@4,@"lineSpacing":@16}];
         if ([c.tap5aStyleControls[@"roundness"] doubleValue]!=30 || [c.tap5aStyleControls[@"top"] doubleValue]!=25) return 22;
+        if (![[c currentTap5aStyleValues][@"textFace"] isEqual:@"Bold"] || [[c currentTap5aStyleValues][@"textSize"] doubleValue]!=83 || [c.tap5aPreview.style[@"kerning"] doubleValue]!=4) return 28;
         if (argc==4) {
             NSDate *deadline=[NSDate dateWithTimeIntervalSinceNow:15];
             while (!c.tap5aPreview.frameImage && c.tap5aImageGenerator && [deadline timeIntervalSinceNow]>0) [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.05]];
@@ -84,6 +85,7 @@ int main(int argc,const char *argv[]) {
         [window endSheet:sheet returnCode:NSAlertThirdButtonReturn];
         [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.1]];
         if ([c.tap5aStyle[@"roundness"] doubleValue]!=30 || [[NSUserDefaults.standardUserDefaults dictionaryForKey:@"tap5aStylePreset"][@"top"] doubleValue]!=25 || c.tap5aPreview) return 26;
+        if ([c.tap5aStyle[@"lineSpacing"] doubleValue]!=16 || ![c.sizePicker.titleOfSelectedItem isEqual:@"83"]) return 29;
         [c showTap5aStyle:nil];[c fillTap5aStyleControls:@{@"roundness":@80}];[window endSheet:window.attachedSheet returnCode:NSAlertSecondButtonReturn];
         [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.1]];
         if ([c.tap5aStyle[@"roundness"] doubleValue]!=30) return 27;

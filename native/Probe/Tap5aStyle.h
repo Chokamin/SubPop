@@ -19,10 +19,16 @@ static NSArray *SubPopTap5aFields(void) {
         @[@"right",@"右留白",@10,@0,@100,@"Right",@"9999/10658/100/10708/2/100"]
     ];
 }
+static NSArray *SubPopTextFields(void) {
+    return @[@[@"textSize",@"字号",@72,@8,@300],@[@"kerning",@"字距（点）",@0,@-20,@100],@[@"lineSpacing",@"额外行间距",@0,@0,@200],@[@"textColor",@"文字颜色",@[@1,@1,@1],@0,@1]];
+}
+static NSArray *SubPopFontMembers(NSString *family) {
+    return [NSFontManager.sharedFontManager availableMembersOfFontFamily:family] ?: @[];
+}
 static NSDictionary *SubPopNormalizeTap5aStyle(id input) {
     NSDictionary *source=[input isKindOfClass:NSDictionary.class] ? input : @{};
     NSMutableDictionary *result=[NSMutableDictionary new];
-    for (NSArray *field in SubPopTap5aFields()) {
+    for (NSArray *field in [SubPopTap5aFields() arrayByAddingObjectsFromArray:SubPopTextFields()]) {
         NSString *key=field[0];id value=source[key];
         if ([field[2] isKindOfClass:NSArray.class]) {
             BOOL valid=[value isKindOfClass:NSArray.class] && [value count]==3;
@@ -36,6 +42,13 @@ static NSDictionary *SubPopNormalizeTap5aStyle(id input) {
             result[key]=@(n);
         }
     }
+    NSString *family=[source[@"textFont"] isKindOfClass:NSString.class] ? source[@"textFont"] : @"Helvetica";
+    NSArray *members=SubPopFontMembers(family);
+    if (!members.count) {family=@"Helvetica";members=SubPopFontMembers(family);}
+    NSString *face=[source[@"textFace"] isKindOfClass:NSString.class] ? source[@"textFace"] : @"Regular";
+    BOOL found=NO;for (NSArray *member in members) if ([member[1] isEqual:face]) found=YES;
+    if (!found) face=members.count ? members[0][1] : @"Regular";
+    result[@"textFont"]=family;result[@"textFace"]=face;
     return result;
 }
 static void SubPopApplyTap5aStyle(NSXMLDocument *doc, NSDictionary *input) {
@@ -58,4 +71,16 @@ static void SubPopApplyTap5aStyle(NSXMLDocument *doc, NSDictionary *input) {
             [title insertChild:param atIndex:0];
         }
     }
+}
+
+static void SubPopApplyTextStyle(NSXMLElement *node,NSDictionary *input) {
+    NSDictionary *s=SubPopNormalizeTap5aStyle(input);NSArray *rgb=s[@"textColor"];
+    NSDictionary *attrs=@{@"font":s[@"textFont"],@"fontFace":s[@"textFace"],@"fontSize":[s[@"textSize"] stringValue],@"kerning":[s[@"kerning"] stringValue],@"lineSpacing":[s[@"lineSpacing"] stringValue],@"fontColor":[NSString stringWithFormat:@"%.9g %.9g %.9g 1",[rgb[0] doubleValue],[rgb[1] doubleValue],[rgb[2] doubleValue]]};
+    for (NSXMLElement *old in [node elementsForName:@"param"]) if ([[old attributeForName:@"key"].stringValue isEqual:@"MotionTextStyle:SimpleValues"]) [old detach];
+    NSXMLElement *simple=[NSXMLElement elementWithName:@"param"];
+    [simple addAttribute:[NSXMLNode attributeWithName:@"name" stringValue:@"MotionSimpleValues"]];[simple addAttribute:[NSXMLNode attributeWithName:@"key" stringValue:@"MotionTextStyle:SimpleValues"]];
+    NSXMLElement *tracking=[NSXMLElement elementWithName:@"param"];
+    [tracking addAttribute:[NSXMLNode attributeWithName:@"name" stringValue:@"motionTextTracking"]];[tracking addAttribute:[NSXMLNode attributeWithName:@"key" stringValue:@"tracking"]];[tracking addAttribute:[NSXMLNode attributeWithName:@"value" stringValue:[s[@"kerning"] stringValue]]];[simple addChild:tracking];[node addChild:simple];
+    [node removeAttributeForName:@"bold"];[node removeAttributeForName:@"italic"];
+    for (NSString *key in attrs) {[node removeAttributeForName:key];[node addAttribute:[NSXMLNode attributeWithName:key stringValue:attrs[key]]];}
 }

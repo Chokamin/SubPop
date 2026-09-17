@@ -302,7 +302,12 @@ static NSDictionary *Time(CMTime t) {
     }
     [self rebuildTitles];
 }
-- (void)styleChanged:(id)sender { [self rebuildTitles]; }
+- (void)styleChanged:(id)sender {
+    NSMutableDictionary *style=SubPopNormalizeTap5aStyle(self.tap5aStyle).mutableCopy;
+    style[@"textFont"]=self.fontPicker.titleOfSelectedItem;style[@"textSize"]=@(self.sizePicker.titleOfSelectedItem.doubleValue);
+    if (sender==self.fontPicker) style[@"textFace"]=@"Regular";
+    self.tap5aStyle=SubPopNormalizeTap5aStyle(style);[self rebuildTitles];
+}
 - (void)rebuildTitles {
     if (!self.titlePayloads) return;
     NSMutableDictionary *updated=[NSMutableDictionary new];
@@ -318,8 +323,9 @@ static NSDictionary *Time(CMTime t) {
             [title attributeForName:@"name"].stringValue=text;
             NSXMLNode *node=[title nodesForXPath:@"text/text-style" error:nil].firstObject;node.stringValue=text;
             NSXMLElement *style=[title nodesForXPath:@"text-style-def/text-style" error:nil].firstObject;
-            [style attributeForName:@"font"].stringValue=self.fontPicker.titleOfSelectedItem;
-            [style attributeForName:@"fontSize"].stringValue=self.sizePicker.titleOfSelectedItem;
+            NSMutableDictionary *textStyle=SubPopNormalizeTap5aStyle(self.tap5aStyle).mutableCopy;
+            textStyle[@"textFont"]=self.fontPicker.titleOfSelectedItem;textStyle[@"textSize"]=@(self.sizePicker.titleOfSelectedItem.doubleValue);
+            SubPopApplyTextStyle(style,textStyle);
         }
         updated[version]=[doc XMLDataWithOptions:NSXMLNodePrettyPrint];
     }
@@ -534,14 +540,18 @@ static NSDictionary *Time(CMTime t) {
             if (![[self sha256:data] isEqual:response[@"outputs"][name]]) { valid=NO; break; }
             payloads[version]=data;
         }
-        if (valid && payloads.count==3) { self.titlePayloads=payloads; self.resultDate=NSDate.date;self.resultManifest=response[@"manifest"];self.tap5aStyle=SubPopNormalizeTap5aStyle([NSUserDefaults.standardUserDefaults dictionaryForKey:@"tap5aStylePreset"]);[self.sizePicker selectItemWithTitle:@"72"];[self.templatePicker selectItemAtIndex:0];self.resultRequestID=self.requestID;self.captionRows=[NSMutableArray new];for (NSDictionary *row in response[@"manifest"][@"captions"]) [self.captionRows addObject:row.mutableCopy];
+        if (valid && payloads.count==3) { self.titlePayloads=payloads; self.resultDate=NSDate.date;self.resultManifest=response[@"manifest"];self.tap5aStyle=SubPopNormalizeTap5aStyle([NSUserDefaults.standardUserDefaults dictionaryForKey:@"tap5aStylePreset"]);NSString *presetFont=self.tap5aStyle[@"textFont"],*presetSize=[self.tap5aStyle[@"textSize"] stringValue];
+            if (![self.fontPicker itemWithTitle:presetFont]) [self.fontPicker addItemWithTitle:presetFont];[self.fontPicker selectItemWithTitle:presetFont];
+            if (![self.sizePicker itemWithTitle:presetSize]) [self.sizePicker addItemWithTitle:presetSize];[self.sizePicker selectItemWithTitle:presetSize];[self.templatePicker selectItemAtIndex:0];self.resultRequestID=self.requestID;self.captionRows=[NSMutableArray new];for (NSDictionary *row in response[@"manifest"][@"captions"]) [self.captionRows addObject:row.mutableCopy];
             NSDictionary *draft=[self readJSON:[[self evidenceDirectory] URLByAppendingPathComponent:[@"draft-" stringByAppendingString:self.requestID]]];
             if ([draft[@"snapshotSHA"] isEqual:self.requestSHA] && [draft[@"modelID"] isEqual:self.requestModelID] && [draft[@"captions"] isKindOfClass:NSArray.class] && [draft[@"captions"] count]==self.captionRows.count) {
                 // Restore only text and presentation onto fresh, validated timing/payloads.
                 self.tap5aStyle=SubPopNormalizeTap5aStyle(draft[@"tap5aStyle"]);
                 if ([draft[@"titleTemplate"] boolValue] && [self resolveTap5a]) [self.templatePicker selectItemAtIndex:1];
                 for (NSUInteger i=0;i<self.captionRows.count;i++) { id text=draft[@"captions"][i][@"text"];if ([text isKindOfClass:NSString.class] && [text length]>0 && [text length]<=500) self.captionRows[i][@"text"]=text; }
+                if ([draft[@"font"] isKindOfClass:NSString.class] && ![self.fontPicker itemWithTitle:draft[@"font"]]) [self.fontPicker addItemWithTitle:draft[@"font"]];
                 if ([self.fontPicker itemWithTitle:draft[@"font"]]) [self.fontPicker selectItemWithTitle:draft[@"font"]];
+                if ([draft[@"fontSize"] isKindOfClass:NSString.class] && ![self.sizePicker itemWithTitle:draft[@"fontSize"]]) [self.sizePicker addItemWithTitle:draft[@"fontSize"]];
                 if ([self.sizePicker itemWithTitle:draft[@"fontSize"]]) [self.sizePicker selectItemWithTitle:draft[@"fontSize"]];
                 [self rebuildTitles];
             }
