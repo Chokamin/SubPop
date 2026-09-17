@@ -63,12 +63,13 @@ static NSDictionary *SubPopPreviewSource(NSData *data, double seconds) {
     if (self.fullscreenWindow) return;
     NSScreen *screen=self.window.screen ?: NSScreen.mainScreen;
     SubPopPreviewPanel *window=[[SubPopPreviewPanel alloc] initWithContentRect:screen.frame styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];
-    window.appearance=[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];window.becomesKeyOnlyIfNeeded=NO;window.releasedWhenClosed=NO;window.level=NSModalPanelWindowLevel;window.backgroundColor=NSColor.blackColor;window.hidesOnDeactivate=YES;
+    window.appearance=[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];window.becomesKeyOnlyIfNeeded=NO;window.releasedWhenClosed=NO;// The FCP-hosted sheet is in another process; a modal level does not clear it.
+    window.level=NSPopUpMenuWindowLevel+1;window.backgroundColor=NSColor.blackColor;window.hidesOnDeactivate=YES;
     SubPopStylePreview *preview=[[SubPopStylePreview alloc] initWithFrame:NSMakeRect(0,0,screen.frame.size.width,screen.frame.size.height)];
     preview.frameImage=self.frameImage;preview.style=self.style;preview.caption=self.caption;preview.projectWidth=self.projectWidth;preview.placeholder=self.placeholder;preview.showsSafeArea=self.showsSafeArea;preview.fullscreenOwner=self;preview.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
     window.contentView=preview;self.fullscreenWindow=window;
     NSButton *close=[NSButton buttonWithTitle:@"退出全屏" target:self action:@selector(closeFullscreen:)];close.keyEquivalent=@"\033";close.keyEquivalentModifierMask=0;close.bezelStyle=NSBezelStyleRounded;close.bordered=YES;close.frame=NSMakeRect(preview.bounds.size.width-150,preview.bounds.size.height-48,134,30);close.autoresizingMask=NSViewMinXMargin|NSViewMinYMargin;[preview addSubview:close];
-    [window makeKeyAndOrderFront:nil];[window makeFirstResponder:preview];
+    [window makeKeyAndOrderFront:nil];[window orderFrontRegardless];[window makeFirstResponder:preview];
 }
 - (void)closeFullscreen:(id)sender {if (self.fullscreenOwner) {[self.fullscreenOwner closeFullscreen:sender];return;}[self.fullscreenWindow orderOut:nil];[self.fullscreenWindow close];self.fullscreenWindow=nil;[self.window makeKeyAndOrderFront:nil];}
 - (void)cancelOperation:(id)sender {[self closeFullscreen:sender];}

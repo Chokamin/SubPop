@@ -90,7 +90,7 @@ int main(int argc,const char *argv[]) {
         NSButton *safe=[NSButton new];safe.state=NSControlStateValueOn;[c togglePreviewSafe:safe];
         if (!c.tap5aPreview.showsSafeArea || ![c.tap5aPreview.style[@"glowEnabled"] boolValue]) return 30;
         [c fullscreenPreview:nil];
-        if (!c.tap5aPreview.fullscreenWindow.isVisible) return 32;
+        if (!c.tap5aPreview.fullscreenWindow.isVisible || c.tap5aPreview.fullscreenWindow.level<=NSPopUpMenuWindowLevel || ![(NSPanel *)c.tap5aPreview.fullscreenWindow hidesOnDeactivate]) return 32;
         SubPopStylePreview *full=(SubPopStylePreview *)c.tap5aPreview.fullscreenWindow.contentView;
         if (!full.showsSafeArea || ![full.style isEqual:c.tap5aPreview.style]) return 33;
         [full cancelOperation:nil];if (c.tap5aPreview.fullscreenWindow || !window.attachedSheet) return 34;
