@@ -73,6 +73,19 @@ int main(int argc,const char *argv[]) {
         [c fillTap5aStyleControls:@{@"outlineEnabled":@1,@"glowEnabled":@1,@"shadowEnabled":@1,@"roundness":@30,@"top":@25,@"textFont":@"Helvetica",@"textFace":@"Bold",@"textSize":@83,@"kerning":@4,@"lineSpacing":@16}];
         if ([c.tap5aStyleControls[@"roundness"] doubleValue]!=30 || [c.tap5aStyleControls[@"top"] doubleValue]!=25) return 22;
         if (![[c currentTap5aStyleValues][@"textFace"] isEqual:@"Bold"] || [[c currentTap5aStyleValues][@"textSize"] doubleValue]!=83 || [c.tap5aPreview.style[@"kerning"] doubleValue]!=4) return 28;
+        NSTextField *size=c.tap5aStyleControls[@"textSize"];
+        if (size.formatter) return 35;
+        for (NSString *entry in @[@"1",@"12",@"128",@"7",@"7.5",@"350",@"999.5"]) {
+            size.stringValue=entry;[c controlTextDidChange:[NSNotification notificationWithName:NSControlTextDidChangeNotification object:size]];
+            if (![size.stringValue isEqual:entry] || [c.tap5aPreview.style[@"textSize"] doubleValue]!=entry.doubleValue) return 36;
+        }
+        for (NSString *entry in @[@"",@"-",@"oops",@"12oops"]) {
+            size.stringValue=entry;[c controlTextDidChange:[NSNotification notificationWithName:NSControlTextDidChangeNotification object:size]];
+            if (![size.stringValue isEqual:entry] || [c.tap5aPreview.style[@"textSize"] doubleValue]!=999.5) return 37;
+        }
+        size.stringValue=@"1200";[c controlTextDidEndEditing:[NSNotification notificationWithName:NSControlTextDidEndEditingNotification object:size]];
+        if (size.doubleValue!=1000) return 38;
+        size.stringValue=@"83";[c tap5aPreviewChanged:nil];
         NSButton *safe=[NSButton new];safe.state=NSControlStateValueOn;[c togglePreviewSafe:safe];
         if (!c.tap5aPreview.showsSafeArea || ![c.tap5aPreview.style[@"glowEnabled"] boolValue]) return 30;
         [c fullscreenPreview:nil];

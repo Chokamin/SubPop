@@ -20,7 +20,7 @@ static NSArray *SubPopTap5aFields(void) {
     ];
 }
 static NSArray *SubPopTextFields(void) {
-    return @[@[@"textSize",@"字号",@72,@8,@300],@[@"kerning",@"字距（点）",@0,@-20,@100],@[@"lineSpacing",@"额外行间距",@0,@0,@200],@[@"textColor",@"文字颜色",@[@1,@1,@1],@0,@1]];
+    return @[@[@"textSize",@"字号",@72,@1,@1000],@[@"kerning",@"字距（点）",@0,@-20,@100],@[@"lineSpacing",@"额外行间距",@0,@0,@200],@[@"textColor",@"文字颜色",@[@1,@1,@1],@0,@1]];
 }
 static NSArray *SubPopEffectFields(void) {
     return @[

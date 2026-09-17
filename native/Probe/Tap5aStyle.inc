@@ -7,7 +7,12 @@
         if ([control isKindOfClass:NSColorWell.class]) {NSColor *color=[[control color] colorUsingColorSpace:NSColorSpace.sRGBColorSpace];values[key]=@[@(color.redComponent),@(color.greenComponent),@(color.blueComponent)];}
         else if ([control isKindOfClass:NSPopUpButton.class]) values[key]=[key hasPrefix:@"text"] ? [control titleOfSelectedItem] : @([control indexOfSelectedItem]);
         else if ([control isKindOfClass:NSButton.class]) values[key]=@([control state]==NSControlStateValueOn);
-        else values[key]=@([control doubleValue]);
+        else {
+            NSString *text=[[control stringValue] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            NSScanner *scanner=[NSScanner scannerWithString:[text stringByReplacingOccurrencesOfString:@"," withString:@"."]];double number=0;
+            if (text.length && [scanner scanDouble:&number] && scanner.isAtEnd && isfinite(number)) values[key]=@(number);
+            else values[key]=self.tap5aPreview.style[key] ?: SubPopNormalizeTap5aStyle(self.tap5aStyle)[key];
+        }
     }
     return SubPopNormalizeTap5aStyle(values);
 }
@@ -22,6 +27,11 @@
 }
 - (void)controlTextDidChange:(NSNotification *)notification {
     if ([self.tap5aStyleControls.allValues containsObject:notification.object]) [self tap5aPreviewChanged:nil];
+}
+- (void)controlTextDidEndEditing:(NSNotification *)notification {
+    for (NSString *key in self.tap5aStyleControls) if (self.tap5aStyleControls[key]==notification.object) {
+        NSDictionary *values=[self currentTap5aStyleValues];[(NSTextField *)notification.object setDoubleValue:[values[key] doubleValue]];[self tap5aPreviewChanged:nil];break;
+    }
 }
 - (void)loadTap5aPreviewFrame {
     [self.tap5aImageGenerator cancelAllCGImageGeneration];self.tap5aImageGenerator=nil;
@@ -112,7 +122,7 @@
         if ([field[2] isKindOfClass:NSArray.class]) control=[[NSColorWell alloc] initWithFrame:NSMakeRect(x+(effect ? 107 : 150),y,effect ? 55 : 92,24)];
         else if ([key hasSuffix:@"Enabled"] || [key isEqual:@"background"] || [key isEqual:@"border"]) { NSButton *button=[NSButton checkboxWithTitle:@"" target:nil action:nil];button.frame=NSMakeRect(x+(effect ? 107 : 150),y,30,24);control=button; }
         else if ([key isEqual:@"sides"]) { NSPopUpButton *popup=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(x+(effect ? 107 : 150),y,100,24) pullsDown:NO];[popup addItemsWithTitles:@[@"四边",@"上边",@"下边",@"右边",@"左边",@"上下",@"左右"]];control=popup; }
-        else { NSTextField *number=[[NSTextField alloc] initWithFrame:NSMakeRect(x+(effect ? 107 : 150),y,effect ? 55 : 92,24)];NSNumberFormatter *format=[NSNumberFormatter new];format.numberStyle=NSNumberFormatterDecimalStyle;format.minimum=field[3];format.maximum=field[4];format.maximumFractionDigits=1;number.formatter=format;number.delegate=self;control=number; }
+        else { NSTextField *number=[[NSTextField alloc] initWithFrame:NSMakeRect(x+(effect ? 107 : 150),y,effect ? 55 : 92,24)];number.placeholderString=[NSString stringWithFormat:@"%@–%@",field[3],field[4]];number.toolTip=[NSString stringWithFormat:@"范围 %@–%@；支持小数，结束编辑时校验",field[3],field[4]];number.delegate=self;control=number; }
         control.target=self;control.action=@selector(tap5aPreviewChanged:);[control setAccessibilityLabel:field[1]];[container addSubview:control];self.tap5aStyleControls[key]=control;
     }
     NSTextField *effectNote=[NSTextField wrappingLabelWithString:@"外框作用于文字轮廓，与底框边框独立。光晕沿用 Tap5a 的暖黄色；预览为效果示意。"];
