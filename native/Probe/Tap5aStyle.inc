@@ -1,3 +1,5 @@
+- (void)togglePreviewSafe:(NSButton *)sender {self.tap5aPreview.showsSafeArea=sender.state==NSControlStateValueOn;self.tap5aPreview.needsDisplay=YES;}
+- (void)fullscreenPreview:(id)sender {[self.tap5aPreview showFullscreen];}
 - (NSDictionary *)currentTap5aStyleValues {
     NSMutableDictionary *values=[NSMutableDictionary new];
     for (NSString *key in self.tap5aStyleControls) {
@@ -59,7 +61,7 @@
 }
 - (void)fillTap5aStyleControls:(NSDictionary *)style {
     NSDictionary *values=SubPopNormalizeTap5aStyle(style);
-    for (NSArray *field in [SubPopTap5aFields() arrayByAddingObjectsFromArray:SubPopTextFields()]) {
+    for (NSArray *field in [[SubPopTap5aFields() arrayByAddingObjectsFromArray:SubPopTextFields()] arrayByAddingObjectsFromArray:SubPopEffectFields()]) {
         NSString *key=field[0];id control=self.tap5aStyleControls[key], value=values[key];
         if ([control isKindOfClass:NSColorWell.class]) [control setColor:[NSColor colorWithSRGBRed:[value[0] doubleValue] green:[value[1] doubleValue] blue:[value[2] doubleValue] alpha:1]];
         else if ([control isKindOfClass:NSPopUpButton.class]) [control selectItemAtIndex:[value integerValue]];
@@ -89,7 +91,8 @@
     NSTabView *tabs=[[NSTabView alloc] initWithFrame:NSMakeRect(380,0,560,305)];
     NSTabViewItem *textTab=[[NSTabViewItem alloc] initWithIdentifier:@"text"];textTab.label=@"文字";
     NSTabViewItem *boxTab=[[NSTabViewItem alloc] initWithIdentifier:@"box"];boxTab.label=@"底框与留白";
-    [tabs addTabViewItem:textTab];[tabs addTabViewItem:boxTab];[content addSubview:tabs];
+    NSTabViewItem *effectsTab=[[NSTabViewItem alloc] initWithIdentifier:@"effects"];effectsTab.label=@"文字效果";
+    [tabs addTabViewItem:textTab];[tabs addTabViewItem:effectsTab];[tabs addTabViewItem:boxTab];[content addSubview:tabs];
     for (NSUInteger i=0;i<2;i++) {
         NSString *key=i==0 ? @"textFont" : @"textFace";
         NSTextField *label=[self label:i==0 ? @"字体" : @"字形 / 粗细" size:12 weight:NSFontWeightRegular];label.frame=NSMakeRect(12,230-i*36,130,24);[textTab.view addSubview:label];
@@ -97,19 +100,23 @@
         if (i==0) [popup addItemsWithTitles:[NSFontManager.sharedFontManager.availableFontFamilies sortedArrayUsingSelector:@selector(localizedCaseInsensitiveCompare:)]];
         popup.target=self;popup.action=i==0 ? @selector(textFamilyChanged:) : @selector(tap5aPreviewChanged:);[popup setAccessibilityLabel:label.stringValue];[textTab.view addSubview:popup];self.tap5aStyleControls[key]=popup;
     }
-    NSArray *fields=[SubPopTap5aFields() arrayByAddingObjectsFromArray:SubPopTextFields()];
+    NSArray *fields=[[SubPopTap5aFields() arrayByAddingObjectsFromArray:SubPopTextFields()] arrayByAddingObjectsFromArray:SubPopEffectFields()];
     for (NSUInteger i=0;i<fields.count;i++) {
         NSArray *field=fields[i];NSString *key=field[0];BOOL right=i>=9;NSUInteger row=right ? i-9 : i;
         BOOL typography=i>=13;CGFloat x=typography ? 12 : (right ? 290 : 12),y=typography ? 155-(i-13)*34 : 238-row*27;
-        NSView *container=typography ? textTab.view : boxTab.view;
-        NSTextField *label=[self label:field[1] size:12 weight:NSFontWeightRegular];label.frame=NSMakeRect(x,y,145,24);[container addSubview:label];
+        BOOL effect=i>=17;NSUInteger effectIndex=i-17;
+        if (effect) {NSUInteger column=effectIndex<4 ? 0 : (effectIndex<8 ? 1 : 2);NSUInteger effectRow=effectIndex-(column==0 ? 0 : (column==1 ? 4 : 8));x=12+column*178;y=235-effectRow*36;}
+        NSView *container=effect ? effectsTab.view : (typography ? textTab.view : boxTab.view);
+        NSTextField *label=[self label:field[1] size:12 weight:NSFontWeightRegular];label.frame=NSMakeRect(x,y,effect ? 105 : 145,24);[container addSubview:label];
         NSControl *control;
-        if ([field[2] isKindOfClass:NSArray.class]) control=[[NSColorWell alloc] initWithFrame:NSMakeRect(x+150,y,92,24)];
-        else if ([key isEqual:@"background"] || [key isEqual:@"border"]) { NSButton *button=[NSButton checkboxWithTitle:@"" target:nil action:nil];button.frame=NSMakeRect(x+150,y,30,24);control=button; }
-        else if ([key isEqual:@"sides"]) { NSPopUpButton *popup=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(x+150,y,100,24) pullsDown:NO];[popup addItemsWithTitles:@[@"四边",@"上边",@"下边",@"右边",@"左边",@"上下",@"左右"]];control=popup; }
-        else { NSTextField *number=[[NSTextField alloc] initWithFrame:NSMakeRect(x+150,y,92,24)];NSNumberFormatter *format=[NSNumberFormatter new];format.numberStyle=NSNumberFormatterDecimalStyle;format.minimum=field[3];format.maximum=field[4];format.maximumFractionDigits=1;number.formatter=format;number.delegate=self;control=number; }
+        if ([field[2] isKindOfClass:NSArray.class]) control=[[NSColorWell alloc] initWithFrame:NSMakeRect(x+(effect ? 107 : 150),y,effect ? 55 : 92,24)];
+        else if ([key hasSuffix:@"Enabled"] || [key isEqual:@"background"] || [key isEqual:@"border"]) { NSButton *button=[NSButton checkboxWithTitle:@"" target:nil action:nil];button.frame=NSMakeRect(x+(effect ? 107 : 150),y,30,24);control=button; }
+        else if ([key isEqual:@"sides"]) { NSPopUpButton *popup=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(x+(effect ? 107 : 150),y,100,24) pullsDown:NO];[popup addItemsWithTitles:@[@"四边",@"上边",@"下边",@"右边",@"左边",@"上下",@"左右"]];control=popup; }
+        else { NSTextField *number=[[NSTextField alloc] initWithFrame:NSMakeRect(x+(effect ? 107 : 150),y,effect ? 55 : 92,24)];NSNumberFormatter *format=[NSNumberFormatter new];format.numberStyle=NSNumberFormatterDecimalStyle;format.minimum=field[3];format.maximum=field[4];format.maximumFractionDigits=1;number.formatter=format;number.delegate=self;control=number; }
         control.target=self;control.action=@selector(tap5aPreviewChanged:);[control setAccessibilityLabel:field[1]];[container addSubview:control];self.tap5aStyleControls[key]=control;
     }
+    NSTextField *effectNote=[NSTextField wrappingLabelWithString:@"外框作用于文字轮廓，与底框边框独立。光晕沿用 Tap5a 的暖黄色；预览为效果示意。"];
+    effectNote.frame=NSMakeRect(12,6,510,34);effectNote.font=[NSFont systemFontOfSize:11];effectNote.textColor=NSColor.secondaryLabelColor;[effectsTab.view addSubview:effectNote];
     NSTextField *textNote=[NSTextField wrappingLabelWithString:@"行间距仅影响多行字幕；字号、字距与额外行间距以点为单位；FCP 会把字距换算成字号百分比。字形取决于本机已安装的字体。"];
     textNote.frame=NSMakeRect(290,38,230,110);textNote.font=[NSFont systemFontOfSize:11];textNote.textColor=NSColor.secondaryLabelColor;[textTab.view addSubview:textNote];
     NSTextField *note=[NSTextField wrappingLabelWithString:@"留白与圆角使用 Tap5a 参数单位。\n颜色的透明程度由“不透明度”控制。\n保存预设会覆盖“我的预设”，并用于下一次识别。"];
@@ -119,8 +126,10 @@
     NSButton *previous=[NSButton buttonWithTitle:@"上一句" target:self action:@selector(stepTap5aPreview:)];previous.tag=-1;previous.frame=NSMakeRect(0,57,75,28);[content addSubview:previous];
     NSButton *next=[NSButton buttonWithTitle:@"下一句" target:self action:@selector(stepTap5aPreview:)];next.tag=1;next.frame=NSMakeRect(82,57,75,28);[content addSubview:next];
     NSButton *choose=[NSButton buttonWithTitle:@"选择视频截图…" target:self action:@selector(chooseTap5aPreviewImage:)];choose.frame=NSMakeRect(192,57,168,28);[content addSubview:choose];
-    NSTextField *previewNote=[NSTextField wrappingLabelWithString:@"源视频帧 + 样式示意，不含 FCP 特效与调色。\n底框最终效果以 FCP 为准。"];
-    previewNote.frame=NSMakeRect(0,5,360,44);previewNote.font=[NSFont systemFontOfSize:11];previewNote.textColor=NSColor.secondaryLabelColor;[content addSubview:previewNote];
+    NSTextField *previewNote=[NSTextField wrappingLabelWithString:@"源画面示意，不含调色与特效 · 最终效果以 FCP 为准。"];
+    previewNote.frame=NSMakeRect(0,0,360,25);previewNote.font=[NSFont systemFontOfSize:11];previewNote.textColor=NSColor.secondaryLabelColor;[content addSubview:previewNote];
+    NSButton *safe=[NSButton checkboxWithTitle:@"安全框" target:self action:@selector(togglePreviewSafe:)];safe.frame=NSMakeRect(0,28,110,24);[safe setAccessibilityLabel:@"显示或隐藏安全框"];[content addSubview:safe];
+    NSButton *full=[NSButton buttonWithTitle:@"全屏预览" target:self action:@selector(fullscreenPreview:)];full.frame=NSMakeRect(244,26,116,26);[content addSubview:full];
     self.tap5aPreviewIndex=MAX(0,self.captionTable.selectedRow);
     NSMutableDictionary *initial=SubPopNormalizeTap5aStyle(self.tap5aStyle).mutableCopy;
     initial[@"textFont"]=self.fontPicker.titleOfSelectedItem;initial[@"textSize"]=@(self.sizePicker.titleOfSelectedItem.doubleValue);
@@ -135,6 +144,6 @@
                 if (![self.sizePicker itemWithTitle:size]) [self.sizePicker addItemWithTitle:size];[self.sizePicker selectItemWithTitle:size];[self rebuildTitles];}
         }
         for (id control in self.tap5aStyleControls.allValues) if ([control isKindOfClass:NSColorWell.class]) [control deactivate];
-        self.tap5aStyleControls=nil;++self.tap5aPreviewGeneration;[self.tap5aImageGenerator cancelAllCGImageGeneration];self.tap5aImageGenerator=nil;self.tap5aPreview=nil;self.tap5aPreviewLabel=nil;
+        [self.tap5aPreview closeFullscreen:nil];self.tap5aStyleControls=nil;++self.tap5aPreviewGeneration;[self.tap5aImageGenerator cancelAllCGImageGeneration];self.tap5aImageGenerator=nil;self.tap5aPreview=nil;self.tap5aPreviewLabel=nil;
     }];
 }

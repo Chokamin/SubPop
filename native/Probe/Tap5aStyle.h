@@ -22,13 +22,20 @@ static NSArray *SubPopTap5aFields(void) {
 static NSArray *SubPopTextFields(void) {
     return @[@[@"textSize",@"字号",@72,@8,@300],@[@"kerning",@"字距（点）",@0,@-20,@100],@[@"lineSpacing",@"额外行间距",@0,@0,@200],@[@"textColor",@"文字颜色",@[@1,@1,@1],@0,@1]];
 }
+static NSArray *SubPopEffectFields(void) {
+    return @[
+        @[@"outlineEnabled",@"启用文字外框",@0,@0,@1],@[@"outlineColor",@"外框颜色",@[@0,@0,@0],@0,@1],@[@"outlineWidth",@"外框宽度",@2,@0,@20],@[@"outlineOpacity",@"外框不透明度 %",@100,@0,@100],
+        @[@"glowEnabled",@"启用光晕",@0,@0,@1],@[@"glowOpacity",@"光晕不透明度 %",@70,@0,@100],@[@"glowRadius",@"光晕半径",@6,@0,@100],@[@"glowBlur",@"光晕模糊",@8,@0,@100],
+        @[@"shadowEnabled",@"启用投影",@0,@0,@1],@[@"shadowColor",@"投影颜色",@[@0,@0,@0],@0,@1],@[@"shadowOpacity",@"投影不透明度 %",@75,@0,@100],@[@"shadowBlur",@"投影模糊",@4,@0,@100],@[@"shadowDistance",@"投影距离",@5,@0,@100],@[@"shadowAngle",@"投影角度 °",@315,@0,@360]
+    ];
+}
 static NSArray *SubPopFontMembers(NSString *family) {
     return [NSFontManager.sharedFontManager availableMembersOfFontFamily:family] ?: @[];
 }
 static NSDictionary *SubPopNormalizeTap5aStyle(id input) {
     NSDictionary *source=[input isKindOfClass:NSDictionary.class] ? input : @{};
     NSMutableDictionary *result=[NSMutableDictionary new];
-    for (NSArray *field in [SubPopTap5aFields() arrayByAddingObjectsFromArray:SubPopTextFields()]) {
+    for (NSArray *field in [[SubPopTap5aFields() arrayByAddingObjectsFromArray:SubPopTextFields()] arrayByAddingObjectsFromArray:SubPopEffectFields()]) {
         NSString *key=field[0];id value=source[key];
         if ([field[2] isKindOfClass:NSArray.class]) {
             BOOL valid=[value isKindOfClass:NSArray.class] && [value count]==3;
@@ -38,7 +45,7 @@ static NSDictionary *SubPopNormalizeTap5aStyle(id input) {
             double n=[value isKindOfClass:NSNumber.class] ? [value doubleValue] : [field[2] doubleValue];
             if (!isfinite(n)) n=[field[2] doubleValue];
             n=MAX([field[3] doubleValue],MIN([field[4] doubleValue],n));
-            if ([key isEqual:@"sides"] || [key isEqual:@"background"] || [key isEqual:@"border"]) n=round(n);
+            if ([key hasSuffix:@"Enabled"] || [key isEqual:@"sides"] || [key isEqual:@"background"] || [key isEqual:@"border"]) n=round(n);
             result[key]=@(n);
         }
     }
@@ -54,6 +61,13 @@ static NSDictionary *SubPopNormalizeTap5aStyle(id input) {
 static void SubPopApplyTap5aStyle(NSXMLDocument *doc, NSDictionary *input) {
     NSDictionary *style=SubPopNormalizeTap5aStyle(input);
     for (NSXMLElement *title in [doc nodesForXPath:@"/fcpxml/clip/spine/title" error:nil]) {
+        NSDictionary *glow=@{@"":@([style[@"glowEnabled"] boolValue]),@"/43":@([style[@"glowEnabled"] boolValue] ? [style[@"glowOpacity"] doubleValue]/100 : 0),@"/45":style[@"glowRadius"],@"/77":[NSString stringWithFormat:@"%@ %@",style[@"glowBlur"],style[@"glowBlur"]]};
+        for (NSString *suffix in glow) {
+            NSString *key=[@"9999/1825821564/10045/10047/5/10049/38" stringByAppendingString:suffix];
+            for (NSXMLElement *old in [title elementsForName:@"param"]) if ([[old attributeForName:@"key"].stringValue isEqual:key]) [old detach];
+            NSXMLElement *param=[NSXMLElement elementWithName:@"param"];[param addAttribute:[NSXMLNode attributeWithName:@"name" stringValue:@"Glow"]];[param addAttribute:[NSXMLNode attributeWithName:@"key" stringValue:key]];[param addAttribute:[NSXMLNode attributeWithName:@"value" stringValue:[glow[suffix] description]]];[title insertChild:param atIndex:0];
+        }
+
         for (NSArray *field in SubPopTap5aFields()) {
             NSString *key=field[0], *path=field[6];id value=style[key];NSString *encoded;
             if ([value isKindOfClass:NSArray.class]) encoded=[NSString stringWithFormat:@"%.9g %.9g %.9g",[value[0] doubleValue],[value[1] doubleValue],[value[2] doubleValue]];
@@ -81,6 +95,14 @@ static void SubPopApplyTextStyle(NSXMLElement *node,NSDictionary *input) {
     [simple addAttribute:[NSXMLNode attributeWithName:@"name" stringValue:@"MotionSimpleValues"]];[simple addAttribute:[NSXMLNode attributeWithName:@"key" stringValue:@"MotionTextStyle:SimpleValues"]];
     NSXMLElement *tracking=[NSXMLElement elementWithName:@"param"];
     [tracking addAttribute:[NSXMLNode attributeWithName:@"name" stringValue:@"motionTextTracking"]];[tracking addAttribute:[NSXMLNode attributeWithName:@"key" stringValue:@"tracking"]];[tracking addAttribute:[NSXMLNode attributeWithName:@"value" stringValue:[s[@"kerning"] stringValue]]];[simple addChild:tracking];[node addChild:simple];
+    for (NSString *key in @[@"strokeColor",@"strokeWidth",@"shadowColor",@"shadowOffset",@"shadowBlurRadius"]) [node removeAttributeForName:key];
+    NSMutableDictionary *effects=[NSMutableDictionary new];
+    for (NSString *prefix in @[@"outline",@"shadow"]) if ([s[[prefix stringByAppendingString:@"Enabled"]] boolValue]) {
+        NSArray *c=s[[prefix stringByAppendingString:@"Color"]];NSString *color=[NSString stringWithFormat:@"%.9g %.9g %.9g %.9g",[c[0] doubleValue],[c[1] doubleValue],[c[2] doubleValue],[s[[prefix stringByAppendingString:@"Opacity"]] doubleValue]/100];
+        if ([prefix isEqual:@"outline"]) {effects[@"strokeColor"]=color;effects[@"strokeWidth"]=[@(-[s[@"outlineWidth"] doubleValue]) stringValue];}
+        else {effects[@"shadowColor"]=color;effects[@"shadowOffset"]=[NSString stringWithFormat:@"%@ %@",s[@"shadowDistance"],s[@"shadowAngle"]];effects[@"shadowBlurRadius"]=[@([s[@"shadowBlur"] doubleValue]*2) stringValue];}
+    }
+    for (NSString *key in effects) [node addAttribute:[NSXMLNode attributeWithName:key stringValue:effects[key]]];
     [node removeAttributeForName:@"bold"];[node removeAttributeForName:@"italic"];
     for (NSString *key in attrs) {[node removeAttributeForName:key];[node addAttribute:[NSXMLNode attributeWithName:key stringValue:attrs[key]]];}
 }

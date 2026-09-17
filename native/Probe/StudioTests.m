@@ -69,10 +69,18 @@ int main(int argc,const char *argv[]) {
         [c.templatePicker selectItemAtIndex:1];c.resultRequestID=@"style-test";[window orderFront:nil];
         if (argc==4) c.freshDropURL=[NSURL fileURLWithPath:@(argv[3])];
         [c showTap5aStyle:nil];
-        if (c.tap5aStyleControls.count!=19 || !window.attachedSheet) return 21;
-        [c fillTap5aStyleControls:@{@"roundness":@30,@"top":@25,@"textFont":@"Helvetica",@"textFace":@"Bold",@"textSize":@83,@"kerning":@4,@"lineSpacing":@16}];
+        if (c.tap5aStyleControls.count!=33 || !window.attachedSheet) return 21;
+        [c fillTap5aStyleControls:@{@"outlineEnabled":@1,@"glowEnabled":@1,@"shadowEnabled":@1,@"roundness":@30,@"top":@25,@"textFont":@"Helvetica",@"textFace":@"Bold",@"textSize":@83,@"kerning":@4,@"lineSpacing":@16}];
         if ([c.tap5aStyleControls[@"roundness"] doubleValue]!=30 || [c.tap5aStyleControls[@"top"] doubleValue]!=25) return 22;
         if (![[c currentTap5aStyleValues][@"textFace"] isEqual:@"Bold"] || [[c currentTap5aStyleValues][@"textSize"] doubleValue]!=83 || [c.tap5aPreview.style[@"kerning"] doubleValue]!=4) return 28;
+        NSButton *safe=[NSButton new];safe.state=NSControlStateValueOn;[c togglePreviewSafe:safe];
+        if (!c.tap5aPreview.showsSafeArea || ![c.tap5aPreview.style[@"glowEnabled"] boolValue]) return 30;
+        [c fullscreenPreview:nil];
+        if (!c.tap5aPreview.fullscreenWindow.isVisible) return 32;
+        SubPopStylePreview *full=(SubPopStylePreview *)c.tap5aPreview.fullscreenWindow.contentView;
+        if (!full.showsSafeArea || ![full.style isEqual:c.tap5aPreview.style]) return 33;
+        [full cancelOperation:nil];if (c.tap5aPreview.fullscreenWindow || !window.attachedSheet) return 34;
+        safe.state=NSControlStateValueOff;[c togglePreviewSafe:safe];if (c.tap5aPreview.showsSafeArea) return 31;
         if (argc==4) {
             NSDate *deadline=[NSDate dateWithTimeIntervalSinceNow:15];
             while (!c.tap5aPreview.frameImage && c.tap5aImageGenerator && [deadline timeIntervalSinceNow]>0) [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.05]];
