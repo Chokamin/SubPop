@@ -10,6 +10,7 @@
 #import "TitleDragProvider.h"
 #import "TitleTemplates.h"
 #import "Tap5aStyle.h"
+#import "ScrubbableNumberField.h"
 #import "Tap5aPreview.h"
 #import "TitleImport.h"
 

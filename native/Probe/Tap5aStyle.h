@@ -1,5 +1,6 @@
 #import <Cocoa/Cocoa.h>
 #import <math.h>
+#import <CoreText/CoreText.h>
 
 // Values are expressed in the same units shown by the Tap5a inspector.
 static NSArray *SubPopTap5aFields(void) {
@@ -31,6 +32,30 @@ static NSArray *SubPopEffectFields(void) {
 }
 static NSArray *SubPopFontMembers(NSString *family) {
     return [NSFontManager.sharedFontManager availableMembersOfFontFamily:family] ?: @[];
+}
+// Use the font's own Chinese family metadata for display; never change its identity.
+static NSString *SubPopFontDisplayName(NSString *family) {
+    NSString *localized=[NSFontManager.sharedFontManager localizedNameForFamily:family face:nil];
+    NSString *postscript=[SubPopFontMembers(family).firstObject firstObject];
+    if (!postscript) return localized ?: family;
+    CTFontRef font=CTFontCreateWithName((__bridge CFStringRef)postscript,12,NULL);
+    NSData *table=CFBridgingRelease(CTFontCopyTable(font,kCTFontTableName,kCTFontTableOptionNoOptions));CFRelease(font);
+    const unsigned char *bytes=table.bytes;NSUInteger length=table.length;
+    if(length<6) return localized ?: family;
+    NSUInteger count=(bytes[2]<<8)|bytes[3],base=(bytes[4]<<8)|bytes[5];NSInteger best=-1;NSString *name=nil;
+    for(NSUInteger i=0;i<count && 6+(i+1)*12<=length;i++) {
+        const unsigned char *r=bytes+6+i*12;
+        NSUInteger platform=(r[0]<<8)|r[1],encoding=(r[2]<<8)|r[3],language=(r[4]<<8)|r[5],kind=(r[6]<<8)|r[7],size=(r[8]<<8)|r[9],offset=(r[10]<<8)|r[11];
+        if(platform!=3 || (encoding!=1 && encoding!=10) || (language&0x3ff)!=4 || (kind!=1 && kind!=16) || base+offset+size>length) continue;
+        NSInteger score=(language==0x804 ? 10 : 0)+(kind==16 ? 2 : 0);
+        NSString *value=[[NSString alloc] initWithBytes:bytes+base+offset length:size encoding:NSUTF16BigEndianStringEncoding];
+        if(value.length && score>best) {best=score;name=value;}
+    }
+    return name ?: localized ?: family;
+}
+static NSString *SubPopSelectedFontFamily(NSPopUpButton *popup) {return popup.selectedItem.representedObject ?: popup.titleOfSelectedItem;}
+static void SubPopSelectFontFamily(NSPopUpButton *popup,NSString *family) {
+    for(NSMenuItem *item in popup.itemArray) if([item.representedObject isEqual:family]) {[popup selectItem:item];return;}
 }
 static NSDictionary *SubPopNormalizeTap5aStyle(id input) {
     NSDictionary *source=[input isKindOfClass:NSDictionary.class] ? input : @{};

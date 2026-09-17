@@ -70,6 +70,26 @@ int main(int argc,const char *argv[]) {
         if (argc==4) c.freshDropURL=[NSURL fileURLWithPath:@(argv[3])];
         [c showTap5aStyle:nil];
         if (c.tap5aStyleControls.count!=35 || !window.attachedSheet) return 21;
+        if(c.tap5aPreview.bounds.size.width<360 || c.tap5aPreview.bounds.size.width>640 || fabs(c.tap5aPreview.bounds.size.height/c.tap5aPreview.bounds.size.width-9.0/16)>.001) return 44;
+        SubPopNumberField *scrub=c.tap5aStyleControls[@"positionX"];
+        scrub.doubleValue=0;
+        NSEvent *(^mouse)(NSEventType,CGFloat,NSEventModifierFlags)=^NSEvent *(NSEventType type,CGFloat x,NSEventModifierFlags flags){return [NSEvent mouseEventWithType:type location:NSMakePoint(x,0) modifierFlags:flags timestamp:0 windowNumber:window.windowNumber context:nil eventNumber:0 clickCount:1 pressure:1];};
+        [scrub mouseDown:mouse(NSEventTypeLeftMouseDown,100,0)];[scrub mouseDragged:mouse(NSEventTypeLeftMouseDragged,80,0)];
+        if(scrub.doubleValue!=-20 || [c.tap5aPreview.style[@"positionX"] doubleValue]!=-20) return 45;
+        [scrub mouseUp:mouse(NSEventTypeLeftMouseUp,80,0)];
+        [scrub mouseDown:mouse(NSEventTypeLeftMouseDown,100,0)];[scrub mouseDragged:mouse(NSEventTypeLeftMouseDragged,115,NSEventModifierFlagShift)];
+        if(scrub.doubleValue!=-18.5) return 46;
+        [scrub mouseDragged:mouse(NSEventTypeLeftMouseDragged,200000,0)];if(scrub.doubleValue!=10000) return 47;
+        [scrub mouseUp:mouse(NSEventTypeLeftMouseUp,200000,0)];
+        NSPopUpButton *families=c.tap5aStyleControls[@"textFont"];
+        if((NSUInteger)families.numberOfItems!=NSFontManager.sharedFontManager.availableFontFamilies.count) return 40;
+        for(NSString *family in @[@"PingFang SC",@"Alibaba PuHuiTi 3.0",@"Alimama ShuHeiTi"]) if(SubPopFontMembers(family).count) {
+            [c fillTap5aStyleControls:@{@"textFont":family}];
+            if(![SubPopSelectedFontFamily(families) isEqual:family] || ![[c currentTap5aStyleValues][@"textFont"] isEqual:family]) return 41;
+            if([family isEqual:@"PingFang SC"] && [families.titleOfSelectedItem isEqual:family]) return 42;
+            NSXMLElement *node=[NSXMLElement elementWithName:@"text-style"];SubPopApplyTextStyle(node,[c currentTap5aStyleValues]);
+            if(![[node attributeForName:@"font"].stringValue isEqual:family]) return 43;
+        }
         [c fillTap5aStyleControls:@{@"outlineEnabled":@1,@"glowEnabled":@1,@"shadowEnabled":@1,@"positionX":@120,@"positionY":@-80,@"roundness":@30,@"top":@25,@"textFont":@"Helvetica",@"textFace":@"Bold",@"textSize":@83,@"kerning":@4,@"lineSpacing":@16}];
         if ([c.tap5aStyleControls[@"roundness"] doubleValue]!=30 || [c.tap5aStyleControls[@"top"] doubleValue]!=25) return 22;
         if (![[c currentTap5aStyleValues][@"textFace"] isEqual:@"Bold"] || [[c currentTap5aStyleValues][@"textSize"] doubleValue]!=83 || [c.tap5aPreview.style[@"kerning"] doubleValue]!=4) return 28;
