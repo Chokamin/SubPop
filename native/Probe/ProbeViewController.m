@@ -9,6 +9,8 @@
 #import "Updates.h"
 #import "TitleDragProvider.h"
 #import "TitleTemplates.h"
+#import "Tap5aStyle.h"
+#import "Tap5aPreview.h"
 #import "TitleImport.h"
 
 static NSDictionary *Time(CMTime t) {
@@ -30,7 +32,7 @@ static NSDictionary *Time(CMTime t) {
 @property BOOL hovered;
 @property (weak) SubPopProbeViewController *controller;
 @end
-@interface SubPopProbeViewController : NSViewController <FCPXTimelineObserver, NSDraggingSource, NSTableViewDataSource, NSTableViewDelegate>
+@interface SubPopProbeViewController : NSViewController <FCPXTimelineObserver, NSDraggingSource, NSTableViewDataSource, NSTableViewDelegate, NSTextFieldDelegate>
 @property id<FCPXHost> host;
 @property FCPXTimeline *timeline;
 @property NSTextView *output;
@@ -77,6 +79,14 @@ static NSDictionary *Time(CMTime t) {
 @property NSPopUpButton *modelPicker;
 @property NSPopUpButton *audioPicker;
 @property NSPopUpButton *templatePicker;
+@property NSDictionary *tap5aStyle;
+@property SubPopStylePreview *tap5aPreview;
+@property NSTextField *tap5aPreviewLabel;
+@property NSInteger tap5aPreviewIndex;
+@property NSUInteger tap5aPreviewGeneration;
+@property AVAssetImageGenerator *tap5aImageGenerator;
+@property NSMutableDictionary *tap5aStyleControls;
+@property NSButton *tap5aStyleButton;
 @property NSStackView *templateControls;
 @property NSURL *tap5aURL;
 @property BOOL tap5aScoped;
@@ -204,6 +214,7 @@ static NSDictionary *Time(CMTime t) {
     label.font=[NSFont systemFontOfSize:size weight:weight]; return label;
 }
 #include "StudioLayout.inc"
+#include "Tap5aStyle.inc"
 - (void)restoreSession {
     if (self.restoringSession || self.requestID || self.titlePayloads || !self.bridgeURL || !self.timeline || ![self workerAvailable]) return;
     NSDictionary *saved=[NSUserDefaults.standardUserDefaults dictionaryForKey:@"pendingSession"];
@@ -220,7 +231,7 @@ static NSDictionary *Time(CMTime t) {
 }
 - (void)saveDraft {
     if (!self.resultRequestID || !self.titlePayloads || !self.captionRows) return;
-    NSDictionary *draft=@{@"requestID":self.resultRequestID,@"snapshotSHA":self.requestSHA ?: @"",@"modelID":self.requestModelID ?: @"",@"captions":self.captionRows,@"font":self.fontPicker.titleOfSelectedItem,@"fontSize":self.sizePicker.titleOfSelectedItem,@"titleTemplate":@(self.templatePicker.indexOfSelectedItem==1)};
+    NSDictionary *draft=@{@"requestID":self.resultRequestID,@"snapshotSHA":self.requestSHA ?: @"",@"modelID":self.requestModelID ?: @"",@"captions":self.captionRows,@"font":self.fontPicker.titleOfSelectedItem,@"fontSize":self.sizePicker.titleOfSelectedItem,@"tap5aStyle":SubPopNormalizeTap5aStyle(self.tap5aStyle),@"titleTemplate":@(self.templatePicker.indexOfSelectedItem==1)};
     NSData *data=[NSJSONSerialization dataWithJSONObject:draft options:0 error:nil];[data writeToURL:[[self evidenceDirectory] URLByAppendingPathComponent:[@"draft-" stringByAppendingString:self.resultRequestID]] atomically:YES];
 }
 - (NSDictionary *)selectedModel {
@@ -299,6 +310,7 @@ static NSDictionary *Time(CMTime t) {
         NSXMLDocument *doc=[[NSXMLDocument alloc] initWithData:self.titlePayloads[version] options:NSXMLNodeLoadExternalEntitiesNever error:nil];
         if (!doc) return;
         SubPopSetTitleTemplate(doc,self.templatePicker.indexOfSelectedItem==1 ? self.tap5aURL : nil);
+        if ([self usesFileImport]) SubPopApplyTap5aStyle(doc,self.tap5aStyle);
         NSArray *titles=[doc nodesForXPath:@"/fcpxml/clip/spine/title" error:nil];
         if (titles.count!=self.captionRows.count) return;
         for (NSUInteger i=0;i<titles.count;i++) {
@@ -391,6 +403,7 @@ static NSDictionary *Time(CMTime t) {
         self.statusTitle.stringValue=self.importInProgress ? @"正在发送导入请求" : (self.importMessage.length ? @"Tap5a 字幕导入" : @"底框字幕已准备好");
         self.statusDetail.stringValue=self.importMessage ?: @"点击上方按钮导入 FCP，在“SubPop 字幕”事件中找到片段，再拖到原项目起点上方。落轨后可将片段项分开。";
     }
+    self.tap5aStyleButton.hidden=![self usesFileImport];self.tap5aStyleButton.enabled=!self.importInProgress;
     self.resultView.enabled=ready && !self.importInProgress;
     self.resultView.toolTip=fileImport ? @"点击导入到 FCP 浏览器。若出现资源库选择，请选择原项目所在资源库；在“SubPop 字幕”事件中将片段拖到原项目起点上方。再次点击会重新导入。" : @"按住卡片拖到原项目时间线起点上方，落轨后将片段项分开。";
     [self.resultView setAccessibilityRole:fileImport ? NSAccessibilityButtonRole : NSAccessibilityGroupRole];
@@ -521,10 +534,11 @@ static NSDictionary *Time(CMTime t) {
             if (![[self sha256:data] isEqual:response[@"outputs"][name]]) { valid=NO; break; }
             payloads[version]=data;
         }
-        if (valid && payloads.count==3) { self.titlePayloads=payloads; self.resultDate=NSDate.date;self.resultManifest=response[@"manifest"];[self.sizePicker selectItemWithTitle:@"72"];[self.templatePicker selectItemAtIndex:0];self.resultRequestID=self.requestID;self.captionRows=[NSMutableArray new];for (NSDictionary *row in response[@"manifest"][@"captions"]) [self.captionRows addObject:row.mutableCopy];
+        if (valid && payloads.count==3) { self.titlePayloads=payloads; self.resultDate=NSDate.date;self.resultManifest=response[@"manifest"];self.tap5aStyle=SubPopNormalizeTap5aStyle([NSUserDefaults.standardUserDefaults dictionaryForKey:@"tap5aStylePreset"]);[self.sizePicker selectItemWithTitle:@"72"];[self.templatePicker selectItemAtIndex:0];self.resultRequestID=self.requestID;self.captionRows=[NSMutableArray new];for (NSDictionary *row in response[@"manifest"][@"captions"]) [self.captionRows addObject:row.mutableCopy];
             NSDictionary *draft=[self readJSON:[[self evidenceDirectory] URLByAppendingPathComponent:[@"draft-" stringByAppendingString:self.requestID]]];
             if ([draft[@"snapshotSHA"] isEqual:self.requestSHA] && [draft[@"modelID"] isEqual:self.requestModelID] && [draft[@"captions"] isKindOfClass:NSArray.class] && [draft[@"captions"] count]==self.captionRows.count) {
                 // Restore only text and presentation onto fresh, validated timing/payloads.
+                self.tap5aStyle=SubPopNormalizeTap5aStyle(draft[@"tap5aStyle"]);
                 if ([draft[@"titleTemplate"] boolValue] && [self resolveTap5a]) [self.templatePicker selectItemAtIndex:1];
                 for (NSUInteger i=0;i<self.captionRows.count;i++) { id text=draft[@"captions"][i][@"text"];if ([text isKindOfClass:NSString.class] && [text length]>0 && [text length]<=500) self.captionRows[i][@"text"]=text; }
                 if ([self.fontPicker itemWithTitle:draft[@"font"]]) [self.fontPicker selectItemWithTitle:draft[@"font"]];

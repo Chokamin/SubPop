@@ -19,7 +19,12 @@ int main(int argc,const char *argv[]) {
         if (![SubPopReleaseUpdate(release,@"0.1.0.28",@"owner/repo")[@"newer"] boolValue]) return 10;
         if ([SubPopReleaseUpdate(release,@"0.1.0.31",@"owner/repo")[@"newer"] boolValue]) return 11;
         if (SubPopReleaseUpdate(@{@"tag_name":@"v0.1.0-beta"},@"0.1.0.28",@"owner/repo")) return 12;
-        if (argc!=3) return 1;[NSApplication sharedApplication];
+        NSString *sourceXML=@"<fcpxml><resources><asset id='r2' hasVideo='1' start='100s'><media-rep kind='original-media' src='file:///tmp/video.mp4'/></asset></resources><project><sequence tcStart='3600s'><spine><asset-clip ref='r2' offset='3600s' start='105s' duration='3s'/><gap offset='3603s' duration='2s'/><asset-clip ref='r2' offset='3605s' start='120s' duration='3s'/></spine></sequence></project></fcpxml>";
+        NSData *sourceData=[sourceXML dataUsingEncoding:NSUTF8StringEncoding];
+        if ([SubPopPreviewSource(sourceData,1)[@"seconds"] doubleValue]!=6 || [SubPopPreviewSource(sourceData,6)[@"seconds"] doubleValue]!=21 || SubPopPreviewSource(sourceData,4) || SubPopPreviewSource(nil,1)) return 23;
+        NSString *retimed=[sourceXML stringByReplacingOccurrencesOfString:@"duration='3s'/>" withString:@"duration='3s'><timeMap/></asset-clip>"];
+        if (SubPopPreviewSource([retimed dataUsingEncoding:NSUTF8StringEncoding],1)) return 24;
+        if (argc!=3 && argc!=4) return 1;[NSApplication sharedApplication];
         SubPopPreviewController *c=[SubPopPreviewController new];
         c.previewCatalog=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:@(argv[1])] options:0 error:nil];
         [c loadView];NSWindow *window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,660,740) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];window.contentView=c.view;
@@ -61,6 +66,28 @@ int main(int argc,const char *argv[]) {
             c.requestID=nil;c.displayState=@"ready";[c updateInterface];
             if ([c.signal.bars[0] animationForKey:@"working"]) return 6;
         }
+        [c.templatePicker selectItemAtIndex:1];c.resultRequestID=@"style-test";[window orderFront:nil];
+        if (argc==4) c.freshDropURL=[NSURL fileURLWithPath:@(argv[3])];
+        [c showTap5aStyle:nil];
+        if (c.tap5aStyleControls.count!=13 || !window.attachedSheet) return 21;
+        [c fillTap5aStyleControls:@{@"roundness":@30,@"top":@25}];
+        if ([c.tap5aStyleControls[@"roundness"] doubleValue]!=30 || [c.tap5aStyleControls[@"top"] doubleValue]!=25) return 22;
+        if (argc==4) {
+            NSDate *deadline=[NSDate dateWithTimeIntervalSinceNow:15];
+            while (!c.tap5aPreview.frameImage && c.tap5aImageGenerator && [deadline timeIntervalSinceNow]>0) [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.05]];
+            if (!c.tap5aPreview.frameImage) return 25;
+            puts("Real source video preview frame decoded successfully.");
+        }
+        NSWindow *sheet=window.attachedSheet;[sheet.contentView layoutSubtreeIfNeeded];
+        NSBitmapImageRep *sheetImage=[sheet.contentView bitmapImageRepForCachingDisplayInRect:sheet.contentView.bounds];[sheet.contentView cacheDisplayInRect:sheet.contentView.bounds toBitmapImageRep:sheetImage];
+        [[sheetImage representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:@"/tmp/subpop-style37.png" atomically:YES];
+        [window endSheet:sheet returnCode:NSAlertThirdButtonReturn];
+        [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.1]];
+        if ([c.tap5aStyle[@"roundness"] doubleValue]!=30 || [[NSUserDefaults.standardUserDefaults dictionaryForKey:@"tap5aStylePreset"][@"top"] doubleValue]!=25 || c.tap5aPreview) return 26;
+        [c showTap5aStyle:nil];[c fillTap5aStyleControls:@{@"roundness":@80}];[window endSheet:window.attachedSheet returnCode:NSAlertSecondButtonReturn];
+        [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.1]];
+        if ([c.tap5aStyle[@"roundness"] doubleValue]!=30) return 27;
+        [NSUserDefaults.standardUserDefaults removeObjectForKey:@"tap5aStylePreset"];
         puts("Studio layout: 580/800/1100 widths, 616-row editor, progress, cancellation and waveform start/stop passed.");return 0;
     }
 }
