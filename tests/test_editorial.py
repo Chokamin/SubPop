@@ -1,5 +1,7 @@
 import importlib.util
 import unittest
+import json
+from pathlib import Path
 from fractions import Fraction
 from probes.text_units import clean_generated_text, display_length
 from probes.editorial import optimized_captions
@@ -49,3 +51,34 @@ class EditorialTests(unittest.TestCase):
     def test_invalid_alignment_is_not_silently_cleaned(self):
         data={'snapshot':{'duration':'5','relative_start':'0','project':'P'},'results':[{'text':'不相符。','words':[{'text':'错字','start':0,'end':1}]}]}
         with self.assertRaises(ValueError):optimized_captions(data,30)
+
+    def test_short_video_semantic_regressions_at_measured_frames(self):
+        data=json.loads((Path(__file__).parent/'fixtures/editorial-short-video.json').read_text())
+        for fps in (30,Fraction(30000,1001)):
+            rows=optimized_captions(data,fps)
+            self.assertEqual([r['text'] for r in rows],[
+                '今年iPhone十八Pro系列在影像上的提升','其实有很多',
+                '但不知道为什么','发布会上只讲了一点点',
+                '那这支视频我将结合','最近这段时间的使用体验和研究成果'])
+            self.assertEqual(rows[1]['start_frame'],round(Fraction('2.32')*fps))
+            self.assertEqual(rows[3]['start_frame'],round(Fraction('4.16')*fps))
+            self.assertTrue(all(a['end_frame']<=b['start_frame'] for a,b in zip(rows,rows[1:])))
+
+    def test_short_questions_stay_intact_and_long_silence_wins(self):
+        text='你知道为什么吗'
+        words=[Word(c,i*.2,(i+1)*.2) for i,c in enumerate(text)]
+        self.assertEqual([r.text for r in make_captions(words)],[text])
+        words=[Word('使用体验',0,1),Word('和',2,2.2),Word('研究成果',2.2,3)]
+        self.assertEqual([r.text for r in make_captions(words)],['使用体验','和研究成果'])
+
+    def test_other_lead_ins_and_parallel_terms(self):
+        text='我们测量了它的续航能力不过结果还不错'
+        words=[Word(c,i*.15,(i+1)*.15) for i,c in enumerate(text)]
+        rows=make_captions(words,max_chars=14)
+        self.assertFalse(any(r.text.endswith('不过') for r in rows))
+        self.assertTrue(any(r.text.startswith('不过') for r in rows))
+        text='接下来我们一起看看拍摄效果和使用感受'
+        words=[Word(c,i*.15,(i+1)*.15) for i,c in enumerate(text)]
+        rows=make_captions(words,max_chars=14)
+        self.assertEqual(''.join(r.text for r in rows),text)
+        self.assertFalse(any(r.text.startswith('和') for r in rows))

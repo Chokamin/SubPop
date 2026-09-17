@@ -5,6 +5,7 @@ import math
 import re
 from dataclasses import asdict, dataclass
 from .text_units import protected_ranges, display_length
+from .semantic_breaks import coordinated_ranges, phrase_partition
 
 
 @dataclass(frozen=True)
@@ -168,7 +169,7 @@ def lexical_words(words, gap, protected_terms=()):
         boundaries = {end for _, _, end in jieba.tokenize(text, HMM=False)}
     else:
         boundaries = set(ends)
-    for left, right in protected_ranges(text, protected_terms):
+    for left, right in protected_ranges(text, protected_terms) + coordinated_ranges(text):
         boundaries.difference_update(range(left+1, right))
     result, pending = [], []
     for i, word in enumerate(words):
@@ -183,12 +184,7 @@ def lexical_words(words, gap, protected_terms=()):
 def make_captions(words, max_chars=20, max_duration=5.0, gap=0.5, protected_terms=()):
     if not 6 <= max_chars <= 60:
         raise ValueError("每条字数需在 6–60 之间。")
-    captions, pending = [], []
-
-    def flush():
-        if pending:
-            captions.append(Caption(pending[0].start, pending[-1].end, join_words(pending)))
-            pending.clear()
+    captions = []
 
     last_end = 0.0
     normalized = []
@@ -200,58 +196,17 @@ def make_captions(words, max_chars=20, max_duration=5.0, gap=0.5, protected_term
         normalized.append(Word(word.text, start, end))
         last_end = end
     measured = lexical_words(normalized, gap, protected_terms)
-    last_end = 0.0
-    for index, word in enumerate(measured):
-        if not word.text.strip():
-            continue
-        if not all(math.isfinite(t) for t in (word.start, word.end)) or word.start < 0 or word.end <= word.start:
-            raise ValueError("识别模型返回了无效时间戳，请重试。")
-        # Small aligner overlaps are trimmed; never fabricate proportional timings.
-        start = max(last_end, round(word.start, 3))
-        end = round(word.end, 3)
-        if end <= start:
-            raise ValueError("识别时间戳发生倒序，无法可靠生成字幕。")
-        word = Word(word.text, start, end)
-        if pending and start - pending[-1].end >= gap:
-            flush()
-        elif (pending and start - pending[-1].end >= min(gap, .25)
-              and sum(c.isalnum() for c in join_words(pending)) >= 6
-              and pending[-1].end - pending[0].start >= 1.0):
-            # A measured breath can end a readable phrase even without commas.
-            flush()
-        if pending and (display_length(join_words(pending + [word])) > max_chars or end - pending[0].start > max_duration):
-            boundary = next((n+1 for n in range(len(pending)-1, -1, -1)
-                             if punctuation_boundary(pending[n].text,
-                                 pending[n+1].text if n+1 < len(pending) else word.text)), None)
-            if boundary is None:
-                # Near the limit, prefer a real pause with useful text on both
-                # sides. Do not manufacture semantic or proportional timings.
-                candidates = [n for n in range(1, len(pending))
-                              if pending[n].start - pending[n-1].end >= .12
-                              and sum(c.isalnum() for c in join_words(pending[:n])) >= 3
-                              and sum(c.isalnum() for c in join_words(pending[n:] + [word])) >= 3]
-                boundary = max(candidates, key=lambda n: pending[n].start-pending[n-1].end,
-                               default=None)
-            if boundary:
-                rest = pending[boundary:]
-                del pending[boundary:]
-                flush()
-                pending.extend(rest)
-            if pending and (display_length(join_words(pending + [word])) > max_chars or end - pending[0].start > max_duration):
-                flush()
-        pending.append(word)
-        last_end = end
-        boundary = punctuation_boundary(word.text, measured[index+1].text if index+1 < len(measured) else '')
-        if boundary == 'hard':
-            flush()
-        elif boundary == 'soft':
-            text = join_words(pending)
-            # Short introductory words can stay with the following clause. Longer
-            # spoken clauses break at the comma instead of accumulating commas.
-            length = sum(c.isalnum() for c in text)
-            if length >= 4 or pending[-1].end - pending[0].start >= 1.0:
-                flush()
-    flush()
+    block=[]
+    def flush_block():
+        for chunk in phrase_partition(block,max_chars,max_duration,punctuation_boundary):
+            captions.append(Caption(chunk[0].start,chunk[-1].end,join_words(chunk)))
+        block.clear()
+    for index,word in enumerate(measured):
+        if block and word.start-block[-1].end>=gap:flush_block()
+        block.append(word)
+        boundary=punctuation_boundary(word.text,measured[index+1].text if index+1<len(measured) else '')
+        if boundary=='hard' or (boundary=='soft' and sum(c.isalnum() for c in join_words(block))>=4):flush_block()
+    flush_block()
     return validate_captions([asdict(c) for c in captions]) if captions else []
 
 

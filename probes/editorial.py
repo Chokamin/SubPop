@@ -4,7 +4,7 @@ from .caption_fixture import spoken, quantize, captions
 from .editorial_rules import Word, make_captions, bridge_brief_gaps
 from .text_units import clean_generated_text
 
-RULES_VERSION='channel-study-v1'
+RULES_VERSION='semantic-phrases-v2'
 
 
 def measured_words(data):
