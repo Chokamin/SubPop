@@ -2,6 +2,7 @@
 #import "ProbeViewController.m"
 @interface SubPopPreviewController : SubPopProbeViewController
 @property NSDictionary *previewCatalog;
+@property NSUInteger importInvocationCount;
 @end
 @implementation SubPopPreviewController
 - (NSDictionary *)readJSON:(NSURL *)url { return url ? [super readJSON:url] : self.previewCatalog; }
@@ -10,6 +11,7 @@
 - (BOOL)isolatedProjectActive { return YES; }
 - (BOOL)canDragResult { return self.titlePayloads.count>0; }
 - (void)restoreSession {}
+- (void)importTitlesToFCP:(id)sender { self.importInvocationCount++; }
 @end
 int main(int argc,const char *argv[]) {
     @autoreleasepool {
@@ -36,6 +38,23 @@ int main(int argc,const char *argv[]) {
             if (NSMinY(result)<0 || NSMaxY(result)>c.view.bounds.size.height) return 7;
             [c toggleReview:nil];if (c.captionScroll.hidden || c.editorControls.hidden) return 8;
             [c toggleReview:nil];if (!c.captionScroll.hidden || !c.editorControls.hidden) return 9;
+            [c.templatePicker selectItemAtIndex:1];[c updateInterface];
+            if (![c usesFileImport] || ![c.resultView.accessibilityRole isEqual:NSAccessibilityButtonRole] || ![c.resultView.accessibilityLabel isEqual:@"导入字幕到 Final Cut Pro"] || !c.resultView.enabled) return 13;
+            c.importInvocationCount=0;
+            if (![c.resultView accessibilityPerformPress] || c.importInvocationCount!=1) return 17;
+            [c.resultView performClick:nil];if (c.importInvocationCount!=2) return 18;
+            NSEvent *click=[NSEvent mouseEventWithType:NSEventTypeLeftMouseDown location:NSZeroPoint modifierFlags:0 timestamp:0 windowNumber:window.windowNumber context:nil eventNumber:0 clickCount:1 pressure:1];
+            [c.resultView mouseDown:click];if (c.importInvocationCount!=3) return 19;
+            c.importInProgress=YES;[c updateInterface];if (c.resultView.enabled || [c.resultView accessibilityPerformPress]) return 14;
+            c.importInProgress=NO;c.importMessage=@"已发送导入请求";[c updateInterface];
+            if (![c.statusDetail.stringValue isEqual:c.importMessage]) return 15;
+            if (width.intValue==580) {
+                NSBitmapImageRep *image=[c.view bitmapImageRepForCachingDisplayInRect:c.view.bounds];[c.view cacheDisplayInRect:c.view.bounds toBitmapImageRep:image];
+                [[image representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:@"/tmp/subpop-tap5a-import-preview.png" atomically:YES];
+            }
+            [c.templatePicker selectItemAtIndex:0];[c updateInterface];
+            if ([c usesFileImport] || ![c.resultView.accessibilityLabel isEqual:@"拖回字幕到 Final Cut Pro"]) return 16;
+            if ([c.resultView accessibilityPerformPress] || c.importInvocationCount!=3) return 20;
             c.requestID=@"preview";c.displayState=@"recognize";c.jobProgress=@.42;[c updateInterface];
             if (c.jobBar.hidden || fabs(c.jobBar.doubleValue-.42)>.001 || c.cancelButton.hidden || c.generateButton.enabled) return 4;
             if (!NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion && ![c.signal.bars[0] animationForKey:@"working"]) return 5;

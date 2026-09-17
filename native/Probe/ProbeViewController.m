@@ -9,6 +9,7 @@
 #import "Updates.h"
 #import "TitleDragProvider.h"
 #import "TitleTemplates.h"
+#import "TitleImport.h"
 
 static NSDictionary *Time(CMTime t) {
     return @{ @"value": @(t.value), @"timescale": @(t.timescale), @"flags": @(t.flags), @"epoch": @(t.epoch) };
@@ -23,7 +24,7 @@ static NSDictionary *Time(CMTime t) {
 @property (weak) SubPopProbeViewController *controller;
 @property BOOL dragHover;
 @end
-@interface SubPopTitleDragView : NSView
+@interface SubPopTitleDragView : NSButton
 @property NSImage *hostIcon;
 @property NSTrackingArea *hoverArea;
 @property BOOL hovered;
@@ -79,6 +80,9 @@ static NSDictionary *Time(CMTime t) {
 @property NSStackView *templateControls;
 @property NSURL *tap5aURL;
 @property BOOL tap5aScoped;
+@property BOOL importInProgress;
+@property NSDate *lastImportAttempt;
+@property NSString *importMessage;
 @property NSPopUpButton *fontPicker;
 @property NSPopUpButton *sizePicker;
 @property NSTextField *modelDetail;
@@ -112,6 +116,8 @@ static NSDictionary *Time(CMTime t) {
 - (BOOL)canDragResult;
 - (BOOL)receivePasteboard:(NSPasteboard *)pasteboard;
 - (void)beginTitleDrag:(NSEvent *)event fromView:(NSView *)view;
+- (BOOL)usesFileImport;
+- (void)importTitlesToFCP:(id)sender;
 @end
 @implementation SubPopDropView
 - (void)drawRect:(NSRect)rect {
@@ -132,8 +138,10 @@ static NSDictionary *Time(CMTime t) {
 }
 @end
 @implementation SubPopTitleDragView
+- (BOOL)isFlipped { return NO; }
 - (instancetype)initWithFrame:(NSRect)frame {
     if ((self=[super initWithFrame:frame])) {
+        self.bordered=NO;self.title=@"";[self setButtonType:NSButtonTypeMomentaryPushIn];
         NSURL *url=[NSWorkspace.sharedWorkspace URLForApplicationWithBundleIdentifier:@"com.apple.FinalCut"];
         NSString *appPath=url.path ?: @"/Applications/Final Cut Pro.app";
         self.hostIcon=[[NSImage alloc] initWithContentsOfFile:[appPath stringByAppendingPathComponent:@"Contents/Resources/AppIcon.icns"]];
@@ -147,24 +155,34 @@ static NSDictionary *Time(CMTime t) {
 }
 - (void)mouseEntered:(NSEvent *)event { self.hovered=YES;[self setNeedsDisplay:YES]; }
 - (void)mouseExited:(NSEvent *)event { self.hovered=NO;[self setNeedsDisplay:YES]; }
-- (void)resetCursorRects { if ([self.controller canDragResult]) [self addCursorRect:self.bounds cursor:NSCursor.openHandCursor]; }
+- (void)resetCursorRects { if (self.enabled) [self addCursorRect:self.bounds cursor:[self.controller usesFileImport] ? NSCursor.pointingHandCursor : NSCursor.openHandCursor]; }
 - (void)drawRect:(NSRect)rect {
-    BOOL enabled=[self.controller canDragResult];
+    BOOL enabled=[self.controller canDragResult] && !self.controller.importInProgress;
+    BOOL importing=[self.controller usesFileImport];
     NSBezierPath *shape=[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds,1,1) xRadius:16 yRadius:16];
     NSColor *base=enabled ? [NSColor colorWithCalibratedRed:.32 green:.26 blue:.64 alpha:1] : NSColor.controlBackgroundColor;
     NSGradient *gradient=[[NSGradient alloc] initWithStartingColor:enabled ? [NSColor colorWithCalibratedRed:.43 green:.35 blue:(self.hovered ? .86 : .78) alpha:1] : base endingColor:base];[gradient drawInBezierPath:shape angle:-20];
     [[NSColor colorWithCalibratedWhite:1 alpha:self.hovered ? .32 : .16] setStroke];[shape stroke];
     [self.hostIcon drawInRect:NSMakeRect(20,35,50,50) fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:enabled ? 1 : .4];
-    NSString *title=enabled ? @"拖回字幕到 Final Cut Pro" : @"请先打开原项目，再拖回字幕";
+    NSString *title=self.controller.importInProgress ? @"正在发送到 Final Cut Pro…" : (enabled ? (importing ? @"导入字幕到 Final Cut Pro" : @"拖回字幕到 Final Cut Pro") : @"请先打开原项目时间线");
     [title drawAtPoint:NSMakePoint(86,73) withAttributes:@{NSForegroundColorAttributeName:NSColor.whiteColor,NSFontAttributeName:[NSFont systemFontOfSize:17 weight:NSFontWeightSemibold]}];
-    NSString *detail=[NSString stringWithFormat:@"%lu 条字幕已准备好 · 按住卡片拖到时间线起点上方",(unsigned long)self.controller.captionRows.count];
+    NSString *detail=[NSString stringWithFormat:importing ? @"%lu 条字幕 · 点击导入，再从 FCP 浏览器拖回时间线" : @"%lu 条字幕已准备好 · 按住卡片拖到时间线起点上方",(unsigned long)self.controller.captionRows.count];
     [detail drawAtPoint:NSMakePoint(86,48) withAttributes:@{NSForegroundColorAttributeName:[NSColor colorWithCalibratedWhite:1 alpha:.85],NSFontAttributeName:[NSFont systemFontOfSize:11]}];
-    [@"落轨后：片段 → 将片段项分开，即可逐句编辑" drawAtPoint:NSMakePoint(86,24) withAttributes:@{NSForegroundColorAttributeName:[NSColor colorWithCalibratedWhite:1 alpha:.72],NSFontAttributeName:[NSFont systemFontOfSize:10]}];
+    [(importing ? @"在“SubPop 字幕”事件中找到结果 · 对齐原项目起点" : @"落轨后：片段 → 将片段项分开，即可逐句编辑") drawAtPoint:NSMakePoint(86,24) withAttributes:@{NSForegroundColorAttributeName:[NSColor colorWithCalibratedWhite:1 alpha:.72],NSFontAttributeName:[NSFont systemFontOfSize:10]}];
 }
-- (void)mouseDown:(NSEvent *)event { if ([self.controller canDragResult]) [self.controller beginTitleDrag:event fromView:self]; }
+- (void)mouseDown:(NSEvent *)event {
+    if (!self.enabled) return;
+    if ([self.controller usesFileImport]) { if (event.clickCount<2) [self.controller importTitlesToFCP:self]; }
+    else if ([self.controller canDragResult]) [self.controller beginTitleDrag:event fromView:self];
+}
+- (BOOL)accessibilityPerformPress {
+    if (!self.enabled || ![self.controller usesFileImport]) return NO;
+    [self.controller importTitlesToFCP:self];return YES;
+}
 @end
 @implementation SubPopProbeViewController
 #include "Updates.inc"
+#include "TitleImport.inc"
 - (NSURL *)evidenceDirectory {
     NSURL *base = [[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject;
     NSURL *folder = [base URLByAppendingPathComponent:@"SubPopProbe"];
@@ -293,7 +311,8 @@ static NSDictionary *Time(CMTime t) {
         }
         updated[version]=[doc XMLDataWithOptions:NSXMLNodePrettyPrint];
     }
-    self.titlePayloads=updated;[self.captionTable reloadData];[self saveDraft];
+    if (![self.titlePayloads isEqual:updated]) self.importMessage=nil;
+    self.titlePayloads=updated;[self.captionTable reloadData];[self saveDraft];[self updateInterface];
 }
 - (void)primaryAction:(id)sender { if (![self workerAvailable]) [self connectWorker:sender]; else [self startWorkerJob:sender]; }
 - (void)showDiagnostics:(id)sender {
@@ -308,6 +327,7 @@ static NSDictionary *Time(CMTime t) {
     [self.diagnostics showRelativeToRect:[sender bounds] ofView:sender preferredEdge:NSRectEdgeMaxY];
 }
 - (BOOL)canDragResult { return self.titlePayloads && self.resultDate && [self isolatedProjectActive]; }
+- (BOOL)usesFileImport { return self.templatePicker.indexOfSelectedItem==1; }
 - (void)consumeUIEvent:(NSDictionary *)event {
     NSString *reason=event[@"reason"], *status=event[@"status"];
     if ([event[@"error"] isKindOfClass:NSString.class]) self.visibleError=event[@"error"];
@@ -366,7 +386,16 @@ static NSDictionary *Time(CMTime t) {
     self.lastVisualState=state;
     if (connected && ![self selectedModelAvailable] && !busy) { self.statusTitle.stringValue=@"所选模型尚未就绪";self.statusDetail.stringValue=@"点击“模型管理”下载，或选择已安装的模型。"; }
     if (busy || preparing) [self.spinner startAnimation:nil]; else [self.spinner stopAnimation:nil];
-    BOOL ready=[self canDragResult]; [self.resultView setAccessibilityLabel:ready ? @"拖回字幕到 Final Cut Pro" : @"字幕拖出区，识别完成后可用"]; [self.resultView setNeedsDisplay:YES];
+    BOOL ready=[self canDragResult];BOOL fileImport=[self usesFileImport];
+    if (hasRows && fileImport && ready) {
+        self.statusTitle.stringValue=self.importInProgress ? @"正在发送导入请求" : (self.importMessage.length ? @"Tap5a 字幕导入" : @"底框字幕已准备好");
+        self.statusDetail.stringValue=self.importMessage ?: @"点击上方按钮导入 FCP，在“SubPop 字幕”事件中找到片段，再拖到原项目起点上方。落轨后可将片段项分开。";
+    }
+    self.resultView.enabled=ready && !self.importInProgress;
+    self.resultView.toolTip=fileImport ? @"点击导入到 FCP 浏览器。若出现资源库选择，请选择原项目所在资源库；在“SubPop 字幕”事件中将片段拖到原项目起点上方。再次点击会重新导入。" : @"按住卡片拖到原项目时间线起点上方，落轨后将片段项分开。";
+    [self.resultView setAccessibilityRole:fileImport ? NSAccessibilityButtonRole : NSAccessibilityGroupRole];
+    [self.resultView setAccessibilityLabel:ready ? (fileImport ? @"导入字幕到 Final Cut Pro" : @"拖回字幕到 Final Cut Pro") : @"请先打开原项目时间线"];
+    [self.resultView.window invalidateCursorRectsForView:self.resultView];[self.resultView setNeedsDisplay:YES];
 }
 - (void)toggleReview:(id)sender { self.reviewExpanded=!self.reviewExpanded;[self updateInterface]; }
 - (NSDictionary *)readJSON:(NSURL *)url {
@@ -524,6 +553,7 @@ static NSDictionary *Time(CMTime t) {
     }
 }
 - (void)beginTitleDrag:(NSEvent *)event fromView:(NSView *)view {
+    if ([self usesFileImport]) return;
     [self.view.window makeFirstResponder:nil];
     if (!self.titlePayloads || !self.resultDate) { [self record:@{@"reason":@"title-drag-refused",@"status":@"Load a valid completed result first"}]; return; }
     if (![self isolatedProjectActive]) {
