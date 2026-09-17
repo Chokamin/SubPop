@@ -91,7 +91,41 @@ static NSDictionary *SubPopPreviewSource(NSData *data, double seconds) {
 - (void)closeFullscreen:(id)sender {if (self.fullscreenOwner) {[self.fullscreenOwner closeFullscreen:sender];return;}if (!self.fullscreenWindow) return;[self.fullscreenWindow orderOut:nil];[self.fullscreenWindow close];self.fullscreenWindow=nil;[self.window makeKeyAndOrderFront:nil];}
 - (void)cancelOperation:(id)sender {[self closeFullscreen:sender];}
 - (void)keyDown:(NSEvent *)event {if (event.keyCode==53 && self.fullscreenOwner) [self closeFullscreen:nil];else [super keyDown:event];}
+// Motion SDR composites in linear RGB. Render the complete preview in that
+// space, then let ColorSync convert the image for the display. Drawing an
+// 85% black fill directly in an sRGB AppKit view otherwise looks too dark.
+- (NSImage *)renderLinearPreview {
+    CGFloat backing=self.window.backingScaleFactor ?: 1;
+    backing=MIN(backing,4096/MAX(1,MAX(self.bounds.size.width,self.bounds.size.height)));
+    size_t width=MAX(1,ceil(self.bounds.size.width*backing)),height=MAX(1,ceil(self.bounds.size.height*backing));
+    CGColorSpaceRef space=CGColorSpaceCreateWithName(kCGColorSpaceLinearSRGB);
+    CGContextRef bitmap=CGBitmapContextCreate(NULL,width,height,32,0,space,(CGBitmapInfo)(kCGImageAlphaPremultipliedLast | kCGBitmapFloatComponents | kCGBitmapByteOrder32Little));
+    CGColorSpaceRelease(space);
+    if (!bitmap) return nil;
+    CGContextScaleCTM(bitmap,backing,backing);
+    [NSGraphicsContext saveGraphicsState];
+    NSGraphicsContext.currentContext=[NSGraphicsContext graphicsContextWithCGContext:bitmap flipped:NO];
+    [self drawPreviewContent];
+    [NSGraphicsContext restoreGraphicsState];
+    CGImageRef image=CGBitmapContextCreateImage(bitmap);CGContextRelease(bitmap);
+    if (!image) return nil;
+    // Resolve the linear image into an explicitly tagged display bitmap before
+    // NSImage caching/fullscreen PNG encoding; do not let TIFF infer a profile.
+    CGColorSpaceRef outputSpace=CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CGContextRef output=CGBitmapContextCreate(NULL,width,height,8,0,outputSpace,(CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+    CGColorSpaceRelease(outputSpace);
+    if (!output) {CGImageRelease(image);return nil;}
+    CGContextDrawImage(output,CGRectMake(0,0,width,height),image);CGImageRelease(image);
+    CGImageRef display=CGBitmapContextCreateImage(output);CGContextRelease(output);
+    NSImage *result=display ? [[NSImage alloc] initWithCGImage:display size:self.bounds.size] : nil;
+    if (display) CGImageRelease(display);
+    return result;
+}
 - (void)drawRect:(NSRect)dirty {
+    NSImage *image=[self renderLinearPreview];
+    if (image) [image drawInRect:self.bounds]; else [self drawPreviewContent];
+}
+- (void)drawPreviewContent {
     [[NSColor colorWithCalibratedWhite:.035 alpha:1] setFill];NSRectFill(self.bounds);
     NSRect canvas=self.bounds;
     if (self.frameImage) {
@@ -103,7 +137,9 @@ static NSDictionary *SubPopPreviewSource(NSData *data, double seconds) {
         [self.placeholder ?: @"正在读取视频画面…" drawInRect:NSInsetRect(self.bounds,16,30) withAttributes:attrs];
     }
     NSDictionary *s=SubPopNormalizeTap5aStyle(self.style);
-    CGFloat scale=canvas.size.width/MAX(1920,self.projectWidth),fontSize=MAX(1,[s[@"textSize"] doubleValue]*scale);
+    // Tap5a uses a 1920x1080 Motion canvas, independent of output resolution.
+    // Project-pixel offsets keep their separate scale below.
+    CGFloat scale=canvas.size.width/1920.0,fontSize=MAX(1,[s[@"textSize"] doubleValue]*scale);
     NSString *postscript=s[@"textFont"];for (NSArray *member in SubPopFontMembers(s[@"textFont"])) if ([member[1] isEqual:s[@"textFace"]]) postscript=member[0];
     NSFont *font=[NSFont fontWithName:postscript size:fontSize] ?: [NSFont systemFontOfSize:fontSize];
     NSMutableParagraphStyle *paragraph=[NSMutableParagraphStyle new];paragraph.alignment=NSTextAlignmentCenter;paragraph.lineSpacing=[s[@"lineSpacing"] doubleValue]*scale;

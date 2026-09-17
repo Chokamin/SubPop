@@ -25,6 +25,26 @@ int main(int argc,const char *argv[]) {
         NSString *retimed=[sourceXML stringByReplacingOccurrencesOfString:@"duration='3s'/>" withString:@"duration='3s'><timeMap/></asset-clip>"];
         if (SubPopPreviewSource([retimed dataUsingEncoding:NSUTF8StringEncoding],1)) return 24;
         if (argc!=3 && argc!=4) return 1;[NSApplication sharedApplication];
+        SubPopStylePreview *composite=[[SubPopStylePreview alloc] initWithFrame:NSMakeRect(0,0,640,360)];
+        composite.frameImage=[NSImage imageWithSize:NSMakeSize(640,360) flipped:NO drawingHandler:^BOOL(NSRect rect) { [NSColor.whiteColor setFill];NSRectFill(rect);return YES;}];
+        composite.caption=@"X";
+        for (NSNumber *opacity in @[@0,@85,@100]) {
+            composite.style=@{@"opacity":opacity,@"bottom":@100,@"top":@100,@"left":@100,@"right":@100,@"roundness":@0};
+            composite.projectWidth=1920;NSImage *hd=[composite renderLinearPreview];
+            composite.projectWidth=3840;NSImage *uhd=[composite renderLinearPreview];
+            NSBitmapImageRep *hdPixels=[NSBitmapImageRep imageRepWithData:hd.TIFFRepresentation];
+            NSBitmapImageRep *uhdPixels=[NSBitmapImageRep imageRepWithData:uhd.TIFFRepresentation];
+            for (NSInteger y=0;y<360;y+=3) for (NSInteger x=0;x<640;x+=3) {
+                NSColor *a=[[hdPixels colorAtX:x y:y] colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+                NSColor *b=[[uhdPixels colorAtX:x y:y] colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+                if (fabs(a.redComponent-b.redComponent)>.005) {NSLog(@"Resolution mismatch %ld %ld %@ %@",x,y,a,b);return 60;}
+            }
+            NSBitmapImageRep *pixels=[NSBitmapImageRep imageRepWithData:uhd.TIFFRepresentation];
+            // The renderer already encodes sRGB; inspect its channel values directly.
+            NSColor *pixel=[pixels colorAtX:320 y:340];
+            double expected=opacity.intValue==0 ? 1 : (opacity.intValue==100 ? 0 : .42358);
+            if (fabs(pixel.redComponent-expected)>.025 || fabs(pixel.greenComponent-expected)>.025) { NSLog(@"Linear composite mismatch %@: %@",opacity,pixel);return 61; }
+        }
         SubPopPreviewController *c=[SubPopPreviewController new];
         c.previewCatalog=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:@(argv[1])] options:0 error:nil];
         [c loadView];NSWindow *window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,660,740) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];window.contentView=c.view;
