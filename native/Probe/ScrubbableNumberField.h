@@ -26,3 +26,21 @@
     self.scrubbing=NO;
 }
 @end
+
+@interface SubPopResetLabel : NSButton
+@property (weak) SubPopNumberField *numberField;
+@property double defaultValue;
+@property NSTimeInterval lastResetClick;
+- (void)resetClick:(id)sender;
+@end
+@implementation SubPopResetLabel
+- (void)resetClick:(id)sender {
+    NSTimeInterval now=NSProcessInfo.processInfo.systemUptime;
+    BOOL doubleClick=self.lastResetClick>0 && now-self.lastResetClick<=NSEvent.doubleClickInterval;
+    self.lastResetClick=doubleClick ? 0 : now;
+    if(!doubleClick || !self.numberField) return;
+    [self.window makeFirstResponder:nil];
+    self.numberField.doubleValue=self.defaultValue;
+    [self.numberField sendAction:self.numberField.action to:self.numberField.target];
+}
+@end

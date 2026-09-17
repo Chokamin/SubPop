@@ -128,17 +128,18 @@
         if (i==17 || i==18) {x=290;y=155-(i-17)*34;}
         if (effect) {NSUInteger column=effectIndex<4 ? 0 : (effectIndex<8 ? 1 : 2);NSUInteger effectRow=effectIndex-(column==0 ? 0 : (column==1 ? 4 : 8));x=12+column*178;y=235-effectRow*36;}
         NSView *container=effect ? effectsTab.view : (typography ? textTab.view : boxTab.view);
-        NSTextField *label=[self label:field[1] size:12 weight:NSFontWeightRegular];label.frame=NSMakeRect(x,y,effect ? 105 : 145,24);[container addSubview:label];
+        SubPopResetLabel *label=[[SubPopResetLabel alloc] initWithFrame:NSZeroRect];label.title=field[1];label.bordered=NO;label.alignment=NSTextAlignmentLeft;label.font=[NSFont systemFontOfSize:12];label.target=label;label.action=@selector(resetClick:);label.frame=NSMakeRect(x,y,effect ? 105 : 145,24);[container addSubview:label];
         NSControl *control;
         if ([field[2] isKindOfClass:NSArray.class]) control=[[NSColorWell alloc] initWithFrame:NSMakeRect(x+(effect ? 107 : 150),y,effect ? 55 : 92,24)];
         else if ([key hasSuffix:@"Enabled"] || [key isEqual:@"background"] || [key isEqual:@"border"]) { NSButton *button=[NSButton checkboxWithTitle:@"" target:nil action:nil];button.frame=NSMakeRect(x+(effect ? 107 : 150),y,30,24);control=button; }
         else if ([key isEqual:@"sides"]) { NSPopUpButton *popup=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(x+(effect ? 107 : 150),y,100,24) pullsDown:NO];[popup addItemsWithTitles:@[@"四边",@"上边",@"下边",@"右边",@"左边",@"上下",@"左右"]];control=popup; }
         else { SubPopNumberField *number=[[SubPopNumberField alloc] initWithFrame:NSMakeRect(x+(effect ? 107 : 150),y,effect ? 55 : 92,24)];number.minimumValue=[field[3] doubleValue];number.maximumValue=[field[4] doubleValue];number.placeholderString=[NSString stringWithFormat:@"%@–%@",field[3],field[4]];number.toolTip=[NSString stringWithFormat:@"范围 %@–%@；左右拖动调整，Shift 精调；点击输入数字",field[3],field[4]];number.delegate=self;control=number; }
+        if ([control isKindOfClass:SubPopNumberField.class]) {label.numberField=(SubPopNumberField *)control;label.defaultValue=[field[2] doubleValue];label.toolTip=[NSString stringWithFormat:@"双击恢复默认值 %@",field[2]];}
         control.target=self;control.action=@selector(tap5aPreviewChanged:);[control setAccessibilityLabel:field[1]];[container addSubview:control];self.tap5aStyleControls[key]=control;
     }
     NSTextField *effectNote=[NSTextField wrappingLabelWithString:@"外框作用于文字轮廓，与底框边框独立。光晕沿用 Tap5a 的暖黄色；预览为效果示意。"];
     effectNote.frame=NSMakeRect(12,6,510,34);effectNote.font=[NSFont systemFontOfSize:11];effectNote.textColor=NSColor.secondaryLabelColor;[effectsTab.view addSubview:effectNote];
-    NSTextField *textNote=[NSTextField wrappingLabelWithString:@"数值可左右拖动，Shift 精调，点击输入。X 向右为正，Y 向上为正。\n行间距仅影响多行字幕；字距以点计，FCP 会换算为字号百分比。"];
+    NSTextField *textNote=[NSTextField wrappingLabelWithString:@"数值左右拖动，Shift 精调，点击输入；双击标签恢复默认。X 右正，Y 上正。\n行间距仅影响多行字幕；字距以点计，FCP 会换算为字号百分比。"];
     textNote.frame=NSMakeRect(12,0,510,44);textNote.font=[NSFont systemFontOfSize:11];textNote.textColor=NSColor.secondaryLabelColor;[textTab.view addSubview:textNote];
     NSTextField *note=[NSTextField wrappingLabelWithString:@"留白与圆角使用 Tap5a 参数单位。\n颜色的透明程度由“不透明度”控制。\n保存预设会覆盖“我的预设”，并用于下一次识别。"];
     note.frame=NSMakeRect(290,15,240,102);note.font=[NSFont systemFontOfSize:11];note.textColor=NSColor.secondaryLabelColor;[boxTab.view addSubview:note];
