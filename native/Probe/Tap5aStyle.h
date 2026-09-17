@@ -20,7 +20,7 @@ static NSArray *SubPopTap5aFields(void) {
     ];
 }
 static NSArray *SubPopTextFields(void) {
-    return @[@[@"textSize",@"字号",@72,@1,@1000],@[@"kerning",@"字距（点）",@0,@-20,@100],@[@"lineSpacing",@"额外行间距",@0,@0,@200],@[@"textColor",@"文字颜色",@[@1,@1,@1],@0,@1]];
+    return @[@[@"textSize",@"字号",@72,@1,@1000],@[@"kerning",@"字距（点）",@0,@-20,@100],@[@"lineSpacing",@"额外行间距",@0,@0,@200],@[@"textColor",@"文字颜色",@[@1,@1,@1],@0,@1],@[@"positionX",@"X 偏移（px）",@0,@-10000,@10000],@[@"positionY",@"Y 偏移（px）",@0,@-10000,@10000]];
 }
 static NSArray *SubPopEffectFields(void) {
     return @[
@@ -105,4 +105,18 @@ static void SubPopApplyTextStyle(NSXMLElement *node,NSDictionary *input) {
     for (NSString *key in effects) [node addAttribute:[NSXMLNode attributeWithName:key stringValue:effects[key]]];
     [node removeAttributeForName:@"bold"];[node removeAttributeForName:@"italic"];
     for (NSString *key in attrs) {[node removeAttributeForName:key];[node addAttribute:[NSXMLNode attributeWithName:key stringValue:attrs[key]]];}
+}
+
+// FCPXML transform coordinates use percentage of the sequence height on both axes.
+// Start from SubPop's canonical 0,-40 baseline every time, never accumulate offsets.
+static void SubPopApplyTitlePosition(NSXMLDocument *doc,NSDictionary *input) {
+    NSDictionary *s=SubPopNormalizeTap5aStyle(input);
+    NSXMLElement *format=[doc nodesForXPath:@"/fcpxml/resources/format" error:nil].firstObject;
+    double height=[format attributeForName:@"height"].stringValue.doubleValue;if (!isfinite(height) || height<=0) return;
+    NSString *position=[NSString stringWithFormat:@"%.12g %.12g",[s[@"positionX"] doubleValue]*100/height,-40+[s[@"positionY"] doubleValue]*100/height];
+    for (NSXMLElement *title in [doc nodesForXPath:@"/fcpxml/clip/spine/title" error:nil]) {
+        NSXMLElement *transform=[title elementsForName:@"adjust-transform"].firstObject;
+        if (!transform) {transform=[NSXMLElement elementWithName:@"adjust-transform"];[title addChild:transform];}
+        [transform removeAttributeForName:@"position"];[transform addAttribute:[NSXMLNode attributeWithName:@"position" stringValue:position]];
+    }
 }

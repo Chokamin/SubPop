@@ -114,7 +114,8 @@
     for (NSUInteger i=0;i<fields.count;i++) {
         NSArray *field=fields[i];NSString *key=field[0];BOOL right=i>=9;NSUInteger row=right ? i-9 : i;
         BOOL typography=i>=13;CGFloat x=typography ? 12 : (right ? 290 : 12),y=typography ? 155-(i-13)*34 : 238-row*27;
-        BOOL effect=i>=17;NSUInteger effectIndex=i-17;
+        BOOL effect=i>=19;NSUInteger effectIndex=effect ? i-19 : 0;
+        if (i==17 || i==18) {x=290;y=155-(i-17)*34;}
         if (effect) {NSUInteger column=effectIndex<4 ? 0 : (effectIndex<8 ? 1 : 2);NSUInteger effectRow=effectIndex-(column==0 ? 0 : (column==1 ? 4 : 8));x=12+column*178;y=235-effectRow*36;}
         NSView *container=effect ? effectsTab.view : (typography ? textTab.view : boxTab.view);
         NSTextField *label=[self label:field[1] size:12 weight:NSFontWeightRegular];label.frame=NSMakeRect(x,y,effect ? 105 : 145,24);[container addSubview:label];
@@ -127,8 +128,8 @@
     }
     NSTextField *effectNote=[NSTextField wrappingLabelWithString:@"外框作用于文字轮廓，与底框边框独立。光晕沿用 Tap5a 的暖黄色；预览为效果示意。"];
     effectNote.frame=NSMakeRect(12,6,510,34);effectNote.font=[NSFont systemFontOfSize:11];effectNote.textColor=NSColor.secondaryLabelColor;[effectsTab.view addSubview:effectNote];
-    NSTextField *textNote=[NSTextField wrappingLabelWithString:@"行间距仅影响多行字幕；字号、字距与额外行间距以点为单位；FCP 会把字距换算成字号百分比。字形取决于本机已安装的字体。"];
-    textNote.frame=NSMakeRect(290,38,230,110);textNote.font=[NSFont systemFontOfSize:11];textNote.textColor=NSColor.secondaryLabelColor;[textTab.view addSubview:textNote];
+    NSTextField *textNote=[NSTextField wrappingLabelWithString:@"X 正值向右，Y 正值向上；0 / 0 保持默认位置，文字和底框一起移动。\n行间距仅影响多行字幕；字距以点计，FCP 会换算为字号百分比。"];
+    textNote.frame=NSMakeRect(12,0,510,44);textNote.font=[NSFont systemFontOfSize:11];textNote.textColor=NSColor.secondaryLabelColor;[textTab.view addSubview:textNote];
     NSTextField *note=[NSTextField wrappingLabelWithString:@"留白与圆角使用 Tap5a 参数单位。\n颜色的透明程度由“不透明度”控制。\n保存预设会覆盖“我的预设”，并用于下一次识别。"];
     note.frame=NSMakeRect(290,15,240,102);note.font=[NSFont systemFontOfSize:11];note.textColor=NSColor.secondaryLabelColor;[boxTab.view addSubview:note];
     self.tap5aPreview=[[SubPopStylePreview alloc] initWithFrame:NSMakeRect(0,122,360,202.5)];self.tap5aPreview.wantsLayer=YES;self.tap5aPreview.layer.cornerRadius=10;self.tap5aPreview.layer.masksToBounds=YES;[self.tap5aPreview setAccessibilityLabel:@"源视频帧上的字幕样式示意预览"];[content addSubview:self.tap5aPreview];

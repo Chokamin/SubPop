@@ -316,6 +316,7 @@ static NSDictionary *Time(CMTime t) {
         if (!doc) return;
         SubPopSetTitleTemplate(doc,self.templatePicker.indexOfSelectedItem==1 ? self.tap5aURL : nil);
         if ([self usesFileImport]) SubPopApplyTap5aStyle(doc,self.tap5aStyle);
+        SubPopApplyTitlePosition(doc,self.tap5aStyle);
         NSArray *titles=[doc nodesForXPath:@"/fcpxml/clip/spine/title" error:nil];
         if (titles.count!=self.captionRows.count) return;
         for (NSUInteger i=0;i<titles.count;i++) {

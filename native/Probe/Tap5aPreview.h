@@ -95,6 +95,8 @@ static NSDictionary *SubPopPreviewSource(NSData *data, double seconds) {
     NSRect measured=[text boundingRectWithSize:NSMakeSize(canvas.size.width*.86,100) options:NSStringDrawingUsesLineFragmentOrigin attributes:attrs];
     CGFloat left=[s[@"left"] doubleValue]*scale,right=[s[@"right"] doubleValue]*scale,top=[s[@"top"] doubleValue]*scale,bottom=[s[@"bottom"] doubleValue]*scale;
     NSRect textRect=NSMakeRect(NSMidX(canvas)-ceil(measured.size.width)/2,NSMinY(canvas)+canvas.size.height*.12,ceil(measured.size.width),ceil(measured.size.height));
+    CGFloat positionScale=canvas.size.width/(self.projectWidth>0 ? self.projectWidth : 1920);
+    textRect.origin.x+=[s[@"positionX"] doubleValue]*positionScale;textRect.origin.y+=[s[@"positionY"] doubleValue]*positionScale;
     NSRect box=NSMakeRect(textRect.origin.x-left,textRect.origin.y-bottom,textRect.size.width+left+right,textRect.size.height+top+bottom);
     CGFloat radius=MIN(box.size.height/2,[s[@"roundness"] doubleValue]*scale);
     NSBezierPath *path=[NSBezierPath bezierPathWithRoundedRect:box xRadius:radius yRadius:radius];

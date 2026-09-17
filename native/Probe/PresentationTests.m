@@ -69,10 +69,15 @@ int main(int argc,const char *argv[]) {
         controller.templatePicker=[[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];[controller.templatePicker addItemsWithTitles:@[@"Basic",@"Tap5a"]];
         controller.tap5aURL=[NSURL fileURLWithPath:@"/tmp/Titles.localized/Tap5a/Tap5a Autosize Text Background/Tap5a Autosize Text Background.moti"];
         if (SubPopTap5aUID([NSURL fileURLWithPath:@"/tmp/Other.moti"])) return 24;
-        controller.tap5aStyle=SubPopNormalizeTap5aStyle(@{@"outlineEnabled":@1,@"outlineWidth":@3,@"shadowEnabled":@1,@"shadowBlur":@7,@"glowEnabled":@1,@"glowRadius":@12,@"textFace":@"Bold",@"kerning":@3.5,@"lineSpacing":@12,@"textColor":@[@1,@0.5,@0],@"roundness":@30,@"opacity":@65,@"width":@12,@"border":@1,@"top":@25,@"backgroundColor":@[@0.1,@0.2,@0.3]});
+        controller.tap5aStyle=SubPopNormalizeTap5aStyle(@{@"positionX":@120,@"positionY":@108,@"outlineEnabled":@1,@"outlineWidth":@3,@"shadowEnabled":@1,@"shadowBlur":@7,@"glowEnabled":@1,@"glowRadius":@12,@"textFace":@"Bold",@"kerning":@3.5,@"lineSpacing":@12,@"textColor":@[@1,@0.5,@0],@"roundness":@30,@"opacity":@65,@"width":@12,@"border":@1,@"top":@25,@"backgroundColor":@[@0.1,@0.2,@0.3]});
         NSXMLElement *disabled=[NSXMLElement elementWithName:@"text-style"];
         SubPopApplyTextStyle(disabled,controller.tap5aStyle);SubPopApplyTextStyle(disabled,@{});
         if ([disabled attributeForName:@"strokeWidth"] || [disabled attributeForName:@"shadowColor"]) return 47;
+        NSXMLDocument *positionDoc=[[NSXMLDocument alloc] initWithXMLString:@"<fcpxml><resources><format height='2160'/></resources><clip><spine><title><adjust-transform position='0 -40'/></title></spine></clip></fcpxml>" options:0 error:nil];
+        SubPopApplyTitlePosition(positionDoc,@{@"positionX":@216,@"positionY":@432});NSString *once=positionDoc.XMLString;
+        SubPopApplyTitlePosition(positionDoc,@{@"positionX":@216,@"positionY":@432});
+        if (![once isEqual:positionDoc.XMLString] || ![[positionDoc nodesForXPath:@"//adjust-transform/@position" error:nil].firstObject.stringValue isEqual:@"10 -20"]) return 49;
+        SubPopApplyTitlePosition(positionDoc,@{});if (![[positionDoc nodesForXPath:@"//adjust-transform/@position" error:nil].firstObject.stringValue isEqual:@"0 -40"]) return 50;
         NSDictionary *invalid=SubPopNormalizeTap5aStyle(@{@"roundness":@999,@"width":@(-1),@"top":@(NAN),@"backgroundColor":@[@1]});
         if ([invalid[@"roundness"] doubleValue]!=100 || [invalid[@"width"] doubleValue]!=3 || [invalid[@"top"] doubleValue]!=10 || ![invalid[@"backgroundColor"] isEqual:@[@0,@0,@0]]) return 41;
         [controller.templatePicker selectItemAtIndex:1];[controller rebuildTitles];
@@ -92,6 +97,9 @@ int main(int argc,const char *argv[]) {
                 if (![[ts attributeForName:@"kerning"].stringValue isEqual:@"3.5"] || ![[ts attributeForName:@"lineSpacing"].stringValue isEqual:@"12"] || ![[ts attributeForName:@"fontColor"].stringValue isEqual:@"1 0.5 0 1"]) return 44;
                 if ([ts nodesForXPath:@"param[@key='MotionTextStyle:SimpleValues']/param[@key='tracking'][@value='3.5']" error:nil].count!=1) return 45;
                 if (![[ts attributeForName:@"strokeWidth"].stringValue isEqual:@"-3"] || ![[ts attributeForName:@"shadowBlurRadius"].stringValue isEqual:@"14"] || [b[i] nodesForXPath:@"param[@key='9999/1825821564/10045/10047/5/10049/38'][@value='1']" error:nil].count!=1) return 46;
+                double height=[after nodesForXPath:@"/fcpxml/resources/format/@height" error:nil].firstObject.stringValue.doubleValue;
+                NSString *expectedPosition=[NSString stringWithFormat:@"%.12g %.12g",12000/height,-40+10800/height];
+                if (![[b[i] nodesForXPath:@"adjust-transform/@position" error:nil].firstObject.stringValue isEqual:expectedPosition]) return 48;
                 NSXMLElement *width=[b[i] nodesForXPath:@"param[@name='Width']" error:nil].firstObject;
                 if (fabs([width attributeForName:@"value"].stringValue.doubleValue - 9.0/97)>1e-8) return 43;
             }

@@ -69,8 +69,8 @@ int main(int argc,const char *argv[]) {
         [c.templatePicker selectItemAtIndex:1];c.resultRequestID=@"style-test";[window orderFront:nil];
         if (argc==4) c.freshDropURL=[NSURL fileURLWithPath:@(argv[3])];
         [c showTap5aStyle:nil];
-        if (c.tap5aStyleControls.count!=33 || !window.attachedSheet) return 21;
-        [c fillTap5aStyleControls:@{@"outlineEnabled":@1,@"glowEnabled":@1,@"shadowEnabled":@1,@"roundness":@30,@"top":@25,@"textFont":@"Helvetica",@"textFace":@"Bold",@"textSize":@83,@"kerning":@4,@"lineSpacing":@16}];
+        if (c.tap5aStyleControls.count!=35 || !window.attachedSheet) return 21;
+        [c fillTap5aStyleControls:@{@"outlineEnabled":@1,@"glowEnabled":@1,@"shadowEnabled":@1,@"positionX":@120,@"positionY":@-80,@"roundness":@30,@"top":@25,@"textFont":@"Helvetica",@"textFace":@"Bold",@"textSize":@83,@"kerning":@4,@"lineSpacing":@16}];
         if ([c.tap5aStyleControls[@"roundness"] doubleValue]!=30 || [c.tap5aStyleControls[@"top"] doubleValue]!=25) return 22;
         if (![[c currentTap5aStyleValues][@"textFace"] isEqual:@"Bold"] || [[c currentTap5aStyleValues][@"textSize"] doubleValue]!=83 || [c.tap5aPreview.style[@"kerning"] doubleValue]!=4) return 28;
         NSTextField *size=c.tap5aStyleControls[@"textSize"];
@@ -86,6 +86,7 @@ int main(int argc,const char *argv[]) {
         size.stringValue=@"1200";[c controlTextDidEndEditing:[NSNotification notificationWithName:NSControlTextDidEndEditingNotification object:size]];
         if (size.doubleValue!=1000) return 38;
         size.stringValue=@"83";[c tap5aPreviewChanged:nil];
+        if ([c.tap5aPreview.style[@"positionX"] doubleValue]!=120 || [c.tap5aPreview.style[@"positionY"] doubleValue]!=-80) return 39;
         NSButton *safe=[NSButton new];safe.state=NSControlStateValueOn;[c togglePreviewSafe:safe];
         if (!c.tap5aPreview.showsSafeArea || ![c.tap5aPreview.style[@"glowEnabled"] boolValue]) return 30;
         [c fullscreenPreview:nil];
