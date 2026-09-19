@@ -1,5 +1,48 @@
 #import <AVFoundation/AVFoundation.h>
 
+// FCP frame exports at 1920x1080: a 10-unit margin expands each side
+// by 32 px horizontally and 18 px vertically. The rig's offsets use axis-
+// relative units, so applying the horizontal conversion to Y is incorrect.
+static CGFloat SubPopTap5aMargin(CGFloat value,CGFloat canvasAxis) {return value*canvasAxis/600.0;}
+static NSArray *SubPopPreviewTextLines(NSString *text,NSDictionary *attributes,NSPoint baseline,CGFloat spacing,CGFloat scale,CGFloat maxWidth,NSRect *textBounds) {
+    NSMutableArray *lines=[NSMutableArray new];NSRect bounds=NSZeroRect;BOOL hasBounds=NO;
+    NSFont *font=attributes[NSFontAttributeName];
+    CGFloat step=font.ascender-font.descender+font.leading+spacing;
+    for (NSString *paragraph in [text componentsSeparatedByString:@"\n"]) {
+        NSAttributedString *string=[[NSAttributedString alloc] initWithString:paragraph attributes:attributes];
+        CTTypesetterRef setter=CTTypesetterCreateWithAttributedString((__bridge CFAttributedStringRef)string);
+        NSUInteger offset=0;
+        do {
+            NSUInteger count=paragraph.length ? MAX(1,CTTypesetterSuggestLineBreak(setter,offset,maxWidth)) : 0;
+            count=MIN(count,paragraph.length-offset);
+            CTLineRef line=CTTypesetterCreateLine(setter,CFRangeMake(offset,count));
+            CGFloat ascent=0,descent=0;CGFloat width=CTLineGetTypographicBounds(line,&ascent,&descent,NULL);
+            NSPoint origin=NSMakePoint(baseline.x-width/2,baseline.y);
+            // Motion's Align To encloses typographic extents, including descenders,
+            // rather than glyph ink or AppKit's extra line-fragment leading.
+            // Its vertical raster guard is ~2 template pixels in the FCP fixture.
+            NSRect placed=NSMakeRect(origin.x,origin.y-descent-2*scale,width,ascent+descent+4*scale);
+            if (width>0) {bounds=hasBounds ? NSUnionRect(bounds,placed) : placed;hasBounds=YES;}
+            [lines addObject:@{@"text":[paragraph substringWithRange:NSMakeRange(offset,count)],@"origin":[NSValue valueWithPoint:origin]}];
+            CFRelease(line);baseline.y-=step;offset+=count;
+        } while (offset<paragraph.length);
+        CFRelease(setter);
+    }
+    *textBounds=hasBounds ? bounds : NSMakeRect(baseline.x,baseline.y,0,0);
+    return lines;
+}
+static void SubPopDrawPreviewLines(NSArray *lines,NSDictionary *attributes) {
+    [NSGraphicsContext saveGraphicsState];
+    NSShadow *shadow=attributes[NSShadowAttributeName];if(shadow) [shadow set];
+    CGContextRef context=NSGraphicsContext.currentContext.CGContext;CGContextSetTextMatrix(context,CGAffineTransformIdentity);
+    for (NSDictionary *item in lines) {
+        NSAttributedString *string=[[NSAttributedString alloc] initWithString:item[@"text"] attributes:attributes];
+        CTLineRef line=CTLineCreateWithAttributedString((__bridge CFAttributedStringRef)string);
+        NSPoint origin=[item[@"origin"] pointValue];CGContextSetTextPosition(context,origin.x,origin.y);CTLineDraw(line,context);CFRelease(line);
+    }
+    [NSGraphicsContext restoreGraphicsState];
+}
+
 static double SubPopPreviewSeconds(NSString *value) {
     if (!value.length) return 0;
     NSString *s=[value hasSuffix:@"s"] ? [value substringToIndex:value.length-1] : value;
@@ -146,13 +189,14 @@ static NSDictionary *SubPopPreviewSource(NSData *data, double seconds) {
     NSArray *color=s[@"textColor"];
     NSDictionary *attrs=@{NSFontAttributeName:font,NSForegroundColorAttributeName:[NSColor colorWithSRGBRed:[color[0] doubleValue] green:[color[1] doubleValue] blue:[color[2] doubleValue] alpha:1],NSParagraphStyleAttributeName:paragraph,NSKernAttributeName:@([s[@"kerning"] doubleValue]*scale)};
     NSString *text=self.caption.length ? self.caption : @"让字幕跟上你的表达";
-    NSRect measured=[text boundingRectWithSize:NSMakeSize(canvas.size.width*.86,100) options:NSStringDrawingUsesLineFragmentOrigin attributes:attrs];
-    CGFloat left=[s[@"left"] doubleValue]*scale,right=[s[@"right"] doubleValue]*scale,top=[s[@"top"] doubleValue]*scale,bottom=[s[@"bottom"] doubleValue]*scale;
-    NSRect textRect=NSMakeRect(NSMidX(canvas)-ceil(measured.size.width)/2,NSMinY(canvas)+canvas.size.height*.12,ceil(measured.size.width),ceil(measured.size.height));
+    CGFloat left=SubPopTap5aMargin([s[@"left"] doubleValue],canvas.size.width),right=SubPopTap5aMargin([s[@"right"] doubleValue],canvas.size.width),top=SubPopTap5aMargin([s[@"top"] doubleValue],canvas.size.height),bottom=SubPopTap5aMargin([s[@"bottom"] doubleValue],canvas.size.height);
     CGFloat positionScale=canvas.size.width/(self.projectWidth>0 ? self.projectWidth : 1920);
-    textRect.origin.x+=[s[@"positionX"] doubleValue]*positionScale;textRect.origin.y+=[s[@"positionY"] doubleValue]*positionScale;
+    // The exported title origin is 0,-40 percent of sequence height: its text
+    // baseline is 10% above the bottom, including for non-1080p projects.
+    NSPoint baseline=NSMakePoint(NSMidX(canvas)+[s[@"positionX"] doubleValue]*positionScale,NSMinY(canvas)+canvas.size.height*.10+[s[@"positionY"] doubleValue]*positionScale);
+    NSRect textRect;NSArray *lines=SubPopPreviewTextLines(text,attrs,baseline,[s[@"lineSpacing"] doubleValue]*scale,scale,canvas.size.width*.86,&textRect);
     NSRect box=NSMakeRect(textRect.origin.x-left,textRect.origin.y-bottom,textRect.size.width+left+right,textRect.size.height+top+bottom);
-    CGFloat radius=MIN(box.size.height/2,[s[@"roundness"] doubleValue]*scale);
+    CGFloat radius=MIN(MIN(box.size.width,box.size.height)/2,[s[@"roundness"] doubleValue]*.5*scale);
     NSBezierPath *path=[NSBezierPath bezierPathWithRoundedRect:box xRadius:radius yRadius:radius];
     NSArray *rgb=s[@"backgroundColor"];
     if ([s[@"background"] boolValue]) {[[NSColor colorWithSRGBRed:[rgb[0] doubleValue] green:[rgb[1] doubleValue] blue:[rgb[2] doubleValue] alpha:[s[@"opacity"] doubleValue]/100] setFill];[path fill];}
@@ -167,13 +211,13 @@ static NSDictionary *SubPopPreviewSource(NSData *data, double seconds) {
             if (sides==4 || sides==6) {[lines moveToPoint:box.origin];[lines lineToPoint:NSMakePoint(NSMinX(box),NSMaxY(box))];}[lines stroke];}
     }
     NSMutableDictionary *draw=attrs.mutableCopy;
-    if ([s[@"shadowEnabled"] boolValue]) {NSArray *c=s[@"shadowColor"];NSShadow *shadow=[NSShadow new];shadow.shadowColor=[NSColor colorWithSRGBRed:[c[0] doubleValue] green:[c[1] doubleValue] blue:[c[2] doubleValue] alpha:[s[@"shadowOpacity"] doubleValue]/100];CGFloat angle=[s[@"shadowAngle"] doubleValue]*M_PI/180,distance=[s[@"shadowDistance"] doubleValue]*scale;shadow.shadowOffset=NSMakeSize(cos(angle)*distance,sin(angle)*distance);shadow.shadowBlurRadius=[s[@"shadowBlur"] doubleValue]*scale;draw[NSShadowAttributeName]=shadow;[text drawInRect:textRect withAttributes:draw];[draw removeObjectForKey:NSShadowAttributeName];}
-    if ([s[@"glowEnabled"] boolValue]) {NSShadow *glow=[NSShadow new];glow.shadowColor=[NSColor colorWithSRGBRed:1 green:.878431 blue:.262745 alpha:[s[@"glowOpacity"] doubleValue]/100];glow.shadowBlurRadius=([s[@"glowBlur"] doubleValue]+[s[@"glowRadius"] doubleValue])*scale;glow.shadowOffset=NSZeroSize;draw[NSShadowAttributeName]=glow;[text drawInRect:textRect withAttributes:draw];[draw removeObjectForKey:NSShadowAttributeName];}
+    if ([s[@"shadowEnabled"] boolValue]) {NSArray *c=s[@"shadowColor"];NSShadow *shadow=[NSShadow new];shadow.shadowColor=[NSColor colorWithSRGBRed:[c[0] doubleValue] green:[c[1] doubleValue] blue:[c[2] doubleValue] alpha:[s[@"shadowOpacity"] doubleValue]/100];CGFloat angle=[s[@"shadowAngle"] doubleValue]*M_PI/180,distance=[s[@"shadowDistance"] doubleValue]*scale;shadow.shadowOffset=NSMakeSize(cos(angle)*distance,sin(angle)*distance);shadow.shadowBlurRadius=[s[@"shadowBlur"] doubleValue]*scale;draw[NSShadowAttributeName]=shadow;SubPopDrawPreviewLines(lines,draw);[draw removeObjectForKey:NSShadowAttributeName];}
+    if ([s[@"glowEnabled"] boolValue]) {NSShadow *glow=[NSShadow new];glow.shadowColor=[NSColor colorWithSRGBRed:1 green:.878431 blue:.262745 alpha:[s[@"glowOpacity"] doubleValue]/100];glow.shadowBlurRadius=([s[@"glowBlur"] doubleValue]+[s[@"glowRadius"] doubleValue])*scale;glow.shadowOffset=NSZeroSize;draw[NSShadowAttributeName]=glow;SubPopDrawPreviewLines(lines,draw);[draw removeObjectForKey:NSShadowAttributeName];}
     if ([s[@"outlineEnabled"] boolValue]) {NSArray *c=s[@"outlineColor"];draw[NSStrokeColorAttributeName]=[NSColor colorWithSRGBRed:[c[0] doubleValue] green:[c[1] doubleValue] blue:[c[2] doubleValue] alpha:[s[@"outlineOpacity"] doubleValue]/100];draw[NSStrokeWidthAttributeName]=@(-[s[@"outlineWidth"] doubleValue]/[s[@"textSize"] doubleValue]*100);}
-    [text drawInRect:textRect withAttributes:draw];
+    SubPopDrawPreviewLines(lines,draw);
     if (self.showsSafeArea) {
         [NSGraphicsContext saveGraphicsState];
-        for (NSNumber *fraction in @[@0.05,@0.10]) {CGFloat inset=fraction.doubleValue;NSBezierPath *line=[NSBezierPath bezierPathWithRect:NSInsetRect(canvas,canvas.size.width*inset,canvas.size.height*inset)];line.lineWidth=1;CGFloat dash[]={5,4};[line setLineDash:dash count:2 phase:0];[[NSColor colorWithWhite:1 alpha:.8] setStroke];[line stroke];}
+        for (NSNumber *fraction in @[@0.05,@0.10]) {CGFloat inset=fraction.doubleValue;NSBezierPath *line=[NSBezierPath bezierPathWithRect:NSInsetRect(canvas,canvas.size.width*inset,canvas.size.height*inset)];line.lineWidth=1;CGFloat dash[]={5,4};[line setLineDash:dash count:2 phase:0];[[NSColor colorWithSRGBRed:1 green:.15 blue:.15 alpha:.95] setStroke];[line stroke];}
         [@"90% 动作安全区 · 80% 标题安全区" drawAtPoint:NSMakePoint(NSMinX(canvas)+12,NSMaxY(canvas)-26) withAttributes:@{NSFontAttributeName:[NSFont systemFontOfSize:11],NSForegroundColorAttributeName:NSColor.whiteColor,NSBackgroundColorAttributeName:[NSColor colorWithWhite:0 alpha:.6]}];[NSGraphicsContext restoreGraphicsState];
     }
 }

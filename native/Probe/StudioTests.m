@@ -1,5 +1,6 @@
 // Offscreen AppKit layout/motion checks. No FCP connection or timeline writes.
 #import "ProbeViewController.m"
+#import "PreviewGeometryTests.h"
 @interface SubPopPreviewController : SubPopProbeViewController
 @property NSDictionary *previewCatalog;
 @property NSUInteger importInvocationCount;
@@ -29,6 +30,7 @@ int main(int argc,const char *argv[]) {
         NSString *retimed=[sourceXML stringByReplacingOccurrencesOfString:@"duration='3s'/>" withString:@"duration='3s'><timeMap/></asset-clip>"];
         if (SubPopPreviewSource([retimed dataUsingEncoding:NSUTF8StringEncoding],1)) return 24;
         if (argc!=3 && argc!=4) return 1;[NSApplication sharedApplication];
+        if(!SubPopCheckPreviewGeometry())return 110;
         SubPopStylePreview *composite=[[SubPopStylePreview alloc] initWithFrame:NSMakeRect(0,0,640,360)];
         composite.frameImage=[NSImage imageWithSize:NSMakeSize(640,360) flipped:NO drawingHandler:^BOOL(NSRect rect) { [NSColor.whiteColor setFill];NSRectFill(rect);return YES;}];
         composite.caption=@"X";
