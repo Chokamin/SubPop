@@ -17,7 +17,7 @@
 - (void)showVocabulary:(id)sender {
     if (self.requestID) return;
     NSAlert *alert=[NSAlert new];alert.messageText=@"词库";
-    alert.informativeText=@"填写人名、品牌和专业词，每行一个，也可以用逗号分隔。\n仅辅助识别，以实际音频为准；修改在下一次识别生效。";
+    alert.informativeText=@"填写人名、品牌和专业词，每行一个，也可以用逗号分隔。\n辅助识别，并统一词条的大小写、空格和等值数字写法；修改在下一次识别生效。";
     NSView *view=[[NSView alloc] initWithFrame:NSMakeRect(0,0,480,238)];
     NSButton *enabled=[NSButton checkboxWithTitle:@"识别时使用词库" target:nil action:nil];enabled.frame=NSMakeRect(0,208,480,24);
     NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;

@@ -85,13 +85,12 @@ int main(int argc,const char *argv[]) {
             if ([c usesFileImport] || ![c.resultView.accessibilityLabel isEqual:@"拖回字幕到 Final Cut Pro"]) return 16;
             if ([c.resultView accessibilityPerformPress] || c.importInvocationCount!=3) return 20;
             c.requestID=@"preview";c.displayState=@"recognize";c.jobProgress=@.42;[c updateInterface];
-            if (c.activity.hidden || c.activity.stage!=1 || ![c.activity.stageLabels[0].stringValue hasPrefix:@"✓"]) return 70;
+            if (c.activity.hidden || c.activity.stage!=1 || ![c.activity.currentLabel.stringValue containsString:@"聆听"]) return 70;
             if (c.jobBar.hidden || fabs(c.jobBar.doubleValue-.42)>.001 || c.cancelButton.hidden || c.generateButton.enabled) return 4;
             if (!NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion && ![c.activity.wave.bars[0] animationForKey:@"working"]) return 5;
             for (NSString *stage in @[@"decode",@"recognize",@"generate-titles"]) {
                 [c.activity showStage:stage active:YES];[c.view layoutSubtreeIfNeeded];
-                CGFloat slot=(c.activity.bounds.size.width-24)/3;
-                if (fabs(c.activity.wave.frame.origin.x-(12+c.activity.stage*slot))>.5 || NSMaxX(c.activity.wave.frame)>NSMinX(c.activity.stageLabels[c.activity.stage].frame)) return 72;
+                if (c.activity.row.subviews.count!=2 || c.activity.wave.visualStage!=c.activity.stage || NSMaxX(c.activity.wave.frame)>NSMinX(c.activity.currentLabel.frame)) return 72;
             }
             c.requestID=nil;c.displayState=@"ready";[c updateInterface];
             if (!c.activity.hidden || c.activity.wave.running) return 71;

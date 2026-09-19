@@ -22,3 +22,40 @@ class VocabularyTests(unittest.TestCase):
             for key,bad in [('operation','shell'),('modelID','../../other')]:
                 v={**value,key:bad};(d/'request.json').write_text(json.dumps(v))
                 with self.assertRaises(ValueError):model_request(d)
+
+class VocabularySpellingTests(unittest.TestCase):
+    def normalize(self,text,terms):
+        from probes.vocabulary import canonical_words
+        from probes.editorial_rules import Word
+        return canonical_words([Word(c,i*.1,(i+1)*.1) for i,c in enumerate(text)],terms)
+
+    def test_equivalent_model_spelling_keeps_measured_span(self):
+        rows=self.normalize('今年iPhone十八pro提升了',['iPhone 18 Pro'])
+        self.assertEqual(''.join(w.text for w in rows),'今年iPhone 18 Pro提升了')
+        term=next(w for w in rows if w.text=='iPhone 18 Pro')
+        self.assertAlmostEqual(term.start,.2);self.assertAlmostEqual(term.end,1.3)
+
+    def test_no_dictionary_no_fuzzy_numbers_or_partial_brand_replacement(self):
+        for text,terms in [('iPhone十八pro',[]),('iPhone十七pro',['iPhone 18 Pro']),('miniPhone十八pro',['iPhone 18 Pro']),('普通的十八个',['iPhone 18 Pro'])]:
+            self.assertEqual(''.join(w.text for w in self.normalize(text,terms)),text)
+
+    def test_repeated_and_overlapping_terms(self):
+        from probes.vocabulary import canonical_words
+        from probes.editorial_rules import Word
+        words=[Word('iPhone十八pro和IPHONE18PRO',1,3)]
+        rows=canonical_words(words,['iPhone','iPhone 18 Pro'])
+        self.assertEqual(rows,[Word('iPhone 18 Pro和iPhone 18 Pro',1,3)])
+
+    def test_does_not_join_across_pause_or_punctuation(self):
+        from probes.vocabulary import canonical_words
+        from probes.editorial_rules import Word
+        words=[Word('iPhone',0,1),Word('十八pro',2,3)]
+        self.assertEqual(canonical_words(words,['iPhone 18 Pro']),words)
+        self.assertEqual(''.join(w.text for w in self.normalize('iPhone，十八pro',['iPhone 18 Pro'])),'iPhone，十八pro')
+
+    def test_final_subtitles_use_dictionary_spelling(self):
+        from probes.editorial import optimized_captions
+        text='今年iPhone十八pro提升了'
+        data={'snapshot':{'duration':'4'},'results':[{'text':text,'words':[dict(text=c,start=i*.1,end=(i+1)*.1) for i,c in enumerate(text)]}]}
+        rows=optimized_captions(data,30,['iPhone 18 Pro'])
+        self.assertIn('iPhone 18 Pro',''.join(r['text'] for r in rows))

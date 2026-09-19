@@ -3,8 +3,9 @@ from fractions import Fraction
 from .caption_fixture import spoken, quantize, captions
 from .editorial_rules import Word, make_captions, bridge_brief_gaps
 from .text_units import clean_generated_text
+from .vocabulary import canonical_words
 
-RULES_VERSION='semantic-phrases-v2'
+RULES_VERSION='semantic-phrases-v3-vocabulary'
 
 
 def measured_words(data):
@@ -35,7 +36,10 @@ def optimized_captions(data, fps, vocabulary=(), max_chars=20, warnings=None):
     raw=[];fps=Fraction(fps)
     for index,part in enumerate(data['results']):
         scoped={**data,'results':[part]}
-        words=measured_words(scoped)
+        words=canonical_words(measured_words(scoped),vocabulary)
+        # The timing fallback must use the same canonical transcript as the normal path.
+        scoped={**scoped,'results':[{'text':''.join(w.text for w in words),
+            'words':[dict(text=w.text,start=w.start,end=w.end) for w in words]}]}
         try:
             arranged=make_captions(words,max_chars=max_chars,protected_terms=vocabulary)
             current=[dict(text=c.text,start=Fraction(str(c.start)),end=Fraction(str(c.end))) for c in arranged]
@@ -49,7 +53,7 @@ def optimized_captions(data, fps, vocabulary=(), max_chars=20, warnings=None):
             except ValueError:
                 if not words or any(w.start!=w.end for w in words):raise
                 if not raw:raise ValueError('首段词语缺少有效时长，需要重新对齐')
-                raw[-1]['text']+=part['text'];raw[-1]['end']=max(raw[-1]['end'],Fraction(str(words[-1].end)))
+                raw[-1]['text']+=scoped['results'][0]['text'];raw[-1]['end']=max(raw[-1]['end'],Fraction(str(words[-1].end)))
                 continue
         for row in current:
             if raw and row['start']<raw[-1]['end']:

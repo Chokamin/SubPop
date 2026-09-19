@@ -53,49 +53,50 @@ static void SubPopReveal(NSView *view) {
     [view.layer addAnimation:fade forKey:@"reveal"];
 }
 
-// Decorative activity, not a waveform measurement or an invented percentage.
+// A clipped rolling row shows only the current phase, never a process checklist.
 @interface SubPopActivityView : NSView
 @property SubPopSignalView *wave;
-@property NSArray<NSTextField *> *stageLabels;
+@property NSView *row;
+@property NSTextField *currentLabel;
 @property NSInteger stage;
+@property NSString *currentState;
 - (void)showStage:(NSString *)state active:(BOOL)active;
 @end
 @implementation SubPopActivityView
 - (instancetype)initWithFrame:(NSRect)frame {
     if ((self=[super initWithFrame:frame])) {
-        self.wantsLayer=YES;self.layer.cornerRadius=10;
+        self.wantsLayer=YES;self.layer.cornerRadius=12;self.layer.masksToBounds=YES;
         self.layer.backgroundColor=[SubPopAccent() colorWithAlphaComponent:.07].CGColor;
-        self.wave=[[SubPopSignalView alloc] initWithFrame:NSMakeRect(8,9,38,38)];[self addSubview:self.wave];
-        NSMutableArray *labels=[NSMutableArray new];
-        for (NSString *title in @[@"准备音频",@"识别语音",@"整理字幕"]) {
-            NSTextField *label=[NSTextField labelWithString:title];label.font=[NSFont systemFontOfSize:11 weight:NSFontWeightMedium];[self addSubview:label];[labels addObject:label];
-        }
-        self.stageLabels=labels;self.stage=-1;self.hidden=YES;
+        self.row=[[NSView alloc] initWithFrame:self.bounds];self.row.wantsLayer=YES;[self addSubview:self.row];
+        self.wave=[[SubPopSignalView alloc] initWithFrame:NSMakeRect(18,9,38,38)];[self.row addSubview:self.wave];
+        self.currentLabel=[NSTextField labelWithString:@""];self.currentLabel.font=[NSFont systemFontOfSize:13 weight:NSFontWeightMedium];self.currentLabel.textColor=SubPopAccent();[self.row addSubview:self.currentLabel];
+        self.stage=-1;self.hidden=YES;
     }return self;
 }
 - (void)layout {
-    [super layout];CGFloat width=(self.bounds.size.width-24)/3;
+    [super layout];
     [CATransaction begin];[CATransaction setDisableActions:YES];
-    self.wave.frame=NSMakeRect(12+MAX(0,self.stage)*width,9,30,38);
-    for (NSInteger i=0;i<3;i++) {
-        CGFloat inset=i==self.stage ? 36 : 8;
-        self.stageLabels[i].frame=NSMakeRect(12+i*width+inset,20,width-inset-4,17);
-    }
+    self.row.frame=self.bounds;self.currentLabel.frame=NSMakeRect(70,19,MAX(0,self.bounds.size.width-88),20);
     [CATransaction commit];
 }
 - (void)showStage:(NSString *)state active:(BOOL)active {
     NSInteger next=[state isEqual:@"recognize"] ? 1 : ([state isEqual:@"generate-titles"] ? 2 : 0);
-    BOOL changed=self.hidden==active || next!=self.stage;
-    self.hidden=!active;self.stage=next;
-    NSArray *titles=@[@"准备音频",@"识别语音",@"整理字幕"];
-    for (NSInteger i=0;i<3;i++) {
-        NSTextField *label=self.stageLabels[i];
-        label.stringValue=i==next ? titles[i] : [NSString stringWithFormat:@"%@  %@",i<next ? @"✓" : @"○",titles[i]];
-        label.textColor=i==next ? SubPopAccent() : (i<next ? NSColor.labelColor : NSColor.secondaryLabelColor);
+    BOOL changed=![self.currentState isEqual:state];BOOL wasVisible=!self.hidden;
+    self.hidden=!active;self.stage=next;self.currentState=state;
+    if (changed) {
+        [self.wave setWorking:NO];self.wave.visualStage=next;self.wave.needsLayout=YES;
+        // CATransition retains the outgoing contents while pushing in the next row.
+        // Both move downward; clipping keeps previous phases out of the resting UI.
+        if (active && wasVisible && !NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion) {
+            CATransition *roll=[CATransition animation];roll.type=kCATransitionPush;roll.subtype=kCATransitionFromBottom;
+            roll.duration=.28;roll.timingFunction=[CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+            [self.row.layer addAnimation:roll forKey:@"stage-roll"];
+        }
+        NSDictionary *labels=@{@"preparing":@"正在唤醒本机识别",@"validate":@"正在读取项目",@"decode":@"正在准备音频",@"recognize":@"正在聆听，生成字幕",@"generate-titles":@"正在整理断句与时间"};
+        self.currentLabel.stringValue=labels[state] ?: @"正在处理";
     }
-    if (changed) { [self.wave setWorking:NO];self.wave.visualStage=next;self.wave.needsLayout=YES; }
-    self.needsLayout=YES;
+    if (!active) [self.row.layer removeAllAnimations];
     [self.wave setWorking:active];
-    if (changed && active) {SubPopReveal(self.wave);SubPopReveal(self.stageLabels[next]);}
+    if (active && !wasVisible) SubPopReveal(self.row);
 }
 @end
