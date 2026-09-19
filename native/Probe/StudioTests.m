@@ -124,13 +124,13 @@ int main(int argc,const char *argv[]) {
         if(scrub.doubleValue!=-18.5) return 46;
         [scrub mouseDragged:mouse(NSEventTypeLeftMouseDragged,200000,0)];if(scrub.doubleValue!=10000) return 47;
         [scrub mouseUp:mouse(NSEventTypeLeftMouseUp,200000,0)];
-        for(NSString *key in @[@"positionX",@"textSize"]) {
+        for(NSString *key in @[@"positionX",@"textSize",@"top",@"bottom",@"left",@"right"]) {
             SubPopNumberField *field=c.tap5aStyleControls[key];field.doubleValue=123;
             SubPopResetLabel *label=nil;for(NSView *view in field.superview.subviews) if([view isKindOfClass:SubPopResetLabel.class] && [(SubPopResetLabel *)view numberField]==field) label=(SubPopResetLabel *)view;
             if(!label) return 48;
             [label resetClick:nil];if(field.doubleValue!=123) return 49;
             [label resetClick:nil];
-            double expected=[key isEqual:@"positionX"] ? 0 : 72;
+            double expected=[key isEqual:@"positionX"] ? 0 : ([key isEqual:@"textSize"] ? 72 : 10);
             if(field.doubleValue!=expected || [c.tap5aPreview.style[key] doubleValue]!=expected) return 50;
         }
         NSPopUpButton *families=c.tap5aStyleControls[@"textFont"];
