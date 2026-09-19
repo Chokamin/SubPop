@@ -28,7 +28,9 @@
     NSView *form=[[NSView alloc] initWithFrame:NSMakeRect(0,0,440,50)];
     NSTextField *label=[NSTextField labelWithString:@"API Key"];label.frame=NSMakeRect(0,19,85,22);[form addSubview:label];
     NSSecureTextField *field=[[NSSecureTextField alloc] initWithFrame:NSMakeRect(90,16,350,28)];
-    field.placeholderString=saved ? @"已保存 · 留空保留" : @"粘贴语音服务 API Key";
+    field.placeholderString=saved ? @"•••••••• 已保存；留空保留" : @"粘贴语音服务 API Key";
+    field.toolTip=saved ? @"API Key 已保存；留空保留，输入新 Key 可替换。" : @"填写火山引擎语音服务 API Key。";
+    [field setAccessibilityHelp:field.toolTip];
     [field setAccessibilityLabel:@"语音 API Key"];[form addSubview:field];
     // Keep a migration notice only for older builds with outstanding uploads.
     NSString *uploads=[SubPopWorkspace(NSBundle.mainBundle) stringByAppendingPathComponent:@".subloom/cloud/uploads"];
