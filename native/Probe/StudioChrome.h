@@ -87,30 +87,41 @@ static void SubPopReveal(NSView *view) {
 }
 - (void)clearTransition {
     self.transitionGeneration++;
+    [CATransaction begin];[CATransaction setDisableActions:YES];
     [self.outgoingRow removeFromSuperview];self.outgoingRow=nil;
-    [self.row.layer removeAllAnimations];self.row.layer.filters=nil;
-    self.row.layerUsesCoreImageFilters=NO;
+    [self.row.layer removeAllAnimations];self.row.layer.transform=CATransform3DIdentity;
+    [CATransaction commit];
 }
 - (void)animateRow:(NSView *)row entering:(BOOL)entering {
-    row.wantsLayer=YES;row.layerUsesCoreImageFilters=YES;
-    CIFilter *blur=[CIFilter filterWithName:@"CIGaussianBlur"];blur.name=@"phaseBlur";
-    [blur setValue:@0 forKey:kCIInputRadiusKey];if (blur) row.layer.filters=@[blur];
-    // Both rows ride one virtual strip: equal distance and timing, separated by
-    // a full slot plus breathing room. The viewport, not opacity, hides each row.
+    row.wantsLayer=YES;
+    // Keep the incoming text in its normal renderer through landing; removing
+    // a Core Image backing at the endpoint can change text sampling visibly.
+    CIFilter *blur=nil;
+    if (!entering) {
+        row.layerUsesCoreImageFilters=YES;
+        blur=[CIFilter filterWithName:@"CIGaussianBlur"];blur.name=@"phaseBlur";
+        [blur setValue:@0 forKey:kCIInputRadiusKey];if (blur) row.layer.filters=@[blur];
+    }
     CGFloat pitch=MAX(56,self.bounds.size.height)+20;
-    CABasicAnimation *move=[CABasicAnimation animationWithKeyPath:@"transform.translation.y"];
-    move.fromValue=entering ? @(-pitch) : @0;move.toValue=entering ? @0 : @(pitch);
-    CAKeyframeAnimation *soften=[CAKeyframeAnimation animationWithKeyPath:@"filters.phaseBlur.inputRadius"];
-    soften.values=@[@0,@.8,@0];soften.keyTimes=@[@0,@.5,@1];
+    CAKeyframeAnimation *move=[CAKeyframeAnimation animationWithKeyPath:@"transform"];
+    NSMutableArray *poses=[NSMutableArray new],*times=[NSMutableArray new];
+    for (NSInteger i=0;i<=60;i++) {
+        double t=i/60.0;
+        // Smoothstep has zero velocity and acceleration at both endpoints.
+        double travel=t*t*t*(t*(t*6-15)+10);
+        double zoomTime=MIN(1,t/.65),scale=entering ? .96+.04*(1-pow(1-zoomTime,3)) : 1;
+        CATransform3D pose=CATransform3DScale(CATransform3DMakeTranslation(0,entering ? -pitch*(1-travel) : pitch*travel,0),scale,scale,1);
+        [poses addObject:[NSValue valueWithCATransform3D:pose]];[times addObject:@(t)];
+    }
+    move.values=poses;move.keyTimes=times;
     NSMutableArray<CAAnimation *> *motions=[NSMutableArray arrayWithObject:move];
-    if (blur) [motions addObject:soften];
-    if (entering) {
-        CABasicAnimation *scale=[CABasicAnimation animationWithKeyPath:@"transform.scale"];
-        scale.fromValue=@.96;scale.toValue=@1;[motions addObject:scale];
+    if (blur) {
+        CAKeyframeAnimation *soften=[CAKeyframeAnimation animationWithKeyPath:@"filters.phaseBlur.inputRadius"];
+        soften.values=@[@0,@.8,@0];soften.keyTimes=@[@0,@.5,@1];[motions addObject:soften];
     }
     CAAnimationGroup *group=[CAAnimationGroup animation];group.animations=motions;
     group.duration=.48;
-    group.timingFunction=[CAMediaTimingFunction functionWithControlPoints:.4 :0 :.2 :1];
+    group.timingFunction=[CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionLinear];
     group.fillMode=kCAFillModeForwards;group.removedOnCompletion=NO;
     [row.layer addAnimation:group forKey:@"phase-change"];
 }
