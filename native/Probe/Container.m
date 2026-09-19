@@ -17,7 +17,45 @@
 @implementation SubPopAppDelegate
 - (void)applicationDidFinishLaunching:(NSNotification *)notification { SubPopWriteCloudStatus(); [self startEngine]; }
 - (void)application:(NSApplication *)application openURLs:(NSArray<NSURL *> *)urls {
-    for (NSURL *url in urls) if ([url.scheme isEqual:@"subpop-probe"]) {if ([url.host isEqual:@"start"]) [self startEngine];else if ([url.host isEqual:@"cloud-settings"]) [self showCloudSettings];else if ([url.host isEqual:@"preview"]) [self showPreview:url];}
+    for (NSURL *url in urls) if ([url.scheme isEqual:@"subpop-probe"]) {if ([url.host isEqual:@"start"]) [self startEngine];else if ([url.host isEqual:@"cloud-settings"]) [self showCloudSettings];else if ([url.host isEqual:@"legacy-cloud-settings"]) [self showLegacyCloudSettings];else if ([url.host isEqual:@"preview"]) [self showPreview:url];}
+}
+- (void)showLegacyCloudSettings {
+    if (self.showingCloudSettings) return;
+    self.showingCloudSettings=YES;
+    NSDictionary *old=SubPopLegacyCredentials();BOOL saved=SubPopLegacyValid(old);
+    NSAlert *alert=[NSAlert new];alert.messageText=@"旧版极速版 · 连接验证";
+    alert.informativeText=@"填写已开通极速版的同一个应用中的 APP ID 和 Access Token。Access Token 不是 Secret Key，也不是新版 API Key。\n\n凭证只保存在此 Mac 的钥匙串。保存不会上传音频；验证时直接发送测试音频，不需要配置 TOS。当前主界面的常规云端识别仍使用标准版配置。";
+    NSView *form=[[NSView alloc] initWithFrame:NSMakeRect(0,0,480,90)];
+    NSTextField *appID=[[NSTextField alloc] initWithFrame:NSMakeRect(125,52,350,28)];
+    NSSecureTextField *token=[[NSSecureTextField alloc] initWithFrame:NSMakeRect(125,10,350,28)];
+    appID.stringValue=old[@"appID"] ?: @"";appID.placeholderString=@"旧版控制台中的数字 APP ID";
+    token.placeholderString=saved ? @"已保存 · 同一应用留空保留" : @"旧版控制台中的 Access Token";
+    NSArray *fields=@[appID,token],*labels=@[@"APP ID",@"Access Token"];
+    for (NSUInteger i=0;i<fields.count;i++) {
+        NSTextField *field=fields[i],*label=[NSTextField labelWithString:labels[i]];
+        label.frame=NSMakeRect(0,field.frame.origin.y+3,120,22);[form addSubview:label];
+        [field setAccessibilityLabel:labels[i]];[form addSubview:field];
+    }
+    alert.accessoryView=form;
+    [alert addButtonWithTitle:@"保存"];[alert addButtonWithTitle:@"取消"];[alert addButtonWithTitle:@"旧版控制台"];
+    if (saved) [alert addButtonWithTitle:@"移除旧版凭证"];
+    [NSApp activateIgnoringOtherApps:YES];NSModalResponse response=[alert runModal];self.showingCloudSettings=NO;
+    if (response==NSAlertThirdButtonReturn) {[NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:@"https://console.volcengine.com/speech/service/10012"]];return;}
+    BOOL remove=saved && response==NSAlertThirdButtonReturn+1;
+    if (response!=NSAlertFirstButtonReturn && !remove) return;
+    NSString *identifier=[appID.stringValue stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    NSString *secret=[token.stringValue stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    // Changing the application must never silently reuse another application's token.
+    if (!secret.length && [identifier isEqual:old[@"appID"]]) secret=old[@"accessToken"] ?: @"";
+    NSDictionary *value=@{@"appID":identifier,@"accessToken":secret};
+    token.stringValue=@"";
+    if (!remove && !SubPopLegacyValid(value)) {
+        NSAlert *error=[NSAlert new];error.messageText=@"凭证未保存";error.informativeText=@"请填写数字 APP ID 和对应应用的 Access Token；更换 APP ID 时需要重新填写 Token。";[error runModal];return;
+    }
+    OSStatus status=SubPopSaveLegacy(remove ? nil : value);SubPopWriteCloudStatus();
+    NSAlert *result=[NSAlert new];result.messageText=status==errSecSuccess ? (remove ? @"旧版凭证已移除" : @"旧版凭证已保存") : @"凭证未保存";
+    result.informativeText=status==errSecSuccess ? (remove ? @"新版 API Key 和本机模型不受影响。" : @"接下来可验证旧版极速版连接。尚未验证服务权限，也未上传音频。") : @"请解锁登录钥匙串并允许 SubPop 访问，然后重新保存。";
+    [result runModal];
 }
 - (void)openTOSConsole:(id)sender {
     [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:@"https://console.volcengine.com/tos"]];
@@ -50,7 +88,10 @@
     alert.accessoryView=form;
     [alert addButtonWithTitle:@"保存"];[alert addButtonWithTitle:@"取消"];[alert addButtonWithTitle:@"语音服务控制台"];
     if (saved || old.count) [alert addButtonWithTitle:@"移除凭证"];
+    NSInteger legacyResponse=NSAlertFirstButtonReturn+alert.buttons.count;
+    [alert addButtonWithTitle:@"旧版极速版连接验证…"];
     [NSApp activateIgnoringOtherApps:YES];NSModalResponse response=[alert runModal];self.showingCloudSettings=NO;
+    if (response==legacyResponse) {[self showLegacyCloudSettings];return;}
     if (response==NSAlertThirdButtonReturn) {[NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:@"https://console.volcengine.com/speech/new/setting/apikeys"]];return;}
     BOOL remove=(saved || old.count) && response==NSAlertThirdButtonReturn+1;
     if (response!=NSAlertFirstButtonReturn && !remove) return;
@@ -151,6 +192,11 @@
 @end
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
+        if (argc==2 && strcmp(argv[1],"--doubao-legacy-credentials")==0) {
+            if (isatty(STDOUT_FILENO)) return 2;
+            NSDictionary *value=SubPopLegacyCredentials();if (!SubPopLegacyValid(value)) return 3;
+            [NSFileHandle.fileHandleWithStandardOutput writeData:[NSJSONSerialization dataWithJSONObject:value options:0 error:nil]];return 0;
+        }
         if (argc==2 && strcmp(argv[1],"--doubao-credentials")==0) {
             if (isatty(STDOUT_FILENO)) return 2;
             NSDictionary *value=SubPopCloudCredentials();if (!value) return 3;

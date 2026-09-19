@@ -40,6 +40,20 @@ static OSStatus SubPopSaveSecret(NSString *account, NSString *key) {
 }
 static NSString *SubPopCloudKey(void) {return SubPopReadSecret(@"api-key");}
 static OSStatus SubPopSaveCloudKey(NSString *key) {return SubPopSaveSecret(@"api-key",key);}
+static NSDictionary *SubPopLegacyCredentials(void) {
+    NSData *data=[SubPopReadSecret(@"legacy-speech") dataUsingEncoding:NSUTF8StringEncoding];
+    id value=data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+    return [value isKindOfClass:NSDictionary.class] ? value : @{};
+}
+static BOOL SubPopLegacyValid(NSDictionary *value) {
+    id appID=value[@"appID"],token=value[@"accessToken"];
+    return [appID isKindOfClass:NSString.class] && [[NSPredicate predicateWithFormat:@"SELF MATCHES %@",@"[0-9]{1,32}"] evaluateWithObject:appID] && [token isKindOfClass:NSString.class] && SubPopCloudKeyValid(token);
+}
+static OSStatus SubPopSaveLegacy(NSDictionary *value) {
+    if (value && !SubPopLegacyValid(value)) return errSecParam;
+    NSString *json=value ? [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:value options:0 error:nil] encoding:NSUTF8StringEncoding] : nil;
+    return SubPopSaveSecret(@"legacy-speech",json);
+}
 static NSDictionary *SubPopTOSConfig(void) {
     NSData *data=[SubPopReadSecret(@"tos-credentials") dataUsingEncoding:NSUTF8StringEncoding];
     id value=data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
@@ -63,7 +77,7 @@ static NSDictionary *SubPopCloudCredentials(void) {
 static NSDictionary *SubPopCloudStatus(void) {
     // Only non-secret readiness flags and region/bucket identifiers reach disk.
     NSDictionary *tos=SubPopTOSConfig();BOOL api=SubPopCloudKeyValid(SubPopCloudKey()),storage=SubPopTOSValid(tos);
-    return @{@"version":@2,@"configured":api && storage ? @YES : @NO,@"apiKeyConfigured":@(api),@"storageConfigured":@(storage),@"region":tos[@"region"] ?: @"",@"bucket":tos[@"bucket"] ?: @""};
+    return @{@"version":@2,@"configured":api && storage ? @YES : @NO,@"apiKeyConfigured":@(api),@"storageConfigured":@(storage),@"legacyConfigured":@(SubPopLegacyValid(SubPopLegacyCredentials())),@"region":tos[@"region"] ?: @"",@"bucket":tos[@"bucket"] ?: @""};
 }
 static void SubPopWriteCloudStatus(void) {
     NSString *directory=[SubPopWorkspace(NSBundle.mainBundle) stringByAppendingPathComponent:@".subloom/cloud"];
