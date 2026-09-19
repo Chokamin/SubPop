@@ -95,17 +95,23 @@ static void SubPopReveal(NSView *view) {
     row.wantsLayer=YES;row.layerUsesCoreImageFilters=YES;
     CIFilter *blur=[CIFilter filterWithName:@"CIGaussianBlur"];blur.name=@"phaseBlur";
     [blur setValue:@0 forKey:kCIInputRadiusKey];if (blur) row.layer.filters=@[blur];
+    // Both rows ride one virtual strip: equal distance and timing, separated by
+    // a full slot plus breathing room. The viewport, not opacity, hides each row.
+    CGFloat pitch=MAX(56,self.bounds.size.height)+20;
     CABasicAnimation *move=[CABasicAnimation animationWithKeyPath:@"transform.translation.y"];
-    // AppKit's default coordinates grow upward: the new row enters from below.
-    move.fromValue=entering ? @(-12) : @0;move.toValue=entering ? @0 : @10;
-    CABasicAnimation *fade=[CABasicAnimation animationWithKeyPath:@"opacity"];
-    fade.fromValue=entering ? @0 : @1;fade.toValue=entering ? @1 : @0;
-    CABasicAnimation *soften=[CABasicAnimation animationWithKeyPath:@"filters.phaseBlur.inputRadius"];
-    soften.fromValue=entering ? @3 : @0;soften.toValue=entering ? @0 : @3;
-    CAAnimationGroup *group=[CAAnimationGroup animation];group.animations=blur ? @[move,fade,soften] : @[move,fade];
-    group.duration=entering ? .28 : .20;
-    group.timingFunction=entering ? [CAMediaTimingFunction functionWithControlPoints:.16 :1 :.3 :1] : [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseIn];
-    if (!entering) {group.fillMode=kCAFillModeForwards;group.removedOnCompletion=NO;}
+    move.fromValue=entering ? @(-pitch) : @0;move.toValue=entering ? @0 : @(pitch);
+    CAKeyframeAnimation *soften=[CAKeyframeAnimation animationWithKeyPath:@"filters.phaseBlur.inputRadius"];
+    soften.values=@[@0,@.8,@0];soften.keyTimes=@[@0,@.5,@1];
+    NSMutableArray<CAAnimation *> *motions=[NSMutableArray arrayWithObject:move];
+    if (blur) [motions addObject:soften];
+    if (entering) {
+        CABasicAnimation *scale=[CABasicAnimation animationWithKeyPath:@"transform.scale"];
+        scale.fromValue=@.96;scale.toValue=@1;[motions addObject:scale];
+    }
+    CAAnimationGroup *group=[CAAnimationGroup animation];group.animations=motions;
+    group.duration=.48;
+    group.timingFunction=[CAMediaTimingFunction functionWithControlPoints:.4 :0 :.2 :1];
+    group.fillMode=kCAFillModeForwards;group.removedOnCompletion=NO;
     [row.layer addAnimation:group forKey:@"phase-change"];
 }
 - (void)prepareOutgoingRow {
@@ -134,7 +140,7 @@ static void SubPopReveal(NSView *view) {
         if (animate) {
             [self animateRow:self.row entering:YES];
             NSUInteger generation=self.transitionGeneration;__weak SubPopActivityView *weakSelf=self;
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(.30*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(.50*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
                 SubPopActivityView *view=weakSelf;if (view && view.transitionGeneration==generation) [view clearTransition];
             });
         }

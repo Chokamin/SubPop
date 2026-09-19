@@ -92,7 +92,7 @@ int main(int argc,const char *argv[]) {
                 [c.activity showStage:stage active:YES];[c.view layoutSubtreeIfNeeded];
                 if (fabs(NSMidY(c.activity.currentLabel.frame)-NSMidY(c.activity.bounds))>.5 || c.activity.row.subviews.count!=2 || c.activity.wave.visualStage!=c.activity.stage || NSMaxX(c.activity.wave.frame)>NSMinX(c.activity.currentLabel.frame)) return 72;
             }
-            [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.35]];
+            [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.60]];
             if (c.activity.outgoingRow || c.activity.row.layer.filters.count || [c.activity.row.layer animationForKey:@"phase-change"]) return 73;
             c.requestID=nil;c.displayState=@"ready";[c updateInterface];
             if (!c.activity.hidden || c.activity.wave.running || c.activity.outgoingRow || c.activity.row.layer.filters.count) return 71;
