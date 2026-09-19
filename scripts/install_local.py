@@ -7,6 +7,7 @@ if __name__=='__main__':
     if not (ROOT/'.venv/bin/python').exists():raise SystemExit('Missing independent SubPop runtime; see README.md')
     subprocess.run([sys.executable,str(ROOT/'scripts/build_probe.py')],check=True,cwd=ROOT)
     subprocess.run(['ditto',str(ROOT/'.subloom/build/SubPop Probe.app'),'/Applications/SubPop.app'],check=True)
+    Path('/Applications/SubPop.app').touch()  # Invalidate Finder's cached icon after replacement.
     subprocess.run(['codesign','--verify','--deep','--strict','/Applications/SubPop.app'],check=True)
     # Refresh discovery after installation or a change to the app bundle's path.
     subprocess.run(['/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister','-f','/Applications/SubPop.app'],check=True)

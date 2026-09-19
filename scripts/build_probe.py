@@ -18,9 +18,9 @@ def run(*args):subprocess.run([str(a) for a in args],check=True)
 def build():
     if not (SDK/'usr/lib/libProExtension.a').exists():raise SystemExit(f'Extract the official Apple Workflow Extension SDK first; expected SDK: {SDK}')
     for bundle in (APP,EXT):(bundle/'Contents/MacOS').mkdir(parents=True,exist_ok=True)
-    base=dict(CFBundleVersion='57',CFBundleShortVersionString='0.1.0',LSMinimumSystemVersion='13.0',SubPopUpdateRepository='Chokamin/SubPop')
-    plist(APP/'Contents/Info.plist',dict(base,LSUIElement=True,CFBundleURLTypes=[dict(CFBundleURLName='com.chokamin.SubPopProbe.start',CFBundleURLSchemes=['subpop-probe'])],SubPopWorkspace=str(ROOT),CFBundleIdentifier='com.chokamin.SubPopProbe',CFBundleName='SubPop',CFBundleIconFile='SubPop',CFBundleExecutable='SubPopProbe',CFBundlePackageType='APPL',NSPrincipalClass='NSApplication',NSAppleEventsUsageDescription='SubPop 需要读取 Final Cut Pro 的当前项目和时间线信息。'))
-    plist(EXT/'Contents/Info.plist',dict(base,SubPopWorkspace=str(ROOT),CFBundleIdentifier='com.chokamin.SubPopProbe.Extension',CFBundleName='SubPop',CFBundleIconFile='SubPop',CFBundleDisplayName='SubPop',CFBundleExecutable='SubPopProbeExtension',CFBundlePackageType='XPC!',NSAppleEventsUsageDescription='SubPop 需要读取 Final Cut Pro 的当前项目和时间线信息。',NSExtension=dict(NSExtensionPointIdentifier='com.apple.FinalCut.WorkflowExtension',ProExtensionPrincipalViewControllerClass='SubPopProbeViewController'),ProExtensionAttributes=dict(ContentViewMinimumWidth=580,ContentViewMinimumHeight=680)))
+    base=dict(CFBundleVersion='58',CFBundleShortVersionString='0.1.0',LSMinimumSystemVersion='13.0',SubPopUpdateRepository='Chokamin/SubPop')
+    plist(APP/'Contents/Info.plist',dict(base,LSUIElement=True,CFBundleURLTypes=[dict(CFBundleURLName='com.chokamin.SubPopProbe.start',CFBundleURLSchemes=['subpop-probe'])],SubPopWorkspace=str(ROOT),CFBundleIdentifier='com.chokamin.SubPopProbe',CFBundleName='SubPop',CFBundleIconFile='SubPop',CFBundleIconName='SubPop',CFBundleExecutable='SubPopProbe',CFBundlePackageType='APPL',NSPrincipalClass='NSApplication',NSAppleEventsUsageDescription='SubPop 需要读取 Final Cut Pro 的当前项目和时间线信息。'))
+    plist(EXT/'Contents/Info.plist',dict(base,SubPopWorkspace=str(ROOT),CFBundleIdentifier='com.chokamin.SubPopProbe.Extension',CFBundleName='SubPop',CFBundleIconFile='SubPop',CFBundleIconName='SubPop',CFBundleDisplayName='SubPop',CFBundleExecutable='SubPopProbeExtension',CFBundlePackageType='XPC!',NSAppleEventsUsageDescription='SubPop 需要读取 Final Cut Pro 的当前项目和时间线信息。',NSExtension=dict(NSExtensionPointIdentifier='com.apple.FinalCut.WorkflowExtension',ProExtensionPrincipalViewControllerClass='SubPopProbeViewController'),ProExtensionAttributes=dict(ContentViewMinimumWidth=580,ContentViewMinimumHeight=680)))
     mac_sdk=subprocess.check_output(['xcrun','--sdk','macosx','--show-sdk-path'],text=True).strip()
     flags=['-isysroot',mac_sdk,'-fobjc-arc','-Wall','-Wextra','-Werror','-Wno-unused-parameter','-arch','arm64','-mmacosx-version-min=13.0','-framework','Cocoa','-framework','QuartzCore','-framework','CoreText','-framework','CoreImage']
     run('xcrun','clang',*flags,ROOT/'native/Probe/Container.m','-o',APP/'Contents/MacOS/SubPopProbe')
@@ -30,9 +30,15 @@ def build():
     run('xcrun','clang',*flags,'-I'+str(SDK/'usr/include'),'-F'+str(SDK/'Library/Frameworks'),'-L'+str(SDK/'usr/lib'),'-lProExtension','-framework','CoreMedia','-framework','AVFoundation',ROOT/'native/Probe/StudioTests.m',ROOT/'native/Probe/ProbePresentation.m',ROOT/'native/Probe/AudioProbe.m','-o',ROOT/'.subloom/build/SubPopStudioTests')
     resources=EXT/'Contents/Resources'
     resources.mkdir(parents=True,exist_ok=True)
+    icon_output=ROOT/'.subloom/build/icon-assets'
+    if icon_output.exists():shutil.rmtree(icon_output)
+    icon_output.mkdir()
+    run('xcrun','actool',ROOT/'native/Probe/Assets/SubPop.icon','--compile',icon_output,
+        '--app-icon','SubPop','--platform','macosx','--minimum-deployment-target','15.0',
+        '--output-partial-info-plist',icon_output/'icon-info.plist','--output-format','human-readable-text')
     for bundle in (APP,EXT):
         (bundle/'Contents/Resources').mkdir(parents=True,exist_ok=True)
-        shutil.copy2(ROOT/'native/Probe/Assets/SubPop.icns',bundle/'Contents/Resources/SubPop.icns')
+        for name in ('SubPop.icns','Assets.car'):shutil.copy2(icon_output/name,bundle/'Contents/Resources'/name)
     shutil.copy2(ROOT/'config/models.json',resources/'models.json')
     for fixture in (ROOT/'native/Probe/Fixtures').glob('*.fcpxml'):shutil.copy2(fixture,resources/fixture.name)
     ent=ROOT/'.subloom/build/probe.entitlements'

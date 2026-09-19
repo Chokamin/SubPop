@@ -30,6 +30,8 @@ expected, packaged = manifest(source), manifest(actual)
 assert expected == packaged, 'Expanded payload differs from staging'
 for suffix in ('', 'Contents/PlugIns/SubPopProbe.appex'):
     info = plistlib.loads((actual / suffix / 'Contents/Info.plist').read_bytes())
+    assert info.get('CFBundleIconName') == 'SubPop', 'Missing native icon identity'
+    assert (actual / suffix / 'Contents/Resources/Assets.car').is_file(), 'Missing native icon catalog'
     assert info['SubPopPackagedRuntime'] and 'SubPopWorkspace' not in info
     assert info['CFBundleVersion'] == plistlib.loads((source / suffix / 'Contents/Info.plist').read_bytes())['CFBundleVersion']
 assert not (actual / 'Contents/Resources/Runtime/.subloom/models').exists()
