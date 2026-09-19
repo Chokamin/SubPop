@@ -18,7 +18,7 @@ def run(*args):subprocess.run([str(a) for a in args],check=True)
 def build():
     if not (SDK/'usr/lib/libProExtension.a').exists():raise SystemExit(f'Extract the official Apple Workflow Extension SDK first; expected SDK: {SDK}')
     for bundle in (APP,EXT):(bundle/'Contents/MacOS').mkdir(parents=True,exist_ok=True)
-    base=dict(CFBundleVersion='62',CFBundleShortVersionString='1.1.0',LSMinimumSystemVersion='13.0',SubPopUpdateRepository='Chokamin/SubPop')
+    base=dict(CFBundleVersion='63',CFBundleShortVersionString='1.1.0',LSMinimumSystemVersion='13.0',SubPopUpdateRepository='Chokamin/SubPop')
     plist(APP/'Contents/Info.plist',dict(base,LSUIElement=True,CFBundleURLTypes=[dict(CFBundleURLName='com.chokamin.SubPopProbe.start',CFBundleURLSchemes=['subpop-probe'])],SubPopWorkspace=str(ROOT),CFBundleIdentifier='com.chokamin.SubPopProbe',CFBundleName='SubPop',CFBundleIconFile='SubPop',CFBundleIconName='SubPop',CFBundleExecutable='SubPopProbe',CFBundlePackageType='APPL',NSPrincipalClass='NSApplication',NSAppleEventsUsageDescription='SubPop 需要读取 Final Cut Pro 的当前项目和时间线信息。'))
     plist(EXT/'Contents/Info.plist',dict(base,SubPopWorkspace=str(ROOT),CFBundleIdentifier='com.chokamin.SubPopProbe.Extension',CFBundleName='SubPop',CFBundleIconFile='SubPop',CFBundleIconName='SubPop',CFBundleDisplayName='SubPop',CFBundleExecutable='SubPopProbeExtension',CFBundlePackageType='XPC!',NSAppleEventsUsageDescription='SubPop 需要读取 Final Cut Pro 的当前项目和时间线信息。',NSExtension=dict(NSExtensionPointIdentifier='com.apple.FinalCut.WorkflowExtension',ProExtensionPrincipalViewControllerClass='SubPopProbeViewController'),ProExtensionAttributes=dict(ContentViewMinimumWidth=580,ContentViewMinimumHeight=680)))
     mac_sdk=subprocess.check_output(['xcrun','--sdk','macosx','--show-sdk-path'],text=True).strip()
@@ -44,7 +44,10 @@ def build():
     shutil.copy2(ROOT/'config/models.json',resources/'models.json')
     for fixture in (ROOT/'native/Probe/Fixtures').glob('*.fcpxml'):shutil.copy2(fixture,resources/fixture.name)
     ent=ROOT/'.subloom/build/probe.entitlements'
-    plist(ent,{'com.apple.security.app-sandbox':True, 'com.apple.security.network.client':True, 'com.apple.security.files.user-selected.read-write':True, 'com.apple.security.automation.apple-events':True, 'com.apple.security.scripting-targets':{'com.apple.FinalCut':['com.apple.FinalCut.library.inspection']}})
+    # FCP injects its ProViewServiceSupport framework into the extension process.
+    # Its signing team differs from ours. Scope this runtime exception to the
+    # extension only; retain its sandbox and the container's library validation.
+    plist(ent,{'com.apple.security.cs.disable-library-validation':True, 'com.apple.security.app-sandbox':True, 'com.apple.security.network.client':True, 'com.apple.security.files.user-selected.read-write':True, 'com.apple.security.automation.apple-events':True, 'com.apple.security.scripting-targets':{'com.apple.FinalCut':['com.apple.FinalCut.library.inspection']}})
     run('codesign','--force','--sign','-','--entitlements',ent,EXT)
     run('codesign','--force','--sign','-',APP)
     run('codesign','--verify','--deep','--strict',APP)
