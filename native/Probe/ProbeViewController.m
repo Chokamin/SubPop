@@ -241,6 +241,7 @@ static NSDictionary *Time(CMTime t) {
     for (NSDictionary *model in self.modelCatalog) if ([model[@"id"] isEqual:self.selectedModelID]) return model;
     return @{};
 }
+- (BOOL)selectedCloudModel { return [[self selectedModel][@"engine"] isEqual:@"doubao"]; }
 - (BOOL)selectedModelAvailable {
     NSDictionary *service=[self readJSON:[self.bridgeURL URLByAppendingPathComponent:@"service.json"]];
     for (NSDictionary *model in service[@"models"]) if ([model[@"id"] isEqual:self.selectedModelID]) return [model[@"installed"] boolValue];
@@ -432,6 +433,10 @@ static NSDictionary *Time(CMTime t) {
     if ([state isEqual:@"recognize"] && self.jobProgress) self.statusTitle.stringValue=[NSString stringWithFormat:@"正在识别语音 · %.0f%%",100*self.jobProgress.doubleValue];
     self.serviceLabel.stringValue=connected ? @"● 本机就绪" : @"本机未连接";
     self.modelDetail.stringValue=[NSString stringWithFormat:@"%@ · %@ · %@",[self selectedModel][@"description"] ?: @"",[self selectedModelAvailable] ? @"已安装" : @"模型未就绪",[[self selectedModel][@"engine"] isEqual:@"mlx-whisper"] ? @"本机 MLX" : @"本机 CPU"];
+    BOOL cloud=[self selectedCloudModel];
+    if (cloud) self.modelDetail.stringValue=[NSString stringWithFormat:@"豆包云端 · %@ · 按账户计费",[self selectedModelAvailable] ? @"已配置，尚需有效服务额度" : @"请先配置 API Key"];
+    self.scopeLabel.stringValue=cloud ? @"云端识别会上传音频至火山引擎 · 按账户计费" : @"音频留在本机  ·  字幕回到你的时间线";
+    if (cloud && self.requestID && [state isEqual:@"recognize"]) self.statusDetail.stringValue=@"正在上传并识别音频，完成后在本机整理字幕。";
     self.serviceLabel.textColor=connected ? NSColor.systemGreenColor : NSColor.secondaryLabelColor;
     self.dropTitle.stringValue=fresh ? (self.dropName ?: @"项目已导入") : @"把项目拖到这里";
     self.dropDetail.stringValue=fresh ? [NSString stringWithFormat:@"%02ld:%02ld · 整个项目 · 修改时间线后请重新拖入",(long)(CMTimeGetSeconds(self.dropDuration)/60),(long)CMTimeGetSeconds(self.dropDuration)%60] : @"从 Final Cut Pro 浏览器拖入整个项目";
@@ -456,7 +461,7 @@ static NSDictionary *Time(CMTime t) {
     if (hasRows && [self.resultManifest[@"reviewWarnings"] count]) self.statusDetail.stringValue=[NSString stringWithFormat:@"已自动整理 · %lu 段时间需校对，保留原断句 · 拖回后可逐句编辑",(unsigned long)[self.resultManifest[@"reviewWarnings"] count]];
     if (self.lastVisualState && ![self.lastVisualState isEqual:state]) SubPopReveal(self.statusTitle);
     self.lastVisualState=state;
-    if (connected && ![self selectedModelAvailable] && !busy) { self.statusTitle.stringValue=@"所选模型尚未就绪";self.statusDetail.stringValue=@"点击“模型管理”下载，或选择已安装的模型。"; }
+    if (connected && ![self selectedModelAvailable] && !busy) { self.statusTitle.stringValue=@"所选模型尚未就绪";self.statusDetail.stringValue=cloud ? @"点击“模型”，为豆包配置语音 API Key，或选择本机模型。" : @"点击“模型管理”下载，或选择已安装的模型。"; }
 
     BOOL ready=[self canDragResult];BOOL fileImport=[self usesFileImport];
     if (hasRows && fileImport && ready) {
@@ -537,6 +542,17 @@ static NSDictionary *Time(CMTime t) {
     }];
 }
 - (void)startWorkerJob:(id)sender {
+    if (![self selectedCloudModel]) {[self submitWorkerJob];return;}
+    if (self.requestID || ![self selectedModelAvailable]) return;
+    NSString *model=self.selectedModelID;NSString *uid=self.dropUID;NSUInteger generation=self.dropGeneration;
+    NSAlert *alert=[NSAlert new];alert.messageText=@"使用豆包云端识别？";
+    alert.informativeText=@"所选范围的项目音频将上传至火山引擎豆包语音，视频画面、项目文件和词库不上传。长音频会分段提交，费用由你的火山引擎账户结算。\n\n取消或网络中断不会自动重试，已经提交的部分可能仍会计费。";
+    [alert addButtonWithTitle:@"上传并识别"];[alert addButtonWithTitle:@"取消"];
+    [alert beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse response) {
+        if (response==NSAlertFirstButtonReturn && [self.selectedModelID isEqual:model] && [self.dropUID isEqual:uid] && self.dropGeneration==generation) [self submitWorkerJob];
+    }];
+}
+- (void)submitWorkerJob {
     if (self.requestID || [self modelOperationBusy]) return;
     if (!self.bridgeURL || ![self workerAvailable] || ![self isolatedProjectActive]) {
         [self record:@{@"reason":@"worker-submit",@"status":@"connect-service-and-open-isolated-project-first"}]; return;
@@ -562,7 +578,7 @@ static NSDictionary *Time(CMTime t) {
     if (ok) ok=[data writeToURL:[directory URLByAppendingPathComponent:@"input.fcpxml"] options:NSDataWritingAtomic error:&error];
     NSString *sha=[self sha256:data];
     self.requestVocabulary=[self effectiveVocabulary];
-    NSDictionary *manifest=@{@"vocabulary":self.requestVocabulary,@"requestID":request,@"projectUID":self.dropUID,@"xmlSHA256":sha,@"modelID":self.selectedModelID,@"audioMode":self.audioPicker.indexOfSelectedItem==0 ? @"dialogue" : @"all"};
+    NSDictionary *manifest=@{@"cloudConsent":@([self selectedCloudModel]),@"vocabulary":self.requestVocabulary,@"requestID":request,@"projectUID":self.dropUID,@"xmlSHA256":sha,@"modelID":self.selectedModelID,@"audioMode":self.audioPicker.indexOfSelectedItem==0 ? @"dialogue" : @"all"};
     if (ok) ok=[[NSJSONSerialization dataWithJSONObject:manifest options:0 error:nil] writeToURL:[directory URLByAppendingPathComponent:@"request.json"] options:NSDataWritingAtomic error:&error];
     if (!ok) { [self record:@{@"reason":@"worker-submit",@"status":@"write-failed",@"error":error.localizedDescription ?: @""}]; return; }
     self.jobProgress=nil;self.visibleError=nil;self.requestGeneration=self.dropGeneration; self.requestModelID=self.selectedModelID;self.cancelButton.enabled=YES;

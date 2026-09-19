@@ -52,6 +52,11 @@ int main(int argc,const char *argv[]) {
         SubPopPreviewController *c=[SubPopPreviewController new];
         c.previewCatalog=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:@(argv[1])] options:0 error:nil];
         [c loadView];NSWindow *window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,660,740) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];window.contentView=c.view;
+        NSString *initialModel=c.selectedModelID;
+        c.selectedModelID=@"doubao-cloud";[c updateInterface];
+        if (![c.scopeLabel.stringValue containsString:@"上传音频"] || ![c.modelDetail.stringValue containsString:@"云端"]) return 100;
+        c.selectedModelID=initialModel;[c updateInterface];
+        if (![c.scopeLabel.stringValue containsString:@"留在本机"]) return 101;
         if (getenv("SUBPOP_ACTIVITY_PREVIEW")) {
             c.requestID=@"preview";c.displayState=@"recognize";c.jobProgress=@.42;[c updateInterface];
             window.title=@"SubPop · 识别动效预览";[window makeKeyAndOrderFront:nil];[NSApp activateIgnoringOtherApps:YES];[NSApp run];return 0;

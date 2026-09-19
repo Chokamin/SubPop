@@ -84,8 +84,10 @@ def cached_recognition(state, snapshot):
     return None
 
 
-def run(xml,asr,aligner,model_id=DEFAULT_MODEL_ID,audio_mode='dialogue',vocabulary=None):
+def run(xml,asr,aligner,model_id=DEFAULT_MODEL_ID,audio_mode='dialogue',vocabulary=None,allow_cloud=False):
     # Validate before starting costly work. Each invocation owns a new directory.
+    cloud=model_spec(model_id).get('engine')=='doubao'
+    if cloud and allow_cloud is not True:raise ValueError('云端识别需要先确认上传音频及计费')
     vocabulary=validate_vocabulary(vocabulary or [])
     original=xml.read_bytes()
     directory=WORK/str(uuid.uuid4());directory.mkdir(parents=True)
@@ -119,8 +121,12 @@ def run(xml,asr,aligner,model_id=DEFAULT_MODEL_ID,audio_mode='dialogue',vocabula
         pcm=directory/decoded['pcmFile']
         if pcm.parent!=directory or not pcm.is_file():raise ValueError('Invalid PCM output')
         progress('recognize')
-        from .recognize_fixture import run as recognize
-        result=recognize(audioXML,asr,aligner,directory/'asr.json',pcm,device='cpu',verbose=False,audio_mode=audio_mode,vocabulary=vocabulary,engine=model_spec(model_id).get("engine"))
+        if cloud:
+            from .doubao import recognize
+            result=recognize(pcm,inspect(audioXML,audio_mode=audio_mode),consent=allow_cloud)
+        else:
+            from .recognize_fixture import run as recognize
+            result=recognize(audioXML,asr,aligner,directory/'asr.json',pcm,device='cpu',verbose=False,audio_mode=audio_mode,vocabulary=vocabulary,engine=model_spec(model_id).get("engine"))
         result['modelID']=model_id;save(directory/'asr.json',result)
         progress('generate-titles')
         return finalize(directory,state,result,existing)
@@ -136,6 +142,7 @@ if __name__=='__main__':
     parser.add_argument('--model',default=DEFAULT_MODEL_ID)
     parser.add_argument('--audio-mode',choices=['dialogue','all'],default='dialogue')
     parser.add_argument('--vocabulary-file',type=Path)
+    parser.add_argument('--allow-cloud',action='store_true')
     args=parser.parse_args();asr,aligner=resolve_model(args.model)
     vocabulary=json.loads(args.vocabulary_file.read_text()).get('vocabulary',[]) if args.vocabulary_file else []
-    run(args.xml,asr,aligner,args.model,args.audio_mode,vocabulary)
+    run(args.xml,asr,aligner,args.model,args.audio_mode,vocabulary,args.allow_cloud)

@@ -64,6 +64,7 @@ def transfer(url,path,size,digest,cancel,progress,opener=urllib.request.urlopen)
 def install(model_id,root=ROOT,cancel=lambda:False,emit=lambda value:None,opener=urllib.request.urlopen,source="auto"):
     endpoints=sources(source)
     spec=model_spec(model_id)
+    if spec.get('engine')=='doubao':raise ValueError('云端模型无需下载，请配置 API Key')
     specs=[spec] if spec.get('engine') else [spec,CATALOG['aligner']]
     total=sum(sum(s['files'].values()) for s in specs);done=0;started=time.monotonic();network=0;last_emit=0
     base=root/'.subloom/models'
@@ -98,6 +99,7 @@ def install(model_id,root=ROOT,cancel=lambda:False,emit=lambda value:None,opener
 
 def execute(directory,root=ROOT):
     request=json.loads((directory/'request.json').read_text());spec=model_spec(request['modelID'])
+    if spec.get('engine')=='doubao':raise ValueError('云端模型不支持本机文件操作')
     state={'requestID':directory.name,'modelID':spec['id'],'operation':request['operation'],'status':'running','stage':'connecting'}
     def emit(value):state.update(value);save(directory/'response.json',state)
     try:

@@ -38,15 +38,19 @@ def request_input(directory):
     projects=ET.fromstring(raw).findall('.//project')
     if len(projects)!=1 or projects[0].get('uid')!=data['projectUID']:raise ValueError('Snapshot project identity mismatch')
     validate_vocabulary(data.get('vocabulary',[]))
-    model_spec(data.get('modelID', DEFAULT_MODEL_ID))
+    spec=model_spec(data.get('modelID', DEFAULT_MODEL_ID))
+    if spec.get('engine')=='doubao' and data.get('cloudConsent') is not True:raise ValueError('云端识别需要先确认上传音频及计费')
     if data.get('audioMode','dialogue') not in ('dialogue','all'):raise ValueError('Invalid audio mode')
     return xml
 
 
 def job_command(directory):
-    model_id = json.loads((directory/'request.json').read_text()).get('modelID', DEFAULT_MODEL_ID)
+    request=json.loads((directory/'request.json').read_text())
+    model_id=request.get('modelID', DEFAULT_MODEL_ID)
     resolve_model(model_id)
-    return [sys.executable, '-B', '-m', 'probes.run_job', '--xml', str(directory/'input.fcpxml'), '--model', model_id, '--audio-mode', json.loads((directory/'request.json').read_text()).get('audioMode','dialogue'), '--vocabulary-file',str(directory/'request.json')]
+    cloud=model_spec(model_id).get('engine')=='doubao'
+    if cloud and request.get('cloudConsent') is not True:raise ValueError('云端识别需要先确认上传音频及计费')
+    return [sys.executable, '-B', '-m', 'probes.run_job', '--xml', str(directory/'input.fcpxml'), '--model', model_id, '--audio-mode', request.get('audioMode','dialogue'), '--vocabulary-file',str(directory/'request.json')] + (['--allow-cloud'] if cloud else [])
 
 
 def publish_result(directory, job):
@@ -87,7 +91,7 @@ def model_request(directory):
     if path.is_symlink() or path.stat().st_size>4096:raise ValueError('Invalid model request file')
     value=json.loads(path.read_text())
     if value.get('requestID')!=directory.name or value.get('kind')!='model' or value.get('operation') not in ('install','remove'):raise ValueError('Invalid model operation')
-    model_spec(value.get('modelID'))
+    if model_spec(value.get('modelID')).get('engine')=='doubao':raise ValueError('云端模型无需下载或移除，请使用配置入口')
     from .download_sources import sources
     sources(value.get('downloadSource','auto'))
     return value

@@ -8,7 +8,7 @@ from probes import models, worker
 class ModelTests(unittest.TestCase):
     def test_catalog_has_distinct_models_and_default(self):
         ids=[m['id'] for m in models.CATALOG['models']]
-        self.assertEqual(len(set(ids)),4)
+        self.assertEqual(len(set(ids)),5)
         self.assertIn(models.DEFAULT_MODEL_ID,ids)
         self.assertEqual(len({m['directory'] for m in models.CATALOG['models']}),len(ids))
         for value in ('../../other',None,'qwen3-forced-aligner-0.6b'):
@@ -34,7 +34,7 @@ class ModelTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             d=Path(temp)
             for spec in models.CATALOG['models']:
-                (d/'request.json').write_text(json.dumps({'modelID':spec['id'],'audioMode':'dialogue'}))
+                (d/'request.json').write_text(json.dumps({'modelID':spec['id'],'audioMode':'dialogue','cloudConsent':spec.get('engine')=='doubao'}))
                 with patch.object(worker,'resolve_model') as resolve:
                     command=worker.job_command(d)
                 resolve.assert_called_once_with(spec['id'])

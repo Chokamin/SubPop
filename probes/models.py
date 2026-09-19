@@ -17,6 +17,8 @@ def model_spec(model_id):
 
 
 def check_files(spec, root=ROOT):
+    if spec.get('engine') == 'doubao':
+        raise ValueError('云端模型无需下载，请配置 API Key')
     base = root / '.subloom/models'
     directory = base / spec['directory']
     if directory.is_symlink() or not directory.resolve().is_relative_to(base.resolve()):
@@ -34,12 +36,21 @@ def check_files(spec, root=ROOT):
 
 def resolve_model(model_id, root=ROOT):
     spec = model_spec(model_id)
+    if spec.get('engine') == 'doubao':
+        from .doubao import configured
+        if not configured(root):raise ValueError('请在模型设置中配置豆包 API Key')
+        return None, None
     return check_files(spec, root), (None if spec.get('engine') else check_files(CATALOG['aligner'], root))
 
 
 def availability(root=ROOT):
     result = []
     for spec in CATALOG['models']:
+        if spec.get('engine') == 'doubao':
+            from .doubao import configured
+            ready = configured(root)
+            result.append({'id': spec['id'], 'installed': ready, 'asrInstalled': False, 'hasFiles': False, 'reason': '' if ready else '尚未配置 API Key', 'sizeBytes': 0, 'cloud': True})
+            continue
         try:
             resolve_model(spec['id'], root)
             installed, reason = True, ''

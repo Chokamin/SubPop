@@ -102,6 +102,14 @@
         "configuration.json": "02810a7f8e9e8aee10370a265f7e799728ce25b4c00cdbf4602b303ee395a38e",
         "model.pt": "833ca2dcfdf8ec91bd4f31cfac36d6124e0c459074d5e909aec9cabe6204a3ea"
       }
+    },
+    {
+      "id": "doubao-cloud",
+      "name": "豆包云端识别（极速版）",
+      "engine": "doubao",
+      "directory": "doubao-cloud",
+      "description": "需联网 · 火山引擎账户计费",
+      "files": {}
     }
   ],
   "aligner": {

@@ -41,8 +41,8 @@
 - (BOOL)modelOperationBusy { NSString *status=[self modelTaskState][@"status"];return [status isEqual:@"queued"] || [status isEqual:@"running"]; }
 - (void)showModels:(id)sender {
     if (self.modelAlert) return;
-    self.modelAlert=[NSAlert new];self.modelAlert.messageText=@"本机模型";
-    self.modelAlert.informativeText=@"Qwen 首次下载含共用对齐模型；其他模型自带时间对齐。\n国内镜像为第三方 HF-Mirror · 所有来源均做 SHA-256 校验。";
+    self.modelAlert=[NSAlert new];self.modelAlert.messageText=@"识别模型";
+    self.modelAlert.informativeText=@"Qwen 首次下载含共用对齐模型；其他模型自带时间对齐。\n本机下载支持国内镜像并校验文件；豆包需单独配置语音 API Key。";
     NSView *view=[[NSView alloc] initWithFrame:NSMakeRect(0,0,520,140+self.modelCatalog.count*100)];self.modelRows=[NSMutableDictionary new];
     self.downloadSourcePicker=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(0,view.bounds.size.height-34,520,28) pullsDown:NO];
     [self.downloadSourcePicker addItemsWithTitles:@[@"下载源：国内镜像优先（失败后尝试官方）",@"下载源：仅 Hugging Face 官方"]];
@@ -76,6 +76,12 @@
         NSTextField *status=row[@"status"];status.stringValue=[NSString stringWithFormat:@"%@ · %.2f GB",installed ? @"✓ 已安装" : @"需要下载或修复",bytes/1e9];status.textColor=installed ? NSColor.systemGreenColor : NSColor.secondaryLabelColor;
         NSButton *action=row[@"action"];action.title=installed ? (selected ? @"正在使用" : @"使用此模型") : @"下载模型";action.enabled=[self workerAvailable] && !busy && !self.requestID && !(installed && selected);
         NSButton *remove=row[@"remove"];remove.hidden=![available[@"hasFiles"] boolValue];remove.enabled=!busy && !self.requestID && [self workerAvailable];
+        if ([spec[@"engine"] isEqual:@"doubao"]) {
+            status.stringValue=installed ? @"已配置 · 未验证服务额度" : @"尚未配置 API Key";
+            action.title=installed ? (selected ? @"正在使用" : @"使用此模型") : @"配置 API Key";
+            action.enabled=!self.requestID && !(installed && selected);
+            remove.hidden=NO;remove.title=@"云端设置…";remove.action=@selector(openCloudSettings:);remove.enabled=!self.requestID;
+        }
     }
     NSString *status=task[@"status"],*stage=task[@"stage"];
     BOOL cancelling=self.modelRequestID && [[NSFileManager defaultManager] fileExistsAtPath:[[[self.bridgeURL URLByAppendingPathComponent:self.modelRequestID] URLByAppendingPathComponent:@"cancel.json"] path]];
@@ -108,9 +114,13 @@
     if (!ok) {self.downloadLabel.stringValue=error.localizedDescription ?: @"无法创建下载任务";return;}
     self.modelRequestID=request;[NSUserDefaults.standardUserDefaults setObject:request forKey:@"modelRequestID"];[self updateInterface];
 }
+- (void)openCloudSettings:(id)sender {
+    [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:@"subpop-probe://cloud-settings"]];
+}
 - (void)modelAction:(NSButton *)sender {
     NSDictionary *service=[self readJSON:[self.bridgeURL URLByAppendingPathComponent:@"service.json"]];BOOL installed=NO;
     for (NSDictionary *model in service[@"models"]) if ([model[@"id"] isEqual:sender.identifier]) installed=[model[@"installed"] boolValue];
+    if (!installed && [sender.identifier isEqual:@"doubao-cloud"]) {[self openCloudSettings:nil];return;}
     if (!installed) {[self submitModelOperation:@"install" model:sender.identifier];return;}
     if (self.requestID || [self modelOperationBusy]) return;
     for (NSMenuItem *item in self.modelPicker.itemArray) if ([item.representedObject isEqual:sender.identifier]) [self.modelPicker selectItem:item];
