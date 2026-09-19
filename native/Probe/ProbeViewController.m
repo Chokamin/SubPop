@@ -229,8 +229,8 @@ static NSDictionary *Time(CMTime t) {
     NSString *file=saved[@"inputFile"];
     if ([file hasPrefix:@"drop-"] && [file.lastPathComponent isEqual:file]) { self.freshDropURL=[[self evidenceDirectory] URLByAppendingPathComponent:file];NSDate *captured=nil;[self.freshDropURL getResourceValue:&captured forKey:NSURLContentModificationDateKey error:nil];self.freshDropDate=captured; }
     self.requestVocabulary=saved[@"vocabulary"] ?: @[];self.requestID=saved[@"requestID"];self.requestSHA=saved[@"snapshotSHA"];self.requestModelID=saved[@"modelID"];self.requestGeneration=self.dropGeneration;self.displayState=@"validate";
-    self.selectedModelID=self.requestModelID;
-    for (NSMenuItem *item in self.modelPicker.itemArray) if ([item.representedObject isEqual:self.selectedModelID]) [self.modelPicker selectItem:item];
+    // Keep historical results, but do not reselect a model removed from the catalog.
+    for (NSMenuItem *item in self.modelPicker.itemArray) if ([item.representedObject isEqual:self.requestModelID]) { self.selectedModelID=self.requestModelID;[self.modelPicker selectItem:item];break; }
     self.restoringSession=NO;
 }
 - (void)saveDraft {

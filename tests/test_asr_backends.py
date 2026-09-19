@@ -18,7 +18,7 @@ class AlternateTests(unittest.TestCase):
         for start,end in [(float('nan'),1),(-1,1),(2,1),(4,5)]:
             with self.assertRaises(ValueError):timed_row([('字',start,end)],3)
     def test_alternate_models_do_not_require_qwen_aligner(self):
-        for mid in ['whisper-large-v3-turbo','sensevoice-small','firered-asr2-aed']:
+        for mid in ['whisper-large-v3-turbo','sensevoice-small']:
             with patch.object(models,'check_files',return_value=Path('/local')) as check:
                 self.assertEqual(models.resolve_model(mid),(Path('/local'),None))
                 self.assertEqual(check.call_count,1)

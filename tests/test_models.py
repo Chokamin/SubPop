@@ -8,10 +8,10 @@ from probes import models, worker
 class ModelTests(unittest.TestCase):
     def test_catalog_has_distinct_models_and_default(self):
         ids=[m['id'] for m in models.CATALOG['models']]
-        self.assertEqual(len(set(ids)),6)
+        self.assertEqual(len(set(ids)),5)
         self.assertIn(models.DEFAULT_MODEL_ID,ids)
         self.assertEqual(len({m['directory'] for m in models.CATALOG['models']}),len(ids))
-        for value in ('../../other',None,'qwen3-forced-aligner-0.6b'):
+        for value in ('../../other',None,'qwen3-forced-aligner-0.6b','firered-asr2-aed'):
             with self.assertRaises(ValueError):models.model_spec(value)
 
     def test_missing_truncated_and_wrong_configuration_not_installed(self):

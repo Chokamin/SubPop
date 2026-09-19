@@ -10,15 +10,6 @@ class JobTests(unittest.TestCase):
         with patch.object(run_job,'inspect',return_value={'uid':'other'}):
             with self.assertRaises(ValueError):run_job.preflight(Path('x'),Path('a'),Path('b'))
 
-    def test_firered_checkpoint_preflight_retains_directory_guard(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root=Path(temp).resolve();model=root/'.subloom/models/firered-asr2-aed'
-            model.mkdir(parents=True);(model/'model.pth.tar').touch()
-            with patch.object(run_job,'ROOT',root),patch.object(run_job,'inspect',return_value={'uid':'fixture'}):
-                self.assertEqual(run_job.preflight(Path('input'),model,None)['uid'],'fixture')
-                (model/'linked').symlink_to(root/'outside')
-                with self.assertRaises(ValueError):run_job.preflight(Path('input'),model,None)
-
     def test_failed_decode_never_marks_job_ready(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);xml=root/'input.xml';xml.write_text('<fcpxml/>')

@@ -33,7 +33,7 @@ def preflight(xml, asr, aligner):
     if not snapshot['uid']:raise ValueError('Project UID required')
     for model in (asr,aligner):
         if model is None:continue
-        if not model.resolve().is_relative_to(ROOT/'.subloom/models') or not any((model/name).is_file() for name in ('config.json','config.yaml','model.pth.tar')):
+        if not model.resolve().is_relative_to(ROOT/'.subloom/models') or not any((model/name).is_file() for name in ('config.json','config.yaml')):
             raise ValueError('Use an independent SubPop model directory')
         if any(p.is_symlink() for p in model.rglob('*')):raise ValueError('Model files must not link to another project')
     return snapshot
