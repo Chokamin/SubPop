@@ -63,7 +63,12 @@
     self.downloadSpinner=[[NSProgressIndicator alloc] initWithFrame:NSMakeRect(0,31,16,16)];self.downloadSpinner.style=NSProgressIndicatorStyleSpinning;self.downloadSpinner.displayedWhenStopped=NO;[view addSubview:self.downloadSpinner];
     self.downloadLabel=[self label:@"模型准备好后，点击“使用”即可切换。" size:12 weight:NSFontWeightRegular];self.downloadLabel.frame=NSMakeRect(24,3,390,51);[view addSubview:self.downloadLabel];
     self.downloadCancel=[NSButton buttonWithTitle:@"暂停下载" target:self action:@selector(cancelModelDownload:)];self.downloadCancel.frame=NSMakeRect(420,22,100,30);self.downloadCancel.bezelStyle=NSBezelStyleRounded;[view addSubview:self.downloadCancel];
-    self.modelAlert.accessoryView=view;[self.modelAlert addButtonWithTitle:@"完成"];[self updateModelManager];
+    CGFloat availableHeight=(self.view.window.screen ?: NSScreen.mainScreen).visibleFrame.size.height;
+    CGFloat listHeight=MIN(view.bounds.size.height,MAX(280,availableHeight-260));
+    NSScrollView *list=[[NSScrollView alloc] initWithFrame:NSMakeRect(0,0,540,listHeight)];
+    list.hasVerticalScroller=YES;list.drawsBackground=NO;list.documentView=view;
+    [view scrollPoint:NSMakePoint(0,MAX(0,view.bounds.size.height-listHeight))];
+    self.modelAlert.accessoryView=list;[self.modelAlert addButtonWithTitle:@"完成"];[self updateModelManager];
     [self.modelAlert beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse result) {self.modelAlert=nil;self.modelRows=nil;self.downloadProgress=nil;self.downloadSpinner=nil;self.downloadLabel=nil;self.downloadCancel=nil;}];
 }
 - (void)updateModelManager {

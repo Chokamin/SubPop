@@ -104,6 +104,27 @@
       }
     },
     {
+      "id": "firered-asr2-aed",
+      "name": "FireRedASR2-AED",
+      "directory": "firered-asr2-aed",
+      "engine": "firered",
+      "repository": "FireRedTeam/FireRedASR2-AED",
+      "revision": "2304afed56eacfee6256dee5937ed22ffa0b64ec",
+      "description": "本地候选 · 中文与中英混说 · CPU",
+      "files": {
+        "cmvn.ark": 1311,
+        "dict.txt": 79172,
+        "model.pth.tar": 4731558506,
+        "train_bpe1000.model": 251707
+      },
+      "sha256": {
+        "cmvn.ark": "6efba6105429d1630c05d818d956bfe4edfad37a04b3b27bb5a029b9adb37945",
+        "dict.txt": "1bc613de2112d257e61a349c3e72d1b1a9cf19c33d3ca954197ad2171e5ea07b",
+        "model.pth.tar": "4677cbd30988d63ed3e777f6a42a1e5260a3865317f6e15e488bef40954f7054",
+        "train_bpe1000.model": "473bbc157cb4eade2059b30a3c877a1c29bd50cadbfbed869ae36eeade7fee07"
+      }
+    },
+    {
       "id": "doubao-cloud",
       "name": "豆包录音文件识别 2.0",
       "engine": "doubao",

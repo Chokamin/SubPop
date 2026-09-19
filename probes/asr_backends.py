@@ -21,6 +21,9 @@ def timed_row(words, duration):
 
 
 def load_backend(engine,path,hints):
+    if engine=='firered':
+        from .firered import load
+        return load(path)
     if engine=='mlx-whisper':
         import mlx_whisper
         def transcribe(samples):
