@@ -96,8 +96,8 @@ static void SubPopReveal(NSView *view) {
     CIFilter *blur=[CIFilter filterWithName:@"CIGaussianBlur"];blur.name=@"phaseBlur";
     [blur setValue:@0 forKey:kCIInputRadiusKey];if (blur) row.layer.filters=@[blur];
     CABasicAnimation *move=[CABasicAnimation animationWithKeyPath:@"transform.translation.y"];
-    // AppKit's default coordinates grow upward: negative travel moves downward.
-    move.fromValue=entering ? @12 : @0;move.toValue=entering ? @0 : @(-10);
+    // AppKit's default coordinates grow upward: the new row enters from below.
+    move.fromValue=entering ? @(-12) : @0;move.toValue=entering ? @0 : @10;
     CABasicAnimation *fade=[CABasicAnimation animationWithKeyPath:@"opacity"];
     fade.fromValue=entering ? @0 : @1;fade.toValue=entering ? @1 : @0;
     CABasicAnimation *soften=[CABasicAnimation animationWithKeyPath:@"filters.phaseBlur.inputRadius"];
