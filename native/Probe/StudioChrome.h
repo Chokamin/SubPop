@@ -7,12 +7,13 @@ static NSColor *SubPopAccent(void) { return [NSColor colorWithCalibratedRed:0.64
 @interface SubPopSignalView : NSView
 @property NSArray<CALayer *> *bars;
 @property BOOL running;
+@property NSInteger visualStage;
 - (void)setWorking:(BOOL)working;
 @end
 @implementation SubPopSignalView
 - (instancetype)initWithFrame:(NSRect)frame {
     if ((self=[super initWithFrame:frame])) {
-        self.wantsLayer=YES;NSMutableArray *bars=[NSMutableArray new];
+        self.visualStage=1;self.wantsLayer=YES;NSMutableArray *bars=[NSMutableArray new];
         for (int i=0;i<5;i++) { CALayer *bar=[CALayer layer];bar.backgroundColor=SubPopAccent().CGColor;bar.cornerRadius=2;[self.layer addSublayer:bar];[bars addObject:bar]; }
         self.bars=bars;[self setAccessibilityElement:NO];
     } return self;
@@ -20,7 +21,12 @@ static NSColor *SubPopAccent(void) { return [NSColor colorWithCalibratedRed:0.64
 - (void)layout {
     [super layout];CGFloat heights[]={10,20,28,18,10};
     [CATransaction begin];[CATransaction setDisableActions:YES];
-    for (int i=0;i<5;i++) self.bars[i].frame=CGRectMake((self.bounds.size.width-30)/2+i*6,(self.bounds.size.height-heights[i])/2,4,heights[i]);
+    for (int i=0;i<5;i++) {
+        CALayer *bar=self.bars[i];bar.hidden=self.visualStage!=1 && i>=3;
+        if (self.visualStage==0) bar.frame=CGRectMake((self.bounds.size.width-22)/2+i*8,(self.bounds.size.height-5)/2,5,5);
+        else if (self.visualStage==2) bar.frame=CGRectMake((self.bounds.size.width-24)/2,(self.bounds.size.height-20)/2+i*8,i==0 ? 16 : 24,4);
+        else bar.frame=CGRectMake((self.bounds.size.width-30)/2+i*6,(self.bounds.size.height-heights[i])/2,4,heights[i]);
+    }
     [CATransaction commit];
 }
 - (void)setWorking:(BOOL)working {
@@ -28,7 +34,13 @@ static NSColor *SubPopAccent(void) { return [NSColor colorWithCalibratedRed:0.64
     if (animate==self.running) return;self.running=animate;
     for (int i=0;i<5;i++) {
         CALayer *bar=self.bars[i];[bar removeAllAnimations];
-        if (animate) { CABasicAnimation *a=[CABasicAnimation animationWithKeyPath:@"transform.scale.y"];a.fromValue=@0.45;a.toValue=@1;a.duration=.5+i*.055;a.autoreverses=YES;a.repeatCount=HUGE_VALF;a.timingFunction=[CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];[bar addAnimation:a forKey:@"working"]; }
+        if (animate && (self.visualStage==1 || i<3)) {
+            CABasicAnimation *a=[CABasicAnimation animationWithKeyPath:self.visualStage==1 ? @"transform.scale.y" : @"opacity"];
+            a.fromValue=self.visualStage==1 ? @.45 : @.2;a.toValue=@1;
+            a.duration=self.visualStage==1 ? .5+i*.055 : .65;
+            a.beginTime=CACurrentMediaTime()+i*.045;a.autoreverses=YES;a.repeatCount=HUGE_VALF;
+            a.timingFunction=[CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];[bar addAnimation:a forKey:@"working"];
+        }
     }
 }
 - (void)viewDidMoveToWindow { [super viewDidMoveToWindow];if (!self.window) [self setWorking:NO]; }
@@ -62,8 +74,14 @@ static void SubPopReveal(NSView *view) {
     }return self;
 }
 - (void)layout {
-    [super layout];CGFloat width=(self.bounds.size.width-64)/3;
-    for (NSInteger i=0;i<3;i++) self.stageLabels[i].frame=NSMakeRect(56+i*width,20,width-4,17);
+    [super layout];CGFloat width=(self.bounds.size.width-24)/3;
+    [CATransaction begin];[CATransaction setDisableActions:YES];
+    self.wave.frame=NSMakeRect(12+MAX(0,self.stage)*width,9,30,38);
+    for (NSInteger i=0;i<3;i++) {
+        CGFloat inset=i==self.stage ? 36 : 8;
+        self.stageLabels[i].frame=NSMakeRect(12+i*width+inset,20,width-inset-4,17);
+    }
+    [CATransaction commit];
 }
 - (void)showStage:(NSString *)state active:(BOOL)active {
     NSInteger next=[state isEqual:@"recognize"] ? 1 : ([state isEqual:@"generate-titles"] ? 2 : 0);
@@ -72,10 +90,12 @@ static void SubPopReveal(NSView *view) {
     NSArray *titles=@[@"准备音频",@"识别语音",@"整理字幕"];
     for (NSInteger i=0;i<3;i++) {
         NSTextField *label=self.stageLabels[i];
-        label.stringValue=[NSString stringWithFormat:@"%@  %@",i<next ? @"✓" : (i==next ? @"●" : @"○"),titles[i]];
+        label.stringValue=i==next ? titles[i] : [NSString stringWithFormat:@"%@  %@",i<next ? @"✓" : @"○",titles[i]];
         label.textColor=i==next ? SubPopAccent() : (i<next ? NSColor.labelColor : NSColor.secondaryLabelColor);
     }
+    if (changed) { [self.wave setWorking:NO];self.wave.visualStage=next;self.wave.needsLayout=YES; }
+    self.needsLayout=YES;
     [self.wave setWorking:active];
-    if (changed && active) SubPopReveal(self);
+    if (changed && active) {SubPopReveal(self.wave);SubPopReveal(self.stageLabels[next]);}
 }
 @end
