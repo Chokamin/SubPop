@@ -77,7 +77,7 @@
         NSButton *action=row[@"action"];action.title=installed ? (selected ? @"正在使用" : @"使用此模型") : @"下载模型";action.enabled=[self workerAvailable] && !busy && !self.requestID && !(installed && selected);
         NSButton *remove=row[@"remove"];remove.hidden=![available[@"hasFiles"] boolValue];remove.enabled=!busy && !self.requestID && [self workerAvailable];
         if ([spec[@"engine"] isEqual:@"doubao"]) {
-            status.stringValue=[available[@"cleanupPending"] unsignedIntegerValue]>0 ? @"有临时音频待清理 · 打开云端设置" : (installed ? @"已配置 · 未验证服务额度" : @"尚需配置 API Key 与 TOS");
+            status.stringValue=[available[@"cleanupPending"] unsignedIntegerValue]>0 ? @"旧版临时音频待清理 · 打开云端设置" : (installed ? @"已配置 · 未验证服务额度" : @"尚需配置 API Key");
             action.title=installed ? (selected ? @"正在使用" : @"使用此模型") : @"配置云端识别";
             action.enabled=!self.requestID && !(installed && selected);
             remove.hidden=NO;remove.title=@"云端设置…";remove.action=@selector(openCloudSettings:);remove.enabled=!self.requestID;

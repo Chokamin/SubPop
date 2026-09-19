@@ -108,7 +108,7 @@
       "name": "豆包录音文件识别 2.0",
       "engine": "doubao",
       "directory": "doubao-cloud",
-      "description": "需配置 API Key 与 TOS · 云端计费",
+      "description": "需配置 API Key · 云端计费",
       "files": {}
     }
   ],

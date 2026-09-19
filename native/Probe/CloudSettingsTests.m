@@ -31,7 +31,7 @@ int main(int argc,const char *argv[]) {
         NSString *fake=[@"fake-subpop-test-" stringByAppendingString:NSUUID.UUID.UUIDString];
         if (SubPopSaveCloudKey(fake)!=errSecSuccess) return 3;
         NSDictionary *tos=@{@"region":@"cn-beijing",@"bucket":@"subpop-test",@"tosAccessKey":@"fake-ak",@"tosSecretKey":@"fake-sk"};
-        if (SubPopCloudCredentials()!=nil || !SubPopTOSValid(tos)) {SubPopSaveCloudKey(nil);return 5;}
+        if (![SubPopCloudCredentials()[@"apiKey"] isEqual:fake] || ![SubPopCloudStatus()[@"configured"] boolValue] || !SubPopTOSValid(tos)) {SubPopSaveCloudKey(nil);return 5;}
         if (SubPopSaveTOS(tos)!=errSecSuccess) {SubPopSaveCloudKey(nil);return 6;}
         NSTask *child=[NSTask new];child.executableURL=[NSURL fileURLWithPath:@(argv[0])];child.arguments=@[@"--read"];
         NSPipe *pipe=NSPipe.pipe;child.standardOutput=pipe;child.standardError=NSFileHandle.fileHandleWithNullDevice;
@@ -39,9 +39,9 @@ int main(int argc,const char *argv[]) {
         NSData *data=launched ? [pipe.fileHandleForReading readDataToEndOfFile] : nil;
         if (launched) [child waitUntilExit];
         NSDictionary *value=data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
-        BOOL same=[value[@"apiKey"] isEqual:fake] && [value[@"tosAccessKey"] isEqual:@"fake-ak"] && [value[@"tosSecretKey"] isEqual:@"fake-sk"] && [value[@"bucket"] isEqual:@"subpop-test"];
+        BOOL same=[value[@"apiKey"] isEqual:fake] && value.count==1; // Old TOS secrets must not travel to the worker.
         NSDictionary *state=SubPopCloudStatus();
-        same=same && [state[@"configured"] boolValue] && CFGetTypeID((__bridge CFTypeRef)state[@"configured"])==CFBooleanGetTypeID();
+        same=same && [state[@"version"] integerValue]==3 && [state[@"configured"] boolValue] && CFGetTypeID((__bridge CFTypeRef)state[@"configured"])==CFBooleanGetTypeID();
         NSString *metadata=[[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:state options:0 error:nil] encoding:NSUTF8StringEncoding];
         same=same && ![metadata containsString:fake] && ![metadata containsString:@"fake-ak"] && ![metadata containsString:@"fake-sk"];
         BOOL removed=SubPopSaveCloudKey(nil)==errSecSuccess && SubPopCloudKey()==nil;

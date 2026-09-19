@@ -143,7 +143,7 @@ def serve():
                     code=-1
                 if code is not None:
                     try:
-                        if cancelled:raise InterruptedError('已取消识别。云端任务已提交部分可能计费；未清理的临时音频将在下次云端任务重试清理。' if json.loads((request/'request.json').read_text()).get('cloudConsent') is True else '已取消识别')
+                        if cancelled:raise InterruptedError('已取消识别。云端任务已提交部分可能计费。' if json.loads((request/'request.json').read_text()).get('cloudConsent') is True else '已取消识别')
                         if code!=0 or ready is None:raise ValueError(job_error or 'Recognition failed; see this request worker.log')
                         publish_result(request,ready)
                     except Exception as error:save(request/'response.json',{'requestID':request.name,'status':'cancelled' if isinstance(error,InterruptedError) else 'failed','stage':'worker','error':str(error)})

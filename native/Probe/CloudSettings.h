@@ -49,35 +49,33 @@ static BOOL SubPopLegacyValid(NSDictionary *value) {
     id appID=value[@"appID"],token=value[@"accessToken"];
     return [appID isKindOfClass:NSString.class] && [[NSPredicate predicateWithFormat:@"SELF MATCHES %@",@"[0-9]{1,32}"] evaluateWithObject:appID] && [token isKindOfClass:NSString.class] && SubPopCloudKeyValid(token);
 }
-static OSStatus SubPopSaveLegacy(NSDictionary *value) {
+static inline OSStatus SubPopSaveLegacy(NSDictionary *value) {
     if (value && !SubPopLegacyValid(value)) return errSecParam;
     NSString *json=value ? [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:value options:0 error:nil] encoding:NSUTF8StringEncoding] : nil;
     return SubPopSaveSecret(@"legacy-speech",json);
 }
-static NSDictionary *SubPopTOSConfig(void) {
+static inline NSDictionary *SubPopTOSConfig(void) {
     NSData *data=[SubPopReadSecret(@"tos-credentials") dataUsingEncoding:NSUTF8StringEncoding];
     id value=data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
     return [value isKindOfClass:NSDictionary.class] ? value : @{};
 }
-static BOOL SubPopTOSValid(NSDictionary *value) {
+static inline BOOL SubPopTOSValid(NSDictionary *value) {
     if (![@[@"cn-beijing",@"cn-shanghai",@"cn-guangzhou"] containsObject:value[@"region"] ?: @""]) return NO;
     id bucket=value[@"bucket"];
     if (![bucket isKindOfClass:NSString.class] || ![[NSPredicate predicateWithFormat:@"SELF MATCHES %@",@"[a-z0-9][a-z0-9-]{1,61}[a-z0-9]"] evaluateWithObject:bucket]) return NO;
     return [value[@"tosAccessKey"] isKindOfClass:NSString.class] && [value[@"tosSecretKey"] isKindOfClass:NSString.class] && SubPopCloudKeyValid(value[@"tosAccessKey"]) && SubPopCloudKeyValid(value[@"tosSecretKey"]);
 }
-static OSStatus SubPopSaveTOS(NSDictionary *value) {
+static inline OSStatus SubPopSaveTOS(NSDictionary *value) {
     NSString *json=value ? [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:value options:0 error:nil] encoding:NSUTF8StringEncoding] : nil;
     return SubPopSaveSecret(@"tos-credentials",json);
 }
 static NSDictionary *SubPopCloudCredentials(void) {
-    NSString *key=SubPopCloudKey();NSDictionary *tos=SubPopTOSConfig();
-    if (!SubPopCloudKeyValid(key) || !SubPopTOSValid(tos)) return nil;
-    NSMutableDictionary *value=tos.mutableCopy;value[@"apiKey"]=key;return value;
+    NSString *key=SubPopCloudKey();
+    return SubPopCloudKeyValid(key) ? @{@"apiKey":key} : nil;
 }
 static NSDictionary *SubPopCloudStatus(void) {
-    // Only non-secret readiness flags and region/bucket identifiers reach disk.
-    NSDictionary *tos=SubPopTOSConfig();BOOL api=SubPopCloudKeyValid(SubPopCloudKey()),storage=SubPopTOSValid(tos);
-    return @{@"version":@2,@"configured":api && storage ? @YES : @NO,@"apiKeyConfigured":@(api),@"storageConfigured":@(storage),@"legacyConfigured":@(SubPopLegacyValid(SubPopLegacyCredentials())),@"region":tos[@"region"] ?: @"",@"bucket":tos[@"bucket"] ?: @""};
+    BOOL api=SubPopCloudKeyValid(SubPopCloudKey());
+    return @{@"version":@3,@"configured":api ? @YES : @NO,@"apiKeyConfigured":@(api),@"legacyConfigured":@(SubPopLegacyValid(SubPopLegacyCredentials()))};
 }
 static void SubPopWriteCloudStatus(void) {
     NSString *directory=[SubPopWorkspace(NSBundle.mainBundle) stringByAppendingPathComponent:@".subloom/cloud"];

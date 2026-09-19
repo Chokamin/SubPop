@@ -435,9 +435,9 @@ static NSDictionary *Time(CMTime t) {
     self.serviceLabel.stringValue=connected ? @"● 本机就绪" : @"本机未连接";
     self.modelDetail.stringValue=[NSString stringWithFormat:@"%@ · %@ · %@",[self selectedModel][@"description"] ?: @"",[self selectedModelAvailable] ? @"已安装" : @"模型未就绪",[[self selectedModel][@"engine"] isEqual:@"mlx-whisper"] ? @"本机 MLX" : @"本机 CPU"];
     BOOL cloud=[self selectedCloudModel];
-    if (cloud) self.modelDetail.stringValue=[NSString stringWithFormat:@"豆包云端 · %@ · 按账户计费",[self selectedModelAvailable] ? @"已配置，尚需有效服务额度" : @"请先配置 API Key 与 TOS"];
+    if (cloud) self.modelDetail.stringValue=[NSString stringWithFormat:@"豆包云端 · %@ · 按账户计费",[self selectedModelAvailable] ? @"已配置，尚需有效服务额度" : @"请先配置 API Key"];
     self.scopeLabel.stringValue=cloud ? @"云端识别会上传音频至火山引擎 · 按账户计费" : @"音频留在本机  ·  字幕回到你的时间线";
-    if (cloud && self.requestID && [state isEqual:@"recognize"]) self.statusDetail.stringValue=@{@"uploading":@"正在上传临时音频到你的 TOS 存储桶…",@"queued":@"音频已提交，正在等待云端处理…",@"processing":@"豆包 2.0 正在识别音频，完成后在本机整理字幕。"}[self.cloudPhase ?: @""] ?: @"正在提交音频，完成后在本机整理字幕。";
+    if (cloud && self.requestID && [state isEqual:@"recognize"]) self.statusDetail.stringValue=@{@"uploading":@"正在向豆包上传音频…",@"queued":@"音频已提交，正在等待云端处理…",@"processing":@"豆包 2.0 正在识别音频，完成后在本机整理字幕。"}[self.cloudPhase ?: @""] ?: @"正在提交音频，完成后在本机整理字幕。";
     self.serviceLabel.textColor=connected ? NSColor.systemGreenColor : NSColor.secondaryLabelColor;
     self.dropTitle.stringValue=fresh ? (self.dropName ?: @"项目已导入") : @"把项目拖到这里";
     self.dropDetail.stringValue=fresh ? [NSString stringWithFormat:@"%02ld:%02ld · 整个项目 · 修改时间线后请重新拖入",(long)(CMTimeGetSeconds(self.dropDuration)/60),(long)CMTimeGetSeconds(self.dropDuration)%60] : @"从 Final Cut Pro 浏览器拖入整个项目";
@@ -462,14 +462,14 @@ static NSDictionary *Time(CMTime t) {
     if (hasRows && [self.resultManifest[@"reviewWarnings"] count]) self.statusDetail.stringValue=[NSString stringWithFormat:@"已自动整理 · %lu 段时间需校对，保留原断句 · 拖回后可逐句编辑",(unsigned long)[self.resultManifest[@"reviewWarnings"] count]];
     if (self.lastVisualState && ![self.lastVisualState isEqual:state]) SubPopReveal(self.statusTitle);
     self.lastVisualState=state;
-    if (connected && ![self selectedModelAvailable] && !busy) { self.statusTitle.stringValue=@"所选模型尚未就绪";self.statusDetail.stringValue=cloud ? @"点击“模型”，为豆包配置语音 API Key 与 TOS，或选择本机模型。" : @"点击“模型管理”下载，或选择已安装的模型。"; }
+    if (connected && ![self selectedModelAvailable] && !busy) { self.statusTitle.stringValue=@"所选模型尚未就绪";self.statusDetail.stringValue=cloud ? @"点击“模型”，为豆包配置语音 API Key，或选择本机模型。" : @"点击“模型管理”下载，或选择已安装的模型。"; }
 
     BOOL ready=[self canDragResult];BOOL fileImport=[self usesFileImport];
     if (hasRows && fileImport && ready) {
         self.statusTitle.stringValue=self.importInProgress ? @"正在发送导入请求" : (self.importMessage.length ? @"Tap5a 字幕导入" : @"底框字幕已准备好");
         self.statusDetail.stringValue=self.importMessage ?: @"点击上方按钮导入 FCP，在“SubPop 字幕”事件中找到片段，再拖到原项目起点上方。落轨后可将片段项分开。";
     }
-    if (hasRows && [self.resultManifest[@"cloudCleanupPending"] unsignedIntegerValue]>0) self.statusDetail.stringValue=[self.statusDetail.stringValue stringByAppendingString:@" 临时音频尚待清理，请打开云端设置检查 TOS 删除权限。"];
+    if (hasRows && [self.resultManifest[@"cloudCleanupPending"] unsignedIntegerValue]>0) self.statusDetail.stringValue=[self.statusDetail.stringValue stringByAppendingString:@" 旧版临时音频尚待清理，请打开云端设置查看。"];
 
     self.tap5aStyleButton.hidden=![self usesFileImport];self.tap5aStyleButton.enabled=!self.importInProgress;
     self.resultView.enabled=ready && !self.importInProgress;
@@ -549,7 +549,7 @@ static NSDictionary *Time(CMTime t) {
     if (self.requestID || ![self selectedModelAvailable]) return;
     NSString *model=self.selectedModelID;NSString *uid=self.dropUID;NSUInteger generation=self.dropGeneration;
     NSAlert *alert=[NSAlert new];alert.messageText=@"使用豆包云端识别？";
-    alert.informativeText=@"所选范围的音频会上传到你的私有 TOS 桶，通过 1 小时有效链接交给豆包识别 2.0。视频画面、项目文件和词库不上传。语音识别与 TOS 存储、流量费用由你的火山引擎账户结算。\n\n结束后尝试删除临时音频，清理失败将在下次云端任务重试。取消或断网不会重新提交识别，已提交部分仍可能计费。";
+    alert.informativeText=@"所选范围的音频会直接发送给火山引擎的豆包录音文件识别 2.0。视频画面、项目文件和词库不上传，识别费用由你的火山引擎账户结算。\n\n取消或断网不会重新提交识别，已提交部分仍可能计费。";
     [alert addButtonWithTitle:@"上传并识别"];[alert addButtonWithTitle:@"取消"];
     [alert beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse response) {
         if (response==NSAlertFirstButtonReturn && [self.selectedModelID isEqual:model] && [self.dropUID isEqual:uid] && self.dropGeneration==generation) [self submitWorkerJob];

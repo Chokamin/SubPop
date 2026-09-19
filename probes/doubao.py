@@ -1,8 +1,9 @@
-"""Opt-in recorded-file ASR 2.0: private TOS URL -> submit -> query.
+"""Opt-in recorded-file ASR 2.0: direct audio.data -> submit -> query.
 
 Protocol: https://www.volcengine.com/docs/6561/1354868
 Vocabulary normalization remains local. Never retry a billed submission.
 """
+import base64
 import hashlib
 import http.client
 import io
@@ -16,7 +17,7 @@ import uuid
 import wave
 import time
 
-from .tos_storage import TemporaryAudio, validate as validate_storage, pending_count
+from .tos_storage import pending_count
 
 from .paths import ROOT
 
@@ -27,7 +28,7 @@ QUERY = '/api/v3/auc/bigmodel/query'
 RESOURCE = 'volc.seedasr.auc'
 PROTOCOL = 'seed-asr-2.0'
 RATE = 16000
-CHUNK_SAMPLES = 300 * RATE  # <10 MB WAV; bounded upload memory and cancellation cost.
+CHUNK_SAMPLES = 60 * RATE  # <2 MB WAV / <2.6 MB Base64, bounded per-request upload.
 MAX_RESPONSE = 16 * 1024 * 1024
 
 
@@ -39,7 +40,7 @@ def configured(root=ROOT):
     try:
         path = root / '.subloom/cloud/doubao.json'
         value = json.loads(path.read_text()) if not path.is_symlink() and path.stat().st_size < 1024 else {}
-        return value.get('version') == 2 and value.get('configured') is True
+        return value.get('version') == 3 and value.get('configured') is True
     except (OSError, ValueError, AttributeError):
         return False
 
@@ -56,10 +57,9 @@ def credential():
         key = value.get('apiKey', '')
         if not isinstance(key, str) or not 1 <= len(key) <= 4096 or any(not 33 <= ord(c) <= 126 for c in key):
             raise ValueError()
-        validate_storage(value)
-        return value
+        return {'apiKey': key}
     except (OSError, subprocess.SubprocessError, ValueError, AttributeError, TypeError):
-        raise CloudError('无法读取云端配置。请在云端设置中保存语音 API Key、TOS 区域、桶名称与 AK/SK，并允许 SubPop 访问钥匙串。') from None
+        raise CloudError('无法读取云端配置。请在云端设置中保存语音 API Key，并允许 SubPop 访问钥匙串。') from None
 
 
 def post(endpoint, body, key, request_id):
@@ -100,32 +100,34 @@ def post(endpoint, body, key, request_id):
         connection.close()
 
 
-def request_chunk(wav, config, *, emit=None, storage=None, send=None, sleep=None, clock=None):
+def request_chunk(wav, config, *, emit=None, send=None, sleep=None, clock=None):
     emit = emit or (lambda phase: None)
-    storage, send = storage or TemporaryAudio, send or post
-    sleep, clock = sleep or time.sleep, clock or time.monotonic
+    send, sleep, clock = send or post, sleep or time.sleep, clock or time.monotonic
+    # Internal encoder produces at most one minute of 16 kHz mono PCM WAV.
+    if not isinstance(wav, bytes) or not 0 < len(wav) <= CHUNK_SAMPLES * 2 + 44:
+        raise CloudError('云端音频分段大小无效，未提交识别。')
+    identifier = str(uuid.uuid4())
+    body = {'user': {'uid': 'subpop'},
+            'audio': {'data': base64.b64encode(wav).decode('ascii'),
+                      'format': 'wav', 'rate': RATE, 'bits': 16, 'channel': 1},
+            'request': {'model_name': 'bigmodel', 'show_utterances': True,
+                        'enable_itn': True, 'enable_punc': True, 'enable_ddc': False}}
     emit('uploading')
-    with storage(config, wav, root=ROOT) as url:
-        identifier = str(uuid.uuid4())
-        body = {'user': {'uid': 'subpop'},
-                'audio': {'url': url, 'format': 'wav', 'rate': RATE, 'bits': 16, 'channel': 1},
-                'request': {'model_name': 'bigmodel', 'show_utterances': True,
-                            'enable_itn': True, 'enable_punc': True, 'enable_ddc': False}}
-        code, _ = send(SUBMIT, body, config['apiKey'], identifier)
-        if code != '20000000':
-            raise CloudError('豆包未确认任务提交成功。未自动重试，请检查控制台用量。')
-        deadline = clock() + 1800
-        while clock() < deadline:
-            code, value = send(QUERY, {}, config['apiKey'], identifier)
-            if code == '20000000':
-                return value
-            if code == '20000003':
-                return {'result': {'text': '', 'utterances': []}}
-            if code not in ('20000001', '20000002'):
-                raise CloudError('豆包未返回有效任务状态。')
-            emit('queued' if code == '20000002' else 'processing')
-            sleep(3)
-        raise CloudError('豆包识别等待超时，未重新提交。已提交部分可能计费，请检查控制台。')
+    code, _ = send(SUBMIT, body, config['apiKey'], identifier)
+    if code != '20000000':
+        raise CloudError('豆包未确认任务提交成功。未自动重试，请检查控制台用量。')
+    deadline = clock() + 1800
+    while clock() < deadline:
+        code, value = send(QUERY, {}, config['apiKey'], identifier)
+        if code == '20000000':
+            return value
+        if code == '20000003':
+            return {'result': {'text': '', 'utterances': []}}
+        if code not in ('20000001', '20000002'):
+            raise CloudError('豆包未返回有效任务状态。')
+        emit('queued' if code == '20000002' else 'processing')
+        sleep(3)
+    raise CloudError('豆包识别等待超时，未重新提交。已提交部分可能计费，请检查控制台。')
 
 
 def parse_result(value, duration, offset=0):
