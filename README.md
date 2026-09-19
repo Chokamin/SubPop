@@ -9,7 +9,7 @@
 为 Final Cut Pro 制作的本机中文字幕插件。<br>
 拖入项目，识别语音，校对与调整样式，再把字幕放回时间线。
 
-**[下载 SubPop 1.0.0](https://github.com/Chokamin/SubPop/releases/download/v1.0.0/SubPop-1.0.0-arm64.pkg)** · [所有版本](https://github.com/Chokamin/SubPop/releases) · [反馈问题](https://github.com/Chokamin/SubPop/issues)
+**[下载 SubPop 1.1.0](https://github.com/Chokamin/SubPop/releases/download/v1.1.0/SubPop-1.1.0-arm64.pkg)** · [所有版本](https://github.com/Chokamin/SubPop/releases) · [反馈问题](https://github.com/Chokamin/SubPop/issues)
 
 Apple Silicon · macOS 15+ · PKG 约 210 MB<br>
 Developer ID 签名 · Apple 公证
@@ -26,9 +26,9 @@ Developer ID 签名 · Apple 公证
 - **整批调整样式**：搭配 Tap5a 自适应底框，统一设置文字、底框、位置与效果，边调边预览。
 - **回到 FCP 编辑**：生成可逐句修改的 Title 字幕片段，继续完成剪辑。
 
-## 豆包云端识别（开发版 1.1.0，尚未发布）
+## 豆包云端识别
 
-本机模型之外，开发版增加了可选的豆包云端识别。上方 **1.0.0 安装包尚不包含此功能**。
+本机模型之外，1.1.0 增加了可选的豆包录音文件识别 2.0。只需配置语音服务 API Key。
 
 1. 在[火山引擎豆包语音控制台](https://console.volcengine.com/speech/new/setting/apikeys)开通「录音文件识别 2.0」，创建语音服务 API Key。此处不是方舟聊天模型密钥，也不需要开通极速版。
 2. SubPop「模型」→「豆包录音文件识别 2.0」→「配置云端识别」，填写 API Key 并保存。密钥保存在 macOS 钥匙串；保存不会上传音频或验证服务额度。
