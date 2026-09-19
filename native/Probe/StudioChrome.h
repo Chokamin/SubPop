@@ -40,3 +40,42 @@ static void SubPopReveal(NSView *view) {
     CABasicAnimation *fade=[CABasicAnimation animationWithKeyPath:@"opacity"];fade.fromValue=@0;fade.toValue=@1;fade.duration=.22;
     [view.layer addAnimation:fade forKey:@"reveal"];
 }
+
+// Decorative activity, not a waveform measurement or an invented percentage.
+@interface SubPopActivityView : NSView
+@property SubPopSignalView *wave;
+@property NSArray<NSTextField *> *stageLabels;
+@property NSInteger stage;
+- (void)showStage:(NSString *)state active:(BOOL)active;
+@end
+@implementation SubPopActivityView
+- (instancetype)initWithFrame:(NSRect)frame {
+    if ((self=[super initWithFrame:frame])) {
+        self.wantsLayer=YES;self.layer.cornerRadius=10;
+        self.layer.backgroundColor=[SubPopAccent() colorWithAlphaComponent:.07].CGColor;
+        self.wave=[[SubPopSignalView alloc] initWithFrame:NSMakeRect(8,9,38,38)];[self addSubview:self.wave];
+        NSMutableArray *labels=[NSMutableArray new];
+        for (NSString *title in @[@"准备音频",@"识别语音",@"整理字幕"]) {
+            NSTextField *label=[NSTextField labelWithString:title];label.font=[NSFont systemFontOfSize:11 weight:NSFontWeightMedium];[self addSubview:label];[labels addObject:label];
+        }
+        self.stageLabels=labels;self.stage=-1;self.hidden=YES;
+    }return self;
+}
+- (void)layout {
+    [super layout];CGFloat width=(self.bounds.size.width-64)/3;
+    for (NSInteger i=0;i<3;i++) self.stageLabels[i].frame=NSMakeRect(56+i*width,20,width-4,17);
+}
+- (void)showStage:(NSString *)state active:(BOOL)active {
+    NSInteger next=[state isEqual:@"recognize"] ? 1 : ([state isEqual:@"generate-titles"] ? 2 : 0);
+    BOOL changed=self.hidden==active || next!=self.stage;
+    self.hidden=!active;self.stage=next;
+    NSArray *titles=@[@"准备音频",@"识别语音",@"整理字幕"];
+    for (NSInteger i=0;i<3;i++) {
+        NSTextField *label=self.stageLabels[i];
+        label.stringValue=[NSString stringWithFormat:@"%@  %@",i<next ? @"✓" : (i==next ? @"●" : @"○"),titles[i]];
+        label.textColor=i==next ? SubPopAccent() : (i<next ? NSColor.labelColor : NSColor.secondaryLabelColor);
+    }
+    [self.wave setWorking:active];
+    if (changed && active) SubPopReveal(self);
+}
+@end

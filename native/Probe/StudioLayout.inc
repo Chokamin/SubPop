@@ -50,10 +50,10 @@
     NSTextField *rules=[self label:@"自动整理   去句子标点  ·  自然断句  ·  保护专名和数值" size:11 weight:NSFontWeightRegular];rules.textColor=[NSColor colorWithCalibratedWhite:.68 alpha:1];
     [stack addArrangedSubview:[self surface:@[selectors,self.modelDetail,rules]]];
     self.statusTitle=[self label:@"准备生成字幕" size:14 weight:NSFontWeightSemibold];self.statusDetail=[self label:@"" size:12 weight:NSFontWeightRegular];self.statusDetail.textColor=NSColor.secondaryLabelColor;
-    self.spinner=[[NSProgressIndicator alloc] initWithFrame:NSMakeRect(0,0,16,16)];self.spinner.style=NSProgressIndicatorStyleSpinning;self.spinner.displayedWhenStopped=NO;[self.spinner.widthAnchor constraintEqualToConstant:16].active=YES;[self.spinner.heightAnchor constraintEqualToConstant:16].active=YES;
-    NSStackView *statusLine=[NSStackView stackViewWithViews:@[self.statusTitle,[NSView new],self.spinner]];statusLine.alignment=NSLayoutAttributeCenterY;
+    NSStackView *statusLine=[NSStackView stackViewWithViews:@[self.statusTitle,[NSView new]]];statusLine.alignment=NSLayoutAttributeCenterY;
+    self.activity=[[SubPopActivityView alloc] initWithFrame:NSMakeRect(0,0,520,56)];[self.activity.heightAnchor constraintEqualToConstant:56].active=YES;
     self.jobBar=[[NSProgressIndicator alloc] initWithFrame:NSZeroRect];self.jobBar.indeterminate=NO;self.jobBar.minValue=0;self.jobBar.maxValue=1;self.jobBar.style=NSProgressIndicatorStyleBar;[self.jobBar.heightAnchor constraintEqualToConstant:5].active=YES;self.jobBar.hidden=YES;
-    [stack addArrangedSubview:[self surface:@[statusLine,self.statusDetail,self.jobBar]]];
+    [stack addArrangedSubview:[self surface:@[statusLine,self.statusDetail,self.activity,self.jobBar]]];
     self.captionCount=[self label:@"字幕预览" size:13 weight:NSFontWeightSemibold];self.reviewToggle=[self toolbarButton:@"展开预览与样式 ▾" symbol:@"text.alignleft" action:@selector(toggleReview:)];
     self.reviewHeader=[NSStackView stackViewWithViews:@[self.captionCount,[NSView new],self.reviewToggle]];[stack addArrangedSubview:self.reviewHeader];self.reviewHeader.hidden=YES;
     self.captionTable=[NSTableView new];self.captionTable.rowHeight=36;self.captionTable.intercellSpacing=NSMakeSize(10,4);self.captionTable.usesAlternatingRowBackgroundColors=NO;self.captionTable.backgroundColor=[NSColor colorWithCalibratedWhite:.09 alpha:1];self.captionTable.dataSource=self;self.captionTable.delegate=self;

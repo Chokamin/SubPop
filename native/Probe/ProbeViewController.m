@@ -65,7 +65,7 @@ static NSDictionary *Time(CMTime t) {
 @property BOOL reviewExpanded;
 @property NSTextField *captionCount;
 @property NSString *lastVisualState;
-@property NSProgressIndicator *spinner;
+@property SubPopActivityView *activity;
 @property SubPopTitleDragView *resultView;
 @property NSString *displayState;
 @property NSString *dropName;
@@ -400,12 +400,13 @@ static NSDictionary *Time(CMTime t) {
     if (newlyReady) {SubPopReveal(self.resultView);[self.view layoutSubtreeIfNeeded];[self.resultView scrollRectToVisible:self.resultView.bounds];}
     self.jobBar.hidden=!(busy && [state isEqual:@"recognize"] && self.jobProgress);
     if (!self.jobBar.hidden) self.jobBar.doubleValue=self.jobProgress.doubleValue;
-    [self.signal setWorking:busy || preparing || managing];
+    [self.signal setWorking:managing && !busy && !preparing];
+    [self.activity showStage:state active:busy || preparing];
     if (hasRows && [self.resultManifest[@"reviewWarnings"] count]) self.statusDetail.stringValue=[NSString stringWithFormat:@"已自动整理 · %lu 段时间需校对，保留原断句 · 拖回后可逐句编辑",(unsigned long)[self.resultManifest[@"reviewWarnings"] count]];
     if (self.lastVisualState && ![self.lastVisualState isEqual:state]) SubPopReveal(self.statusTitle);
     self.lastVisualState=state;
     if (connected && ![self selectedModelAvailable] && !busy) { self.statusTitle.stringValue=@"所选模型尚未就绪";self.statusDetail.stringValue=@"点击“模型管理”下载，或选择已安装的模型。"; }
-    if (busy || preparing) [self.spinner startAnimation:nil]; else [self.spinner stopAnimation:nil];
+
     BOOL ready=[self canDragResult];BOOL fileImport=[self usesFileImport];
     if (hasRows && fileImport && ready) {
         self.statusTitle.stringValue=self.importInProgress ? @"正在发送导入请求" : (self.importMessage.length ? @"Tap5a 字幕导入" : @"底框字幕已准备好");
@@ -621,6 +622,7 @@ static NSDictionary *Time(CMTime t) {
     [self restoreBridge];
 }
 - (void)viewWillDisappear {
+    [self.activity.wave setWorking:NO];
     if (self.tap5aScoped) [self.tap5aURL stopAccessingSecurityScopedResource];self.tap5aScoped=NO;self.tap5aURL=nil;
     [self.bridgeTimer invalidate]; self.bridgeTimer=nil;
     if (self.bridgeScoped) [self.bridgeURL stopAccessingSecurityScopedResource];

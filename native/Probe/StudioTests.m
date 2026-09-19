@@ -48,6 +48,10 @@ int main(int argc,const char *argv[]) {
         SubPopPreviewController *c=[SubPopPreviewController new];
         c.previewCatalog=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:@(argv[1])] options:0 error:nil];
         [c loadView];NSWindow *window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,660,740) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];window.contentView=c.view;
+        if (getenv("SUBPOP_ACTIVITY_PREVIEW")) {
+            c.requestID=@"preview";c.displayState=@"recognize";c.jobProgress=@.42;[c updateInterface];
+            window.title=@"SubPop · 识别动效预览";[window makeKeyAndOrderFront:nil];[NSApp activateIgnoringOtherApps:YES];[NSApp run];return 0;
+        }
         NSDictionary *m=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:[@(argv[2]) stringByAppendingPathComponent:@"captions.json"]] options:0 error:nil];
         for (NSNumber *width in @[@580,@800,@1100]) {
             [window setContentSize:NSMakeSize(width.doubleValue,680)];[c.view layoutSubtreeIfNeeded];
@@ -81,10 +85,12 @@ int main(int argc,const char *argv[]) {
             if ([c usesFileImport] || ![c.resultView.accessibilityLabel isEqual:@"拖回字幕到 Final Cut Pro"]) return 16;
             if ([c.resultView accessibilityPerformPress] || c.importInvocationCount!=3) return 20;
             c.requestID=@"preview";c.displayState=@"recognize";c.jobProgress=@.42;[c updateInterface];
+            if (c.activity.hidden || c.activity.stage!=1 || ![c.activity.stageLabels[0].stringValue hasPrefix:@"✓"]) return 70;
             if (c.jobBar.hidden || fabs(c.jobBar.doubleValue-.42)>.001 || c.cancelButton.hidden || c.generateButton.enabled) return 4;
-            if (!NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion && ![c.signal.bars[0] animationForKey:@"working"]) return 5;
+            if (!NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion && ![c.activity.wave.bars[0] animationForKey:@"working"]) return 5;
             c.requestID=nil;c.displayState=@"ready";[c updateInterface];
-            if ([c.signal.bars[0] animationForKey:@"working"]) return 6;
+            if (!c.activity.hidden || c.activity.wave.running) return 71;
+            if ([c.activity.wave.bars[0] animationForKey:@"working"]) return 6;
         }
         [c.templatePicker selectItemAtIndex:1];c.resultRequestID=@"style-test";[window orderFront:nil];
         if (argc==4) c.freshDropURL=[NSURL fileURLWithPath:@(argv[3])];
