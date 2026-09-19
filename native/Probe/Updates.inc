@@ -8,7 +8,7 @@
         self.updateAlert=nil;self.updateURL=nil;
     }];
     if (!repository.length) {alert.messageText=@"尚未配置更新地址";alert.informativeText=@"此版本尚未关联 GitHub 下载仓库。";return;}
-    NSString *current=[NSString stringWithFormat:@"%@.%@",[bundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"],[bundle objectForInfoDictionaryKey:@"CFBundleVersion"]];
+    NSString *current=[bundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     NSURL *url=[NSURL URLWithString:[NSString stringWithFormat:@"https://api.github.com/repos/%@/releases/latest",repository]];
     NSMutableURLRequest *request=[NSMutableURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:20];[request setValue:@"application/vnd.github+json" forHTTPHeaderField:@"Accept"];[request setValue:@"SubPop-Update-Check" forHTTPHeaderField:@"User-Agent"];
     NSURLSessionConfiguration *configuration=NSURLSessionConfiguration.ephemeralSessionConfiguration;configuration.timeoutIntervalForResource=25;

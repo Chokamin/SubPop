@@ -9,6 +9,7 @@
 #import "Updates.h"
 #import "TitleDragProvider.h"
 #import "TitleTemplates.h"
+#import "Tap5aInstaller.h"
 #import "Tap5aStyle.h"
 #import "ScrubbableNumberField.h"
 #import "Tap5aPreview.h"
@@ -91,6 +92,7 @@ static NSDictionary *Time(CMTime t) {
 @property NSStackView *templateControls;
 @property NSURL *tap5aURL;
 @property BOOL tap5aScoped;
+@property SubPopTap5aInstaller *tap5aInstaller;
 @property BOOL importInProgress;
 @property NSDate *lastImportAttempt;
 @property NSString *importMessage;
@@ -283,23 +285,72 @@ static NSDictionary *Time(CMTime t) {
     }
     if (scoped) [url stopAccessingSecurityScopedResource];return NO;
 }
+- (BOOL)useInstalledTap5a:(NSURL *)url {
+    NSError *error=nil;
+    NSData *bookmark=[url bookmarkDataWithOptions:NSURLBookmarkCreationWithSecurityScope includingResourceValuesForKeys:nil relativeToURL:nil error:&error];
+    if (!bookmark || !SubPopValidTap5a(url)) {
+        NSAlert *alert=[NSAlert new];alert.messageText=@"无法使用这个模板";
+        alert.informativeText=error.localizedDescription ?: @"请选择 Titles.localized 目录中已安装的 Tap5a Autosize Text Background.moti。";
+        [alert runModal];return NO;
+    }
+    BOOL stale=NO;
+    NSURL *scopedURL=[NSURL URLByResolvingBookmarkData:bookmark options:NSURLBookmarkResolutionWithSecurityScope relativeToURL:nil bookmarkDataIsStale:&stale error:&error];
+    BOOL scoped=[scopedURL startAccessingSecurityScopedResource];
+    if(!scopedURL || !SubPopValidTap5a(scopedURL)) {
+        if(scoped)[scopedURL stopAccessingSecurityScopedResource];
+        NSAlert *alert=[NSAlert new];alert.messageText=@"模板访问授权未完成";alert.informativeText=@"请使用「选择已安装的模板」重新选择模板文件。";[alert runModal];return NO;
+    }
+    [NSUserDefaults.standardUserDefaults setObject:bookmark forKey:@"tap5aTemplateBookmark"];
+    if (self.tap5aScoped) [self.tap5aURL stopAccessingSecurityScopedResource];
+    self.tap5aURL=scopedURL;self.tap5aScoped=scoped;
+    [self.templatePicker selectItemAtIndex:1];[self rebuildTitles];return YES;
+}
+- (void)chooseTap5aTemplate {
+    NSOpenPanel *panel=[NSOpenPanel openPanel];panel.canChooseDirectories=NO;panel.allowsMultipleSelection=NO;
+    panel.message=@"请选择已安装的 Tap5a Autosize Text Background.moti，之后会记住位置。";panel.prompt=@"使用此模板";
+    struct passwd *entry=getpwuid(getuid());NSString *home=entry ? [NSString stringWithUTF8String:entry->pw_dir] : NSHomeDirectory();
+    panel.directoryURL=[NSURL fileURLWithPath:[home stringByAppendingPathComponent:@"Movies/Motion Templates.localized/Titles.localized/Tap5a/Tap5a Autosize Text Background"]];
+    if ([panel runModal]==NSModalResponseOK) [self useInstalledTap5a:panel.URL];
+}
+- (void)downloadTap5aTemplate {
+    if(self.tap5aInstaller)return;
+    struct passwd *entry=getpwuid(getuid());NSString *home=entry ? [NSString stringWithUTF8String:entry->pw_dir] : NSHomeDirectory();
+    NSURL *movies=[NSURL fileURLWithPath:[home stringByAppendingPathComponent:@"Movies"]];
+    NSOpenPanel *panel=[NSOpenPanel openPanel];panel.canChooseFiles=NO;panel.canChooseDirectories=YES;panel.allowsMultipleSelection=NO;
+    panel.directoryURL=movies;panel.prompt=@"授权并安装";
+    panel.message=@"请选择当前用户的「影片」文件夹。SubPop 会在其中创建 Motion Templates 标题目录并安装 Tap5a，保留已有模板。";
+    if([panel runModal]!=NSModalResponseOK)return;
+    if(![panel.URL.URLByResolvingSymlinksInPath.path isEqual:movies.URLByResolvingSymlinksInPath.path]) {
+        NSAlert *alert=[NSAlert new];alert.messageText=@"请选择当前用户的「影片」文件夹";alert.informativeText=@"模板必须安装到 Final Cut Pro 能识别的标题目录。请再次点击下载并安装。";[alert runModal];return;
+    }
+    NSAlert *progress=[NSAlert new];progress.messageText=@"正在下载并安装 Tap5a";
+    progress.informativeText=@"从 Tap5a 作者源下载约 37 KB，校验后自动安装。完成后即可使用自适应底框。";
+    [progress addButtonWithTitle:@"取消下载"];
+    NSProgressIndicator *spinner=[[NSProgressIndicator alloc] initWithFrame:NSMakeRect(0,0,280,16)];spinner.indeterminate=YES;spinner.style=NSProgressIndicatorStyleBar;[spinner startAnimation:nil];progress.accessoryView=spinner;
+    SubPopTap5aInstaller *installer=[SubPopTap5aInstaller new];self.tap5aInstaller=installer;
+    [progress beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse result){if(result==NSAlertFirstButtonReturn)[installer cancel];}];
+    [installer startAtMovies:panel.URL completion:^(NSURL *url,NSError *error){
+        if(progress.window.sheetParent)[progress.window.sheetParent endSheet:progress.window returnCode:NSModalResponseStop];
+        [spinner stopAnimation:nil];self.tap5aInstaller=nil;
+        if(url){
+            if(![self useInstalledTap5a:url])return;
+            NSAlert *done=[NSAlert new];done.messageText=@"Tap5a 已就绪";done.informativeText=@"已选择自适应底框样式。如 Final Cut Pro 尚未显示新模板，请重新打开 Final Cut Pro。";[done runModal];
+        } else if(![error.domain isEqual:NSURLErrorDomain] || error.code!=NSURLErrorCancelled) {
+            NSAlert *failed=[NSAlert new];failed.messageText=@"Tap5a 安装未完成";failed.informativeText=error.localizedDescription ?: @"请重试或选择已安装的模板。";[failed runModal];
+        }
+    }];
+}
 - (void)templateChanged:(id)sender {
     [self.view.window makeFirstResponder:nil];
     if (self.templatePicker.indexOfSelectedItem==1 && ![self resolveTap5a]) {
-        NSOpenPanel *panel=[NSOpenPanel openPanel];panel.canChooseDirectories=NO;panel.allowsMultipleSelection=NO;
-        panel.message=@"首次使用请选择已安装的 Tap5a Autosize Text Background.moti，之后会记住位置。";
-        panel.prompt=@"使用此模板";
-        struct passwd *entry=getpwuid(getuid());NSString *home=entry ? [NSString stringWithUTF8String:entry->pw_dir] : NSHomeDirectory();
-        panel.directoryURL=[NSURL fileURLWithPath:[home stringByAppendingPathComponent:@"Movies/Motion Templates.localized/Titles.localized/Tap5a/Tap5a Autosize Text Background"]];
-        if ([panel runModal]!=NSModalResponseOK) { [self.templatePicker selectItemAtIndex:0];[self rebuildTitles];return; }
-        if (!SubPopValidTap5a(panel.URL)) {
-            [self.templatePicker selectItemAtIndex:0];[self rebuildTitles];
-            NSAlert *alert=[NSAlert new];alert.messageText=@"请选择已安装的 Tap5a 自适应底框模板";alert.informativeText=@"需要 Titles.localized 目录中的 Tap5a Autosize Text Background.moti；其他模板暂不支持。";[alert runModal];return;
-        }
-        NSData *bookmark=[panel.URL bookmarkDataWithOptions:NSURLBookmarkCreationWithSecurityScope includingResourceValuesForKeys:nil relativeToURL:nil error:nil];
-        if (bookmark) [NSUserDefaults.standardUserDefaults setObject:bookmark forKey:@"tap5aTemplateBookmark"];
-        if (self.tap5aScoped) [self.tap5aURL stopAccessingSecurityScopedResource];
-        self.tap5aURL=panel.URL;self.tap5aScoped=[panel.URL startAccessingSecurityScopedResource];
+        [self.templatePicker selectItemAtIndex:0];[self rebuildTitles];
+        NSAlert *choice=[NSAlert new];choice.messageText=@"准备 Tap5a 自适应底框";
+        choice.informativeText=@"可以从作者源下载并安装，也可以选择已经安装的模板。下载需要联网，并首次授权「影片」文件夹。";
+        [choice addButtonWithTitle:@"下载并安装 Tap5a"];[choice addButtonWithTitle:@"选择已安装的模板…"];[choice addButtonWithTitle:@"取消"];
+        NSModalResponse result=[choice runModal];
+        if(result==NSAlertFirstButtonReturn)[self downloadTap5aTemplate];
+        else if(result==NSAlertSecondButtonReturn)[self chooseTap5aTemplate];
+        return;
     }
     [self rebuildTitles];
 }

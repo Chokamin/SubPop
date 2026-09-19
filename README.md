@@ -9,7 +9,7 @@
 为 Final Cut Pro 制作的本机中文字幕插件。<br>
 拖入项目，识别语音，校对与调整样式，再把字幕放回时间线。
 
-**[下载 SubPop 0.1.0.58](https://github.com/Chokamin/SubPop/releases/download/v0.1.0.58/SubPop-0.1.0.58-arm64.pkg)** · [所有版本](https://github.com/Chokamin/SubPop/releases) · [反馈问题](https://github.com/Chokamin/SubPop/issues)
+**[下载 SubPop 1.0.0](https://github.com/Chokamin/SubPop/releases/download/v1.0.0/SubPop-1.0.0-arm64.pkg)** · [所有版本](https://github.com/Chokamin/SubPop/releases) · [反馈问题](https://github.com/Chokamin/SubPop/issues)
 
 Apple Silicon · macOS 15+ · PKG 约 210 MB<br>
 Developer ID 签名 · Apple 公证
@@ -36,9 +36,9 @@ Developer ID 签名 · Apple 公证
 | SubPop 安装包 | 包含插件与独立运行环境，无需另装 Python |
 | 识别模型 | 首次使用时在 SubPop 内下载，不包含在 PKG 中 |
 | 基础字幕 | 使用 FCP 自带标题，无需安装 Tap5a |
-| 自适应底框字幕 | 需要另外安装 **Tap5a Autosize Text Background** |
+| 自适应底框字幕 | 首次使用时可在 SubPop 内下载安装 **Tap5a Autosize Text Background** |
 
-**SubPop 不会随安装包自动安装 Tap5a。** 没装 Tap5a 也可以识别并使用基础字幕；需要自动随文字伸缩的底框时，再按下方步骤安装。
+**Tap5a 不包含在 PKG 中，但可在 SubPop 内下载并安装。** 首次选择自适应底框样式时，点击「下载并安装 Tap5a」，授权一次「影片」文件夹，SubPop 会从作者源下载并放到正确目录。基础字幕无需 Tap5a。
 
 ## 第一次使用
 
@@ -60,7 +60,7 @@ Developer ID 签名 · Apple 公证
 
 ### Tap5a 自适应底框：先导入，再拖回
 
-先完成下一节的模板安装，然后在「字幕样式」中选择「Tap5a · 自适应底框」。首次使用会要求选择已安装的 `Tap5a Autosize Text Background.moti`，之后会记住位置。
+在「字幕样式」中选择「Tap5a · 自适应底框」。首次使用时，可点击「下载并安装 Tap5a」，也可点击「选择已安装的模板…」选择已有的 `Tap5a Autosize Text Background.moti`。完成后会记住位置。
 
 1. 在 SubPop 中点击「导入字幕到 Final Cut Pro」。如 FCP 询问资源库，选择原项目所在资源库。
 2. 等待 FCP 导入完成，在浏览器的「SubPop 字幕」事件中找到「项目名 · Tap5a 字幕 001」之类的片段，将它拖到**原项目时间线起点、视频上方**。
@@ -71,7 +71,19 @@ Developer ID 签名 · Apple 公证
 
 ## 安装 Tap5a（可选）
 
-当前适配的是 **Tap5a Autosize Text Background**，不是 Multiline Text Background 或其他 Tap5a 模板。模板由 [Tapio Haaja（tap5a）](https://github.com/tap5a/free-final-cut-pro-x-plugins#tap5a-autosize-text-background) 提供，需单独下载安装。
+当前适配的是 **Tap5a Autosize Text Background**，不是 Multiline Text Background 或其他 Tap5a 模板。模板由 [Tapio Haaja（tap5a）](https://github.com/tap5a/free-final-cut-pro-x-plugins#tap5a-autosize-text-background) 提供。SubPop 从作者源下载安装，保留作者说明，不随安装包重新分发模板。
+
+### 在 SubPop 中安装
+
+1. 识别完成后，选择「Tap5a · 自适应底框」，点击「下载并安装 Tap5a」。
+2. 在系统授权窗口中选择当前用户的「影片」文件夹，点击「授权并安装」。
+3. 等待下载与安装完成，SubPop 会自动选择模板；如果 FCP 尚未显示新模板，重新打开 FCP。
+
+下载约 **37 KB**，需要连接作者的 GitHub 源；网络不可达时可重试或手动安装。安装前会校验固定版本文件，保留已有模板；同名文件夹不兼容时会提示处理，不会覆盖你的修改。
+
+### 手动安装
+
+已安装的用户可直接选择模板；无法联网或使用其他安装位置时，也可按以下方式安装：
 
 1. 打开作者的 [Tap5a_Autosize_Text_Background.zip 下载页](https://github.com/tap5a/free-final-cut-pro-x-plugins/blob/main/Tap5a_Autosize_Text_Background.zip)，点击「Download raw file」下载并解压。
 2. 在 Finder 按 **⌘⇧G**，前往下面的目录。缺少文件夹时创建对应文件夹；已有 Motion Templates / Titles 目录时使用原目录，不要再建一套。
@@ -142,7 +154,7 @@ X 正值向右，Y 正值向上；偏移以项目像素为单位，支持正负�
 
 **没有 Tap5a 能用吗？**
 
-可以。基础字幕无需第三方模板；只有 Tap5a 自适应底框样式需要单独安装模板。
+可以。基础字幕无需第三方模板；选择自适应底框时，可在 SubPop 内下载并安装 Tap5a。
 
 **为什么 Tap5a 不能像基础字幕一样直接拖回？**
 

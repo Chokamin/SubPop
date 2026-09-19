@@ -19,6 +19,10 @@ int main(int argc,const char *argv[]) {
         if (![SubPopReleaseUpdate(release,@"0.1.0.28",@"owner/repo")[@"newer"] boolValue]) return 10;
         if ([SubPopReleaseUpdate(release,@"0.1.0.31",@"owner/repo")[@"newer"] boolValue]) return 11;
         if (SubPopReleaseUpdate(@{@"tag_name":@"v0.1.0-beta"},@"0.1.0.28",@"owner/repo")) return 12;
+        NSDictionary *v1=@{@"tag_name":@"v1.0.0",@"assets":@[@{@"name":@"SubPop-1.0.0-arm64.pkg"}]};
+        if(![SubPopReleaseUpdate(v1,@"0.1.0.58",@"owner/repo")[@"newer"] boolValue])return 90;
+        if([SubPopReleaseUpdate(v1,@"1.0.0",@"owner/repo")[@"newer"] boolValue])return 91;
+        if(![SubPopReleaseUpdate(@{@"tag_name":@"v1.0.1",@"assets":@[]},@"1.0.0",@"owner/repo")[@"newer"] boolValue])return 92;
         NSString *sourceXML=@"<fcpxml><resources><asset id='r2' hasVideo='1' start='100s'><media-rep kind='original-media' src='file:///tmp/video.mp4'/></asset></resources><project><sequence tcStart='3600s'><spine><asset-clip ref='r2' offset='3600s' start='105s' duration='3s'/><gap offset='3603s' duration='2s'/><asset-clip ref='r2' offset='3605s' start='120s' duration='3s'/></spine></sequence></project></fcpxml>";
         NSData *sourceData=[sourceXML dataUsingEncoding:NSUTF8StringEncoding];
         if ([SubPopPreviewSource(sourceData,1)[@"seconds"] doubleValue]!=6 || [SubPopPreviewSource(sourceData,6)[@"seconds"] doubleValue]!=21 || SubPopPreviewSource(sourceData,4) || SubPopPreviewSource(nil,1)) return 23;

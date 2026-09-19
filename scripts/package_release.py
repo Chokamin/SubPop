@@ -23,7 +23,7 @@ def build(application_identity=None, installer_identity=None):
     shutil.copytree(ROOT/'.subloom/build/SubPop Probe.app',APP,symlinks=True)
     RUNTIME.mkdir()
     info=plistlib.loads((APP/'Contents/Info.plist').read_bytes())
-    version=info['CFBundleShortVersionString']+'.'+info['CFBundleVersion']
+    version=info['CFBundleShortVersionString']
     python=(ROOT/'.venv/bin/python').resolve().parent.parent
     shutil.copytree(python,RUNTIME/'.venv',symlinks=True,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
     source=ROOT/'.venv/lib/python3.12/site-packages'
@@ -56,9 +56,9 @@ def build(application_identity=None, installer_identity=None):
     run('pkgbuild','--root',STAGE/'payload','--identifier','com.chokamin.SubPop.installer','--version',version,'--compression','latest','--min-os-version','15.0','--install-location','/','--ownership','recommended',component)
     resources=STAGE/'resources';resources.mkdir()
     welcome=resources/'Welcome.html'
-    welcome.write_text('<html><meta charset="utf-8"><body><h1>SubPop 公开测试版</h1><p>安装 FCP 扩展和独立本机识别环境。适用于 Apple Silicon、macOS 15 或更高版本。FCP 集成当前实测版本为 12.3。</p><p>安装后打开应用程序中的 SubPop，再从 Final Cut Pro 扩展菜单打开。首次允许默认任务文件夹，进入模型管理下载所需模型。</p><p>此包尚未完成 Developer ID 签名及 Apple 公证，仅供测试使用。安装不包含模型、测试视频、词库或历史字幕。</p></body></html>')
+    welcome.write_text('<html><meta charset="utf-8"><body><h1>SubPop 安装</h1><p>安装 FCP 扩展和独立本机识别环境。适用于 Apple Silicon、macOS 15 或更高版本。FCP 集成当前实测版本为 12.3。</p><p>安装后打开应用程序中的 SubPop，再从 Final Cut Pro 扩展菜单打开。首次允许默认任务文件夹，进入模型管理下载所需模型。</p><p>此包尚未完成 Developer ID 签名及 Apple 公证，仅供测试使用。安装不包含模型、测试视频、词库或历史字幕。</p></body></html>')
     if application_identity:
-        welcome.write_text(welcome.read_text().replace('此包尚未完成 Developer ID 签名及 Apple 公证，仅供测试使用。','此包使用 Developer ID 签名。Apple 公证结果请以对应 Release 说明为准，仅供测试使用。'))
+        welcome.write_text(welcome.read_text().replace('此包尚未完成 Developer ID 签名及 Apple 公证，仅供测试使用。','此包使用 Developer ID 签名。Apple 公证结果请以对应 Release 说明为准。'))
     xml=STAGE/'distribution.xml'
     xml.write_text(f'''<?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2"><title>SubPop</title><welcome file="Welcome.html"/><options customize="never" require-scripts="false" hostArchitectures="arm64"/><volume-check><allowed-os-versions><os-version min="15.0"/></allowed-os-versions></volume-check><choices-outline><line choice="default"/></choices-outline><choice id="default" visible="false"><pkg-ref id="com.chokamin.SubPop.installer"/></choice><pkg-ref id="com.chokamin.SubPop.installer" version="{version}">SubPop-component.pkg</pkg-ref></installer-gui-script>''')
