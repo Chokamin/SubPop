@@ -45,34 +45,68 @@ class DoubaoTests(unittest.TestCase):
         for broken in ({}, {'result':{'text':'你好'}}, {'result':{'text':'有漏字','utterances':[]}}, response('不匹配')):
             with self.assertRaises(doubao.CloudError):doubao.parse_result(broken,1)
         self.assertEqual(doubao.parse_result({'result':{'text':'','utterances':[]}},1),[])
+        value['result']['utterances'][0]['words'].insert(0,{'text':' ','start_time':-1,'end_time':-1})
+        self.assertEqual(doubao.parse_result(value,1,300),rows)
 
     def test_network_headers_payload_and_no_secret_in_body(self):
         connection=Mock();reply=connection.getresponse.return_value
-        reply.status=200;reply.getheader.return_value='20000000';reply.read.return_value=json.dumps(response()).encode()
+        reply.status=200;reply.getheader.return_value='20000000';reply.read.return_value=b''
+        body={'audio':{'url':'https://example.test/audio.wav'}}
         with patch.object(doubao.http.client,'HTTPSConnection',return_value=connection):
-            self.assertEqual(doubao.request_chunk(b'wav', 'fake-test-key'),response())
+            self.assertEqual(doubao.post(doubao.SUBMIT,body,'fake-test-key','request-test'),('20000000',None))
         args,kwargs=connection.request.call_args
-        self.assertEqual(args,('POST',doubao.ENDPOINT))
+        self.assertEqual(args,('POST',doubao.SUBMIT))
         self.assertEqual(kwargs['headers']['X-Api-Key'],'fake-test-key')
-        self.assertEqual(kwargs['headers']['X-Api-Resource-Id'],'volc.bigasr.auc_turbo')
-        payload=json.loads(kwargs['body']);self.assertTrue(payload['request']['show_utterances'])
+        self.assertEqual(kwargs['headers']['X-Api-Resource-Id'],'volc.seedasr.auc')
+        self.assertEqual(kwargs['headers']['X-Api-Sequence'],'-1')
+        self.assertEqual(json.loads(kwargs['body']),body)
         self.assertNotIn('fake-test-key',kwargs['body'].decode())
-        self.assertEqual(set(payload),{'audio','request','user'})
-        connection.close.assert_called_once()
+        reply.read.assert_not_called();connection.close.assert_called_once()
 
     def test_failure_never_retries_or_logs_server_content(self):
         for status, code in ((302,'20000000'),(401,''),(429,''),(500,''),(200,'bad'),(200,'20000000')):
             connection=Mock();reply=connection.getresponse.return_value
             reply.status=status;reply.getheader.return_value=code;reply.read.return_value=b'secret-echo'
             with patch.object(doubao.http.client,'HTTPSConnection',return_value=connection):
-                with self.assertRaises(doubao.CloudError) as caught:doubao.request_chunk(b'wav','private-secret')
+                with self.assertRaises(doubao.CloudError) as caught:doubao.post(doubao.QUERY,{},'private-secret','request')
             self.assertNotIn('secret',str(caught.exception))
             self.assertEqual(connection.request.call_count,1);connection.close.assert_called_once()
         connection=Mock();connection.request.side_effect=TimeoutError('private-secret')
         with patch.object(doubao.http.client,'HTTPSConnection',return_value=connection):
-            with self.assertRaises(doubao.CloudError) as caught:doubao.request_chunk(b'wav','private-secret')
+            with self.assertRaises(doubao.CloudError) as caught:doubao.post(doubao.SUBMIT,{},'private-secret','request')
         self.assertIn('未自动重试',str(caught.exception));self.assertNotIn('secret',str(caught.exception))
         self.assertTrue(caught.exception.__suppress_context__)
+
+    def test_submit_then_poll_same_id_and_cleanup(self):
+        from contextlib import contextmanager
+        cleaned=[]
+        @contextmanager
+        def storage(config,wav,root):
+            self.assertEqual(wav,b'wav')
+            try:yield 'https://private.test/signed-url'
+            finally:cleaned.append(True)
+        send=Mock(side_effect=[('20000000',None),('20000002',None),('20000001',None),('20000000',response())])
+        phases=[];sleep=Mock()
+        result=doubao.request_chunk(b'wav',{'apiKey':'fake'},storage=storage,send=send,sleep=sleep,emit=phases.append)
+        self.assertEqual(result,response());self.assertEqual(cleaned,[True])
+        self.assertEqual(phases,['uploading','queued','processing']);self.assertEqual(sleep.call_count,2)
+        calls=[c.args for c in send.call_args_list]
+        self.assertEqual([c[0] for c in calls],[doubao.SUBMIT]+[doubao.QUERY]*3)
+        self.assertEqual(len({c[3] for c in calls}),1)
+        self.assertEqual(calls[0][1]['audio']['format'],'wav')
+        self.assertEqual(calls[0][1]['audio']['url'],'https://private.test/signed-url')
+        self.assertNotIn('data',calls[0][1]['audio'])
+        self.assertTrue(calls[0][1]['request']['show_utterances'])
+        self.assertTrue(all(c[1]=={} for c in calls[1:]))
+        for fail in (doubao.CloudError('failed'),SystemExit('cancelled')):
+            send=Mock(side_effect=[('20000000',None),fail])
+            with self.assertRaises(type(fail)):doubao.request_chunk(b'wav',{'apiKey':'fake'},storage=storage,send=send)
+            self.assertEqual(send.call_count,2)
+        self.assertEqual(len(cleaned),3)
+        clock=Mock(side_effect=[0,1801]);send=Mock(return_value=('20000000',None))
+        with self.assertRaisesRegex(doubao.CloudError,'等待超时'):
+            doubao.request_chunk(b'wav',{'apiKey':'fake'},storage=storage,send=send,clock=clock)
+        self.assertEqual(len(cleaned),4);send.assert_called_once()
 
     def test_cloud_gates_and_absence_of_local_download(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -83,6 +117,8 @@ class DoubaoTests(unittest.TestCase):
             with self.assertRaises(ValueError):models.resolve_model(doubao.MODEL_ID,root)
             with self.assertRaises(ValueError):model_download.install(doubao.MODEL_ID,root)
             status=root/'.subloom/cloud/doubao.json';status.parent.mkdir(parents=True);status.write_text('{"configured":true}')
+            self.assertFalse(doubao.configured(root))  # Fast API configuration is insufficient.
+            status.write_text('{"version":2,"configured":true}')
             self.assertEqual(models.resolve_model(doubao.MODEL_ID,root),(None,None))
             with patch.object(doubao,'credential') as key:
                 with self.assertRaises(doubao.CloudError):doubao.recognize(root/'missing',{},consent=False)
@@ -147,9 +183,9 @@ class DoubaoTests(unittest.TestCase):
 
     def test_key_helper_uses_only_private_pipe_and_sanitizes_errors(self):
         with patch.dict('os.environ',{'SUBPOP_CONTAINER_EXECUTABLE':'/usr/bin/true'}):
-            with patch.object(doubao.subprocess,'run',return_value=Mock(returncode=0,stdout=b'fake-test-key')) as run:
-                self.assertEqual(doubao.credential(),'fake-test-key')
-            self.assertEqual(run.call_args.args[0],['/usr/bin/true','--doubao-key'])
+            with patch.object(doubao.subprocess,'run',return_value=Mock(returncode=0,stdout=json.dumps({'apiKey':'fake-test-key','region':'cn-beijing','bucket':'test-bucket','tosAccessKey':'fake-ak','tosSecretKey':'fake-sk'}).encode())) as run:
+                self.assertEqual(doubao.credential()['apiKey'],'fake-test-key')
+            self.assertEqual(run.call_args.args[0],['/usr/bin/true','--doubao-credentials'])
             self.assertNotIn('env',run.call_args.kwargs)
             with patch.object(doubao.subprocess,'run',side_effect=OSError('do-not-log')):
                 with self.assertRaises(doubao.CloudError) as caught:doubao.credential()

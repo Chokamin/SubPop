@@ -105,10 +105,10 @@
     },
     {
       "id": "doubao-cloud",
-      "name": "豆包云端识别（极速版）",
+      "name": "豆包录音文件识别 2.0",
       "engine": "doubao",
       "directory": "doubao-cloud",
-      "description": "需联网 · 火山引擎账户计费",
+      "description": "需配置 API Key 与 TOS · 云端计费",
       "files": {}
     }
   ],

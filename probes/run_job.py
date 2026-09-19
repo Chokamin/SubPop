@@ -45,6 +45,9 @@ def finalize(directory,state,result,existing):
     rows=optimized_captions(result,fps,state.get('vocabulary',[]),warnings=review)
     manifest={**result['snapshot'],'projectUID':state['projectUID'],'pcmSHA256':result['pcm_sha256'],'fps':str(fps),'captions':rows,'modelID':state['modelID'],'vocabulary':state.get('vocabulary',[])}
     manifest.update(editorialRules=RULES_VERSION,reviewWarnings=review)
+    if result.get('cloudProtocol'):
+        from .tos_storage import pending_count
+        manifest['cloudCleanupPending']=pending_count(ROOT)
     save(directory/'captions.json',manifest)
     check=collision(rows,existing);save(directory/'collision.json',check)
     if check['status']!='clear':
@@ -75,6 +78,7 @@ def cached_recognition(state, snapshot):
             result=json.loads(paths[1].read_text())
             if result.get('modelID')!=state['modelID'] or result.get('snapshot')!=snapshot:continue
             if model_spec(state['modelID']).get('engine') and result.get('backendVersion')!=1:continue
+            if model_spec(state['modelID']).get('engine')=='doubao' and result.get('cloudProtocol')!='seed-asr-2.0':continue
             created=datetime.fromisoformat(old['createdAt']).timestamp()
             if any(Path(segment['media']).stat().st_mtime>created for segment in snapshot.get('segments',[])):continue
             if paths[2].stat().st_size!=snapshot['sampleCount']*4:continue
@@ -138,6 +142,9 @@ def run(xml,asr,aligner,model_id=DEFAULT_MODEL_ID,audio_mode='dialogue',vocabula
 
 
 if __name__=='__main__':
+    import signal
+    def stop(signum,frame):raise SystemExit('识别已取消')
+    signal.signal(signal.SIGTERM,stop)
     parser=argparse.ArgumentParser();parser.add_argument('--xml',type=Path,required=True)
     parser.add_argument('--model',default=DEFAULT_MODEL_ID)
     parser.add_argument('--audio-mode',choices=['dialogue','all'],default='dialogue')

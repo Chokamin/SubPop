@@ -38,7 +38,7 @@ def resolve_model(model_id, root=ROOT):
     spec = model_spec(model_id)
     if spec.get('engine') == 'doubao':
         from .doubao import configured
-        if not configured(root):raise ValueError('请在模型设置中配置豆包 API Key')
+        if not configured(root):raise ValueError('请在模型设置中配置语音 API Key 与 TOS')
         return None, None
     return check_files(spec, root), (None if spec.get('engine') else check_files(CATALOG['aligner'], root))
 
@@ -48,8 +48,9 @@ def availability(root=ROOT):
     for spec in CATALOG['models']:
         if spec.get('engine') == 'doubao':
             from .doubao import configured
+            from .tos_storage import pending_count
             ready = configured(root)
-            result.append({'id': spec['id'], 'installed': ready, 'asrInstalled': False, 'hasFiles': False, 'reason': '' if ready else '尚未配置 API Key', 'sizeBytes': 0, 'cloud': True})
+            result.append({'id': spec['id'], 'installed': ready, 'asrInstalled': False, 'hasFiles': False, 'reason': '' if ready else '尚需配置语音 API Key 与 TOS', 'sizeBytes': 0, 'cloud': True, 'cleanupPending': pending_count(root)})
             continue
         try:
             resolve_model(spec['id'], root)

@@ -21,5 +21,13 @@ class RecoveryTests(unittest.TestCase):
                 self.assertEqual(cached_recognition(state,snapshot),('old',result))
                 for key,value in [('modelID','other'),('snapshotSHA256','wrong'),('audioMode','all'),('vocabulary',['x'])]:
                     self.assertIsNone(cached_recognition({**state,key:value},snapshot))
+                # Migrating from the fast endpoint must never reuse its cloud result.
+                state['modelID']=old['modelID']=result['modelID']='doubao-cloud'
+                result['backendVersion']=1
+                (job/'status.json').write_text(json.dumps(old));(job/'asr.json').write_text(json.dumps(result))
+                self.assertIsNone(cached_recognition(state,snapshot))
+                result['cloudProtocol']='seed-asr-2.0'
+                (job/'asr.json').write_text(json.dumps(result))
+                self.assertEqual(cached_recognition(state,snapshot),('old',result))
                 (job/'timeline.f32le').write_bytes(b'x'*8)
                 self.assertIsNone(cached_recognition(state,snapshot))

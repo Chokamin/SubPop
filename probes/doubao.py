@@ -1,9 +1,8 @@
-"""Opt-in Volcengine recorded-file fast ASR; no SDK, retries or persisted secrets.
+"""Opt-in recorded-file ASR 2.0: private TOS URL -> submit -> query.
 
-Protocol: https://www.volcengine.com/docs/6561/1631584
-Only audio bytes leave the machine. Vocabulary normalization remains local.
+Protocol: https://www.volcengine.com/docs/6561/1354868
+Vocabulary normalization remains local. Never retry a billed submission.
 """
-import base64
 import hashlib
 import http.client
 import io
@@ -15,15 +14,20 @@ import ssl
 import subprocess
 import uuid
 import wave
+import time
+
+from .tos_storage import TemporaryAudio, validate as validate_storage, pending_count
 
 from .paths import ROOT
 
 MODEL_ID = 'doubao-cloud'
 HOST = 'openspeech.bytedance.com'
-ENDPOINT = '/api/v3/auc/bigmodel/recognize/flash'
-RESOURCE = 'volc.bigasr.auc_turbo'
+SUBMIT = '/api/v3/auc/bigmodel/submit'
+QUERY = '/api/v3/auc/bigmodel/query'
+RESOURCE = 'volc.seedasr.auc'
+PROTOCOL = 'seed-asr-2.0'
 RATE = 16000
-CHUNK_SAMPLES = 300 * RATE  # <10 MB WAV; comfortably below the API's 100 MB limit.
+CHUNK_SAMPLES = 300 * RATE  # <10 MB WAV; bounded upload memory and cancellation cost.
 MAX_RESPONSE = 16 * 1024 * 1024
 
 
@@ -34,70 +38,94 @@ class CloudError(ValueError):
 def configured(root=ROOT):
     try:
         path = root / '.subloom/cloud/doubao.json'
-        return not path.is_symlink() and path.stat().st_size < 1024 and json.loads(path.read_text()).get('configured') is True
+        value = json.loads(path.read_text()) if not path.is_symlink() and path.stat().st_size < 1024 else {}
+        return value.get('version') == 2 and value.get('configured') is True
     except (OSError, ValueError, AttributeError):
         return False
 
 
 def credential():
-    # The signed host owns its Keychain item. Never pass the key in argv/env/files.
+    # The signed host owns its Keychain items. Never use argv/env/files for secrets.
     executable = os.environ.get('SUBPOP_CONTAINER_EXECUTABLE', '')
     if not executable or not Path(executable).is_file():
         raise CloudError('请先打开应用程序中的 SubPop，再配置豆包云端识别。')
     try:
-        result = subprocess.run([executable, '--doubao-key'], stdout=subprocess.PIPE,
+        result = subprocess.run([executable, '--doubao-credentials'], stdout=subprocess.PIPE,
                                 stderr=subprocess.DEVNULL, timeout=20, check=False)
-        key = result.stdout.decode('ascii').strip() if result.returncode == 0 else ''
-    except (OSError, subprocess.SubprocessError, UnicodeError):
-        key = ''
-    if not key or len(key) > 4096 or any(ord(c) < 33 or ord(c) > 126 for c in key):
-        raise CloudError('无法读取豆包 API Key。请在模型设置中重新保存，并允许 SubPop 访问钥匙串。')
-    return key
+        value = json.loads(result.stdout) if result.returncode == 0 and len(result.stdout) < 16384 else {}
+        key = value.get('apiKey', '')
+        if not isinstance(key, str) or not 1 <= len(key) <= 4096 or any(not 33 <= ord(c) <= 126 for c in key):
+            raise ValueError()
+        validate_storage(value)
+        return value
+    except (OSError, subprocess.SubprocessError, ValueError, AttributeError, TypeError):
+        raise CloudError('无法读取云端配置。请在云端设置中保存语音 API Key、TOS 区域、桶名称与 AK/SK，并允许 SubPop 访问钥匙串。') from None
 
 
-def request_chunk(wav, key):
-    body = json.dumps({'user': {'uid': 'subpop'},
-                       'audio': {'data': base64.b64encode(wav).decode('ascii')},
-                       'request': {'model_name': 'bigmodel', 'show_utterances': True,
-                                   'enable_itn': True, 'enable_punc': True,
-                                   'enable_ddc': False}}).encode('utf-8')
+def post(endpoint, body, key, request_id):
     headers = {'Content-Type': 'application/json', 'X-Api-Key': key,
-               'X-Api-Resource-Id': RESOURCE, 'X-Api-Request-Id': str(uuid.uuid4()),
-               'X-Api-Sequence': '-1'}
+               'X-Api-Resource-Id': RESOURCE, 'X-Api-Request-Id': request_id}
+    if endpoint == SUBMIT:
+        headers['X-Api-Sequence'] = '-1'
     import certifi
-    # The standalone packaged Python must not depend on a developer's OpenSSL CA path.
-    context = ssl.create_default_context(cafile=certifi.where())
-    connection = http.client.HTTPSConnection(HOST, timeout=180, context=context)
+    connection = http.client.HTTPSConnection(HOST, timeout=60,
+                    context=ssl.create_default_context(cafile=certifi.where()))
     try:
-        # http.client never follows a redirect or retries a billed POST.
-        connection.request('POST', ENDPOINT, body=body, headers=headers)
+        connection.request('POST', endpoint, body=json.dumps(body).encode('utf-8'), headers=headers)
         response = connection.getresponse()
         code = response.getheader('X-Api-Status-Code', '')
         if response.status in (401, 403) or code in ('45000010', '45000011'):
-            raise CloudError('豆包鉴权失败：请检查语音服务 API Key，并开通录音文件极速版权限。')
-        if response.status == 429 or code == '55000031':
+            raise CloudError('豆包鉴权失败：请检查语音 API Key，并开通录音文件识别 2.0。')
+        if response.status == 429 or code in ('55000031', '45000131'):
             raise CloudError('豆包请求受限或服务繁忙，请检查账户额度后稍后重试。')
         if response.status != 200:
             raise CloudError('豆包服务未成功响应。未自动重试，请在火山引擎控制台检查服务状态和用量。')
-        if code == '20000003':
-            return {'result': {'text': '', 'utterances': []}}
-        if code != '20000000':
-            raise CloudError('豆包识别失败，请检查服务权限、账户额度及音频要求。未自动重试。')
+        if code not in ('20000000', '20000001', '20000002', '20000003'):
+            raise CloudError('豆包识别失败，请检查 2.0 服务权限、账户额度及音频要求。未自动重试。')
+        # Successful submit has an EMPTY body; pending queries need no JSON either.
+        if endpoint == SUBMIT or code != '20000000':
+            return code, None
         raw = response.read(MAX_RESPONSE + 1)
         if len(raw) > MAX_RESPONSE:
             raise CloudError('豆包响应过大，已停止处理。')
         try:
-            result = json.loads(raw)
+            return code, json.loads(raw)
         except (ValueError, UnicodeError):
             raise CloudError('豆包返回了无法解析的识别结果。') from None
-        return result
     except CloudError:
         raise
     except (OSError, http.client.HTTPException, ValueError):
-        # No server body/header, credential, or exception chain enters persistent logs.
         raise CloudError('豆包连接中断或超时。未自动重试；已提交的音频可能仍会计费，请先检查控制台用量。') from None
     finally:
         connection.close()
+
+
+def request_chunk(wav, config, *, emit=None, storage=None, send=None, sleep=None, clock=None):
+    emit = emit or (lambda phase: None)
+    storage, send = storage or TemporaryAudio, send or post
+    sleep, clock = sleep or time.sleep, clock or time.monotonic
+    emit('uploading')
+    with storage(config, wav, root=ROOT) as url:
+        identifier = str(uuid.uuid4())
+        body = {'user': {'uid': 'subpop'},
+                'audio': {'url': url, 'format': 'wav', 'rate': RATE, 'bits': 16, 'channel': 1},
+                'request': {'model_name': 'bigmodel', 'show_utterances': True,
+                            'enable_itn': True, 'enable_punc': True, 'enable_ddc': False}}
+        code, _ = send(SUBMIT, body, config['apiKey'], identifier)
+        if code != '20000000':
+            raise CloudError('豆包未确认任务提交成功。未自动重试，请检查控制台用量。')
+        deadline = clock() + 1800
+        while clock() < deadline:
+            code, value = send(QUERY, {}, config['apiKey'], identifier)
+            if code == '20000000':
+                return value
+            if code == '20000003':
+                return {'result': {'text': '', 'utterances': []}}
+            if code not in ('20000001', '20000002'):
+                raise CloudError('豆包未返回有效任务状态。')
+            emit('queued' if code == '20000002' else 'processing')
+            sleep(3)
+        raise CloudError('豆包识别等待超时，未重新提交。已提交部分可能计费，请检查控制台。')
 
 
 def parse_result(value, duration, offset=0):
@@ -125,15 +153,15 @@ def parse_result(value, duration, offset=0):
         for word in words:
             if not isinstance(word, dict) or not isinstance(word.get('text'), str):
                 raise CloudError('豆包词语数据不完整。')
+            text = convert(word['text']).strip()
+            if not text:
+                continue
             start, end = word.get('start_time'), word.get('end_time')
             if (type(start) not in (int, float) or type(end) not in (int, float)
                     or not math.isfinite(start) or not math.isfinite(end)
                     or not 0 <= start <= end <= duration * 1000 + 50 or start < previous):
                 raise CloudError('豆包返回的时间戳异常，已停止生成字幕。')
             previous = start
-            text = convert(word['text']).strip()
-            if not text:
-                continue
             if parsed and re.search(r'[A-Za-z0-9]$', parsed[-1]['text']) and re.match(r'[A-Za-z0-9]', text):
                 text = ' ' + text
             parsed.append({'text': text, 'start': offset + min(start / 1000, duration),
@@ -183,7 +211,6 @@ def recognize(pcm, snapshot, *, consent=False, key=None, send=None, emit=None):
         raise CloudError('音频长度与项目不一致。')
     samples = np.memmap(pcm, dtype='<f4', mode='r')
     key = credential() if key is None else key
-    send = request_chunk if send is None else send
     emit = (lambda value: print(json.dumps(value), flush=True)) if emit is None else emit
     rows = []
     for start, end in chunk_ranges(samples):
@@ -191,12 +218,16 @@ def recognize(pcm, snapshot, *, consent=False, key=None, send=None, emit=None):
         if not np.all(np.isfinite(chunk)):
             raise CloudError('音频包含无效采样。')
         if np.max(np.abs(chunk)) > 1e-7:
-            value = send(wav_bytes(chunk), key)
+            if send is None:
+                value = request_chunk(wav_bytes(chunk), key, emit=lambda phase: emit(
+                    {'stage': 'recognize', 'cloudPhase': phase, 'progress': start / len(samples)}))
+            else:
+                value = send(wav_bytes(chunk), key)
             rows.extend(parse_result(value, len(chunk) / RATE, start / RATE))
         emit({'stage': 'recognize', 'progress': end / len(samples)})
     digest = hashlib.sha256()
     with pcm.open('rb') as source:
         for block in iter(lambda: source.read(1024 * 1024), b''):
             digest.update(block)
-    return {'backendVersion': 1, 'snapshot': snapshot, 'pcm_sha256': digest.hexdigest(),
+    return {'backendVersion': 1, 'cloudProtocol': PROTOCOL, 'cloudCleanupPending': pending_count(ROOT), 'snapshot': snapshot, 'pcm_sha256': digest.hexdigest(),
             'device': 'cloud', 'results': rows}
