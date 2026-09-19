@@ -1,6 +1,14 @@
 #import <Cocoa/Cocoa.h>
 
-// Import a new browser clip, never a project or a replacement timeline.
+static NSString *SubPopTitleImportEventName(NSUInteger sequence) {
+    return [NSString stringWithFormat:@"SubPop 字幕 %03lu",(unsigned long)sequence];
+}
+static NSString *SubPopTitleImportClipName(NSString *projectName,NSUInteger sequence) {
+    return [NSString stringWithFormat:@"%@ · Tap5a 字幕 %03lu",projectName.length ? projectName : @"SubPop",(unsigned long)sequence];
+}
+// A fresh event keeps FCP's imported result separate from the previous browser
+// selection. Reusing one event leaves old clips selected after repeated imports.
+// Import only a browser clip, never a project or a replacement timeline.
 static NSData *SubPopTitleImportXML(NSData *payload, NSString *projectName, NSUInteger sequence, NSError **error) {
     NSXMLDocument *doc=payload.length ? [[NSXMLDocument alloc] initWithData:payload options:NSXMLNodeLoadExternalEntitiesNever error:error] : nil;
     NSArray *clips=[doc nodesForXPath:@"/fcpxml/clip" error:nil];
@@ -12,9 +20,9 @@ static NSData *SubPopTitleImportXML(NSData *payload, NSString *projectName, NSUI
         return nil;
     }
     [clip detach];
-    [clip attributeForName:@"name"].stringValue=[NSString stringWithFormat:@"%@ · Tap5a 字幕 %03lu",projectName.length ? projectName : @"SubPop",(unsigned long)sequence];
+    [clip attributeForName:@"name"].stringValue=SubPopTitleImportClipName(projectName,sequence);
     NSXMLElement *event=[NSXMLElement elementWithName:@"event"];
-    [event addAttribute:[NSXMLNode attributeWithName:@"name" stringValue:@"SubPop 字幕"]];
+    [event addAttribute:[NSXMLNode attributeWithName:@"name" stringValue:SubPopTitleImportEventName(sequence)]];
     [event addChild:clip];[doc.rootElement addChild:event];
     // FCP validates against its external DTD, so this is not a standalone document.
     doc.standalone=NO;

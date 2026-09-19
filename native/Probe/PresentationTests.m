@@ -111,12 +111,14 @@ int main(int argc,const char *argv[]) {
             if (!importData || importError || [importXML containsString:@"standalone=\"yes\""]) return 33;
             NSArray *importTitles=[importDoc nodesForXPath:@"/fcpxml/event/clip/spine/title" error:nil];
             if (importTitles.count!=b.count || [importDoc nodesForXPath:@"//project|//library|/fcpxml/clip" error:nil].count) return 34;
-            if (![[importDoc nodesForXPath:@"/fcpxml/event/@name" error:nil].firstObject.stringValue isEqual:@"SubPop 字幕"] ||
+            if (![[importDoc nodesForXPath:@"/fcpxml/event/@name" error:nil].firstObject.stringValue isEqual:@"SubPop 字幕 001"] ||
                 ![[importDoc nodesForXPath:@"/fcpxml/event/clip/@name" error:nil].firstObject.stringValue isEqual:@"项目 & <测试> · Tap5a 字幕 001"]) return 35;
             NSData *second=SubPopTitleImportXML(controller.titlePayloads[v],@"项目 & <测试>",2,nil);
             NSXMLDocument *secondDoc=[[NSXMLDocument alloc] initWithData:second options:NSXMLNodeLoadExternalEntitiesNever error:nil];
             if (![[secondDoc nodesForXPath:@"/fcpxml/event/clip/@name" error:nil].firstObject.stringValue isEqual:@"项目 & <测试> · Tap5a 字幕 002"]) return 62;
             if ([secondDoc nodesForXPath:@"/fcpxml/event/clip/@uid" error:nil].count) return 63;
+            if (![[secondDoc nodesForXPath:@"/fcpxml/event/@name" error:nil].firstObject.stringValue isEqual:@"SubPop 字幕 002"] ||
+                [secondDoc nodesForXPath:@"/fcpxml/event/clip" error:nil].count!=1) return 64;
             for (NSUInteger i=0;i<b.count;i++) {
                 NSXMLElement *original=b[i],*imported=importTitles[i];
                 for (NSString *key in @[@"offset",@"start",@"duration",@"ref"]) if (![[original attributeForName:key].stringValue isEqual:[imported attributeForName:key].stringValue]) return 36;

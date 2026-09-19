@@ -182,7 +182,7 @@ static NSDictionary *Time(CMTime t) {
     [title drawAtPoint:NSMakePoint(86,73) withAttributes:@{NSForegroundColorAttributeName:NSColor.whiteColor,NSFontAttributeName:[NSFont systemFontOfSize:17 weight:NSFontWeightSemibold]}];
     NSString *detail=[NSString stringWithFormat:importing ? @"%lu 条字幕 · 点击导入，再从 FCP 浏览器拖回时间线" : @"%lu 条字幕已准备好 · 按住卡片拖到时间线起点上方",(unsigned long)self.controller.captionRows.count];
     [detail drawAtPoint:NSMakePoint(86,48) withAttributes:@{NSForegroundColorAttributeName:[NSColor colorWithCalibratedWhite:1 alpha:.85],NSFontAttributeName:[NSFont systemFontOfSize:11]}];
-    [(importing ? @"在“SubPop 字幕”事件中找到结果 · 对齐原项目起点" : @"落轨后：片段 → 将片段项分开，即可逐句编辑") drawAtPoint:NSMakePoint(86,24) withAttributes:@{NSForegroundColorAttributeName:[NSColor colorWithCalibratedWhite:1 alpha:.72],NSFontAttributeName:[NSFont systemFontOfSize:10]}];
+    [(importing ? @"每次导入使用独立编号事件 · 对齐原项目起点" : @"落轨后：片段 → 将片段项分开，即可逐句编辑") drawAtPoint:NSMakePoint(86,24) withAttributes:@{NSForegroundColorAttributeName:[NSColor colorWithCalibratedWhite:1 alpha:.72],NSFontAttributeName:[NSFont systemFontOfSize:10]}];
 }
 - (void)mouseDown:(NSEvent *)event {
     if (!self.enabled) return;
@@ -467,13 +467,13 @@ static NSDictionary *Time(CMTime t) {
     BOOL ready=[self canDragResult];BOOL fileImport=[self usesFileImport];
     if (hasRows && fileImport && ready) {
         self.statusTitle.stringValue=self.importInProgress ? @"正在发送导入请求" : (self.importMessage.length ? @"Tap5a 字幕导入" : @"底框字幕已准备好");
-        self.statusDetail.stringValue=self.importMessage ?: @"点击上方按钮导入 FCP，在“SubPop 字幕”事件中找到片段，再拖到原项目起点上方。落轨后可将片段项分开。";
+        self.statusDetail.stringValue=self.importMessage ?: @"点击上方按钮导入 FCP，在本次新建的“SubPop 字幕”编号事件中拖出片段，对齐原项目起点。落轨后可将片段项分开。";
     }
     if (hasRows && [self.resultManifest[@"cloudCleanupPending"] unsignedIntegerValue]>0) self.statusDetail.stringValue=[self.statusDetail.stringValue stringByAppendingString:@" 旧版临时音频尚待清理，请打开云端设置查看。"];
 
     self.tap5aStyleButton.hidden=![self usesFileImport];self.tap5aStyleButton.enabled=!self.importInProgress;
     self.resultView.enabled=ready && !self.importInProgress;
-    self.resultView.toolTip=fileImport ? @"点击导入到 FCP 浏览器。若出现资源库选择，请选择原项目所在资源库；在“SubPop 字幕”事件中将片段拖到原项目起点上方。再次点击会重新导入。" : @"按住卡片拖到原项目时间线起点上方，落轨后将片段项分开。";
+    self.resultView.toolTip=fileImport ? @"点击导入到 FCP 浏览器。若出现资源库选择，请选择原项目所在资源库；在本次新建的编号事件中将字幕片段拖到原项目起点上方。每次导入都会保留旧版并新建事件。" : @"按住卡片拖到原项目时间线起点上方，落轨后将片段项分开。";
     [self.resultView setAccessibilityRole:fileImport ? NSAccessibilityButtonRole : NSAccessibilityGroupRole];
     [self.resultView setAccessibilityLabel:ready ? (fileImport ? @"导入字幕到 Final Cut Pro" : @"拖回字幕到 Final Cut Pro") : @"请先打开原项目时间线"];
     [self.resultView.window invalidateCursorRectsForView:self.resultView];[self.resultView setNeedsDisplay:YES];

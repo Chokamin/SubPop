@@ -35,12 +35,13 @@
     }
     // Retain the file: Launch Services acknowledgement is not proof FCP has read it.
     self.lastImportAttempt=NSDate.date;self.importInProgress=YES;self.importMessage=@"正在打开 Final Cut Pro 的字幕导入…";
+    NSString *eventName=SubPopTitleImportEventName(sequence),*clipName=SubPopTitleImportClipName(self.dropName,sequence);
     NSUInteger generation=self.dropGeneration;
     [self saveDraft];[self updateInterface];
     [self openTitleImportURL:fileURL applicationURL:applicationURL completion:^(NSError *openError) {
         self.importInProgress=NO;
         if (self.dropGeneration==generation && [self usesFileImport] && [self.titlePayloads[@"1.12"] isEqual:snapshot]) {
-            self.importMessage=openError ? [NSString stringWithFormat:@"未能发送到 Final Cut Pro：%@。请重试。",openError.localizedDescription] : @"已发送导入请求。若 FCP 询问资源库，请选择原项目所在资源库；然后从“SubPop 字幕”事件拖回时间线起点上方。再次点击会重新导入。";
+            self.importMessage=openError ? [NSString stringWithFormat:@"未能发送到 Final Cut Pro：%@。请重试。",openError.localizedDescription] : [NSString stringWithFormat:@"已发送导入请求：%@。若 FCP 询问资源库，请选择原项目所在资源库；导入后从“%@”事件拖回时间线起点上方。",clipName,eventName];
         }
         [self record:@{@"reason":@"title-file-import",@"status":openError ? @"failed" : @"request-sent",@"file":fileURL.lastPathComponent,@"error":openError.localizedDescription ?: @""}];
     }];
