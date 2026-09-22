@@ -12,6 +12,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 from .run_job import ROOT, save
+from .update_lock import TaskLease
 from .title_fixture import UID
 from .vocabulary import validate as validate_vocabulary
 from .reference_script import validate as validate_reference, digest as reference_digest
@@ -111,6 +112,7 @@ def serve():
     BRIDGE.mkdir(parents=True,exist_ok=True);os.chmod(BRIDGE,0o700)
     lock=(BRIDGE/'worker.lock').open('w')
     fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    update_lease=TaskLease(BRIDGE/'update.lock')
     active=None;log=None;request=None;offset=0;buffer='';ready=None;started=0;job_error=None
     model_process=None;model_directory=None;model_started=0
     try:
@@ -128,9 +130,14 @@ def serve():
                         model_state.update(status='failed',stage='failed',error='下载进程中断，请重试')
                         save(model_directory/'response.json',model_state)
                     model_process=None
-            save(BRIDGE/'service.json',{'protocol':3,'models':availability(),'modelTask':model_state,'pid':os.getpid(),'heartbeat':time.time(),
-                                      'status':'busy' if active or model_process else 'idle'})
-            if model_process:
+            updating=False
+            if not active and not model_process:
+                update_lease.release()
+                updating=not update_lease.acquire()
+                if not updating:update_lease.release()
+            save(BRIDGE/'service.json',{'protocol':3,'updateProtocol':1,'models':availability(),'modelTask':model_state,'pid':os.getpid(),'heartbeat':time.time(),
+                                      'status':'updating' if updating else ('busy' if active or model_process else 'idle')})
+            if model_process or updating:
                 time.sleep(0.5);continue
             if active:
                 code=active.poll()
@@ -170,6 +177,8 @@ def serve():
                         if previous.get('status') in ('running','queued'):
                             save(response,{'requestID':candidate.name,'status':'failed','stage':'worker-restarted','error':'上次任务已中断，请重试'})
                         continue
+                    # Claim the job atomically against the application updater.
+                    if not update_lease.acquire():break
                     try:
                         request_path=candidate/'request.json'
                         if request_path.is_symlink() or request_path.stat().st_size>MAX_REQUEST:raise ValueError('Invalid request size or link')
@@ -192,6 +201,7 @@ def serve():
                     except Exception as error:
                         save(response,{'requestID':candidate.name,'status':'failed','stage':'request-validation','error':str(error)})
                     break
+            if not active and not model_process:update_lease.release()
             time.sleep(0.5)
     finally:
         if model_process and model_process.poll() is None:
@@ -204,6 +214,7 @@ def serve():
             except subprocess.TimeoutExpired:os.killpg(active.pid,signal.SIGKILL);active.wait()
         if log:log.close()
         save(BRIDGE/'service.json',{'protocol':3,'status':'stopped','heartbeat':0})
+        update_lease.close()
 
 if __name__=='__main__':
     def stop(signum,frame):raise SystemExit(0)

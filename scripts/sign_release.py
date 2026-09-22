@@ -29,6 +29,13 @@ def sign(app, identity, extension_entitlements):
         with path.open('rb') as stream:
             if stream.read(4) in MACHO:
                 targets.append(path)
+    sparkle=app/'Contents/Frameworks/Sparkle.framework'
+    # Sign Sparkle bundles as units, preserving its helper entitlements.
+    targets=[p for p in targets if not p.is_relative_to(sparkle)]
+    if sparkle.exists():
+        nested=sorted((p for p in sparkle.rglob('*') if not p.is_symlink() and p.suffix in ('.app','.xpc')),key=lambda p:len(p.parts),reverse=True)
+        for bundle in [sparkle/'Versions/B/Autoupdate',*nested,sparkle]:
+            run('codesign','--force','--sign',identity,'--timestamp','--options','runtime','--preserve-metadata=entitlements',bundle)
     for path in sorted(targets, key=lambda p: len(p.parts), reverse=True):
         command=['codesign','--force','--sign',identity,'--timestamp','--options','runtime']
         if path.parent == runtime/'.venv/bin' and path.name.startswith('python'):

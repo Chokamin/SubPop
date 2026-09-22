@@ -24,6 +24,18 @@ class NativeBundleTests(unittest.TestCase):
             {'CFBundleURLName':'com.chokamin.SubPopProbe.start',
              'CFBundleURLSchemes':['subpop-probe']}])
 
+    def test_online_updater_is_in_host_only_and_requires_signatures(self):
+        info=plistlib.loads((APP/'Contents/Info.plist').read_bytes())
+        self.assertTrue(info['SUVerifyUpdateBeforeExtraction'])
+        self.assertTrue(info['SURequireSignedFeed'])
+        self.assertEqual(info['SUSignedFeedFailureExpirationInterval'],0)
+        self.assertFalse(info['SUEnableAutomaticChecks'])
+        self.assertFalse(info['SUAllowsAutomaticUpdates'])
+        self.assertEqual(info['SUFeedURL'],'https://github.com/Chokamin/SubPop/releases/latest/download/appcast.xml')
+        self.assertTrue((APP/'Contents/Frameworks/Sparkle.framework/Sparkle').is_file())
+        self.assertFalse((EXT/'Contents/Frameworks/Sparkle.framework').exists())
+        self.assertTrue((APP/'Contents/Resources/Sparkle-LICENSE.txt').is_file())
+
     def test_apple_silicon_and_sdk_entrypoint(self):
         binary=EXT/'Contents/MacOS/SubPopProbeExtension'
         arch=subprocess.check_output(['lipo','-archs',str(binary)],text=True).strip()

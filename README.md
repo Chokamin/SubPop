@@ -217,8 +217,20 @@ X 正值向右，Y 正值向上；偏移以项目像素为单位，支持正负�
 
 面板中的「检查更新」默认先连接 GitHub，失败后自动尝试镜像。也可以选择「仅 GitHub」或「镜像优先」，并修改镜像地址；默认使用 [GH-Proxy](https://gh-proxy.com/docs/github-accelerator)，版本查询和安装包下载都支持备用通道。公共镜像的可用性取决于网络及服务状态。
 
-点击「下载安装包」并选择保存位置后，SubPop 会下载正式 PKG，验证文件大小、SHA-256、SubPop 开发者签名和包内产品版本，通过后才保存。关闭更新窗口可取消下载；下载完成后由你打开安装，不会自动替换正在运行的应用。更新源只接收公开的版本查询和文件下载请求，不会收到项目、音频、参考脚本或 API Key。各版本的改动和校验文件见 [Releases](https://github.com/Chokamin/SubPop/releases)。
+开发版现支持在线更新：点击「立即更新」，在 SubPop 更新窗口内完成下载、验证、安装和重启，无需另存安装包或打开安装向导。需要管理员权限时由 macOS 提示授权。更新期间暂停接收新任务；已有识别、脚本整理或模型下载完成后才能开始更新。安装前保存字幕草稿并关闭 SubPop 扩展，完成后从 FCP 扩展菜单重新打开即可。正式版 1.2.0 及更早版本仍使用原来的下载安装包方式。更新源只接收公开的版本查询和文件下载请求，不会收到项目、音频、参考脚本或 API Key。各版本的改动和校验文件见 [Releases](https://github.com/Chokamin/SubPop/releases)。
 
 遇到问题可提交 [GitHub Issue](https://github.com/Chokamin/SubPop/issues)，附上 macOS、FCP、SubPop 版本，使用的模型、复现步骤和错误提示即可，无需上传私人视频。
 
 仓库公开 SubPop 源码与模型清单；模型权重和 Tap5a 模板不随源码或安装包分发。模型、模板与第三方依赖遵循各自的使用条款。
+
+### 在线更新发布（开发者）
+
+原生构建会获取固定版本、SHA-256 校验的 Sparkle 2.10.0。更新组件仅运行于 SubPop 主程序，FCP 扩展仍保留沙箱。更新源 XML 和安装包均须使用专用 Ed25519 密钥签名，私钥位于本机钥匙串，不进入源码或发行包。Sparkle 许可证随框架分发。
+
+完成 Developer ID 签名、Apple 公证和附票后，为**该安装包内的构建号**生成更新源：
+
+```sh
+.venv/bin/python scripts/prepare_update_feed.py dist/SubPop-VERSION-arm64.pkg --build BUILD
+```
+
+将生成的 `dist/appcast.xml` 与 PKG、SHA-256 一起上传到同一个 GitHub Release，验证附件后再设为 latest。每次发行均须生成新的已签名更新源；不能修改已签名 XML 或安装包。

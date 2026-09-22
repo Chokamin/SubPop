@@ -1,6 +1,7 @@
 #import <Cocoa/Cocoa.h>
 #import "RuntimePaths.h"
 #import "CloudSettings.h"
+#import "OnlineUpdate.h"
 // Background model runner and independent fullscreen preview host.
 @interface SubPopFullscreenWindow : NSWindow
 @end
@@ -9,15 +10,32 @@
 @end
 @interface SubPopAppDelegate : NSObject <NSApplicationDelegate>
 @property NSTask *worker;
+@property SubPopOnlineUpdate *onlineUpdate;
 @property NSURL *workspace;
 @property BOOL choosingFolder;
 @property NSWindow *previewWindow;
 @property BOOL showingCloudSettings;
 @end
 @implementation SubPopAppDelegate
-- (void)applicationDidFinishLaunching:(NSNotification *)notification { SubPopWriteCloudStatus(); [self startEngine]; }
+- (void)applicationDidFinishLaunching:(NSNotification *)notification {
+    [NSFileManager.defaultManager removeItemAtPath:[SubPopWorkspace(NSBundle.mainBundle) stringByAppendingPathComponent:@".subloom/verification/bridge/update-installing.json"] error:nil];
+    SubPopWriteCloudStatus();[self startEngine];
+}
 - (void)application:(NSApplication *)application openURLs:(NSArray<NSURL *> *)urls {
-    for (NSURL *url in urls) if ([url.scheme isEqual:@"subpop-probe"]) {if ([url.host isEqual:@"start"]) [self startEngine];else if ([url.host isEqual:@"cloud-settings"]) [self showCloudSettings];else if ([url.host isEqual:@"preview"]) [self showPreview:url];}
+    for (NSURL *url in urls) if ([url.scheme isEqual:@"subpop-probe"]) {if ([url.host isEqual:@"start"]) [self startEngine];else if ([url.host isEqual:@"update"]) [self showOnlineUpdate:url];else if ([url.host isEqual:@"cloud-settings"]) [self showCloudSettings];else if ([url.host isEqual:@"preview"]) [self showPreview:url];}
+}
+- (void)showOnlineUpdate:(NSURL *)url {
+    if(!self.onlineUpdate){
+        self.onlineUpdate=[SubPopOnlineUpdate new];
+        __weak typeof(self) weakSelf=self;
+        self.onlineUpdate.prepareInstallation=^{
+            NSString *path=[SubPopWorkspace(NSBundle.mainBundle) stringByAppendingPathComponent:@".subloom/verification/bridge/update-installing.json"];
+            NSDictionary *state=@{@"timestamp":@(NSDate.date.timeIntervalSince1970),@"pid":@(NSProcessInfo.processInfo.processIdentifier)};
+            [[NSJSONSerialization dataWithJSONObject:state options:0 error:nil] writeToFile:path atomically:YES];
+            [weakSelf.previewWindow close];
+        };
+    }
+    [self.onlineUpdate startWithURL:url];
 }
 - (void)showCloudSettings {
     if (self.showingCloudSettings) return;
@@ -127,8 +145,18 @@
     NSError *error=nil;
     if (![self.worker launchAndReturnError:&error]) NSLog(@"SubPop engine startup failed: %@",error);
 }
+- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender {
+    if(self.onlineUpdate) {
+        NSData *data=[NSData dataWithContentsOfFile:[SubPopWorkspace(NSBundle.mainBundle) stringByAppendingPathComponent:@".subloom/verification/bridge/service.json"]];
+        NSDictionary *service=data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+        if([service isKindOfClass:NSDictionary.class] && [service[@"status"] isEqual:@"busy"] && fabs(NSDate.date.timeIntervalSince1970-[service[@"heartbeat"] doubleValue])<10) {
+            [self.onlineUpdate showError:@"当前任务仍在进行，请等待完成后再安装并重启 SubPop。"];return NSTerminateCancel;
+        }
+    }
+    return NSTerminateNow;
+}
 - (void)applicationWillTerminate:(NSNotification *)notification {
-    if (self.worker.running) [self.worker terminate];
+    if (self.worker.running) {[self.worker terminate];[self.worker waitUntilExit];}
     [self.workspace stopAccessingSecurityScopedResource];
 }
 @end

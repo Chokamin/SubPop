@@ -460,7 +460,7 @@ static NSDictionary *Time(CMTime t) {
     NSDictionary *copy=SubPopPresentation(state); self.statusTitle.stringValue=copy[@"title"]; self.statusDetail.stringValue=copy[@"detail"];
     if ([state isEqual:@"error"] && self.visibleError.length) self.statusDetail.stringValue=self.visibleError;
     if ([state isEqual:@"recognize"] && self.jobProgress) self.statusTitle.stringValue=[NSString stringWithFormat:@"正在识别语音 · %.0f%%",100*self.jobProgress.doubleValue];
-    self.serviceLabel.stringValue=connected ? @"● 本机就绪" : @"本机未连接";
+    self.serviceLabel.stringValue=connected ? @"● 本机就绪" : ([[self readJSON:[self.bridgeURL URLByAppendingPathComponent:@"service.json"]][@"status"] isEqual:@"updating"] ? @"正在更新 SubPop" : @"本机未连接");
     self.modelDetail.stringValue=[NSString stringWithFormat:@"%@ · %@ · %@",[self selectedModel][@"description"] ?: @"",[self selectedModelAvailable] ? @"已安装" : @"模型未就绪",[[self selectedModel][@"engine"] isEqual:@"mlx-whisper"] ? @"本机 MLX" : @"本机 CPU"];
     BOOL cloud=[self selectedCloudModel];
     if (cloud) self.modelDetail.stringValue=[NSString stringWithFormat:@"豆包云端 · %@ · 按账户计费",[self selectedModelAvailable] ? @"已配置，尚需有效服务额度" : @"请先配置 API Key"];
@@ -529,7 +529,7 @@ static NSDictionary *Time(CMTime t) {
 - (BOOL)workerAvailable {
     NSDictionary *service=[self readJSON:[self.bridgeURL URLByAppendingPathComponent:@"service.json"]];
     NSNumber *heartbeat=service[@"heartbeat"];
-    return [heartbeat isKindOfClass:NSNumber.class] && fabs(NSDate.date.timeIntervalSince1970-heartbeat.doubleValue)<10 && [service[@"protocol"] isEqual:@3];
+    return ![service[@"status"] isEqual:@"updating"] && [heartbeat isKindOfClass:NSNumber.class] && fabs(NSDate.date.timeIntervalSince1970-heartbeat.doubleValue)<10 && [service[@"protocol"] isEqual:@3];
 }
 - (void)showModelSettings:(id)sender {
     NSAlert *alert=[NSAlert new]; alert.messageText=@"使用帮助";
@@ -623,6 +623,10 @@ static NSDictionary *Time(CMTime t) {
     [self record:@{@"reason":@"worker-submit",@"status":@"submitted",@"requestID":request,@"snapshotDate":latestDate.description ?: @"",@"source":@"received project snapshot; original capture date retained; edits after capture require another drop"}];
 }
 - (void)pollWorker:(NSTimer *)timer {
+    NSDictionary *install=[self readJSON:[self.bridgeURL URLByAppendingPathComponent:@"update-installing.json"]];
+    if([install[@"timestamp"] isKindOfClass:NSNumber.class] && fabs(NSDate.date.timeIntervalSince1970-[install[@"timestamp"] doubleValue])<8 && !self.requestID && !self.referenceRequestID && !self.importInProgress) {
+        [self saveDraft];[self.view.window close];return;
+    }
     [self pollReferenceRefinement];
     [self updateInterface];
     if (!self.requestID) return;
