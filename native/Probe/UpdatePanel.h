@@ -36,9 +36,18 @@
     self.mirrorField.placeholderString=SubPopDefaultUpdateMirror;self.mirrorField.font=[NSFont systemFontOfSize:12];[self.mirrorField setAccessibilityLabel:@"镜像地址"];[content addSubview:self.mirrorField];
     self.status=[NSTextField wrappingLabelWithString:@""];self.status.frame=NSMakeRect(0,70,430,32);self.status.font=[NSFont systemFontOfSize:12];self.status.textColor=NSColor.secondaryLabelColor;[content addSubview:self.status];
     self.progress=[[NSProgressIndicator alloc] initWithFrame:NSMakeRect(0,51,430,6)];self.progress.style=NSProgressIndicatorStyleBar;self.progress.minValue=0;self.progress.maxValue=1;[content addSubview:self.progress];
-    self.checkButton=[NSButton buttonWithTitle:@"重新检查" target:self action:@selector(check:)];self.checkButton.frame=NSMakeRect(0,4,104,32);[content addSubview:self.checkButton];
-    self.downloadButton=[NSButton buttonWithTitle:@"下载安装包…" target:self action:@selector(download:)];self.downloadButton.frame=NSMakeRect(105,4,160,32);self.downloadButton.enabled=NO;[content addSubview:self.downloadButton];
-    NSButton *page=[NSButton buttonWithTitle:@"GitHub 发布页" target:self action:@selector(openRelease:)];page.frame=NSMakeRect(275,4,155,32);[content addSubview:page];
+    self.checkButton=[NSButton buttonWithTitle:@"重新检查" target:self action:@selector(check:)];
+    self.downloadButton=[NSButton buttonWithTitle:@"下载安装包…" target:self action:@selector(download:)];self.downloadButton.enabled=NO;
+    NSButton *page=[NSButton buttonWithTitle:@"GitHub 发布页" target:self action:@selector(openRelease:)];
+    NSStackView *actions=[NSStackView stackViewWithViews:@[self.checkButton,self.downloadButton,page]];
+    actions.orientation=NSUserInterfaceLayoutOrientationHorizontal;actions.distribution=NSStackViewDistributionFillEqually;
+    actions.alignment=NSLayoutAttributeCenterY;actions.spacing=10;actions.translatesAutoresizingMaskIntoConstraints=NO;
+    [content addSubview:actions];
+    [NSLayoutConstraint activateConstraints:@[[actions.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
+        [actions.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
+        [actions.bottomAnchor constraintEqualToAnchor:content.bottomAnchor constant:-4],
+        [actions.heightAnchor constraintEqualToConstant:32]]];
+    for(NSButton *button in actions.arrangedSubviews)[button.heightAnchor constraintEqualToConstant:32].active=YES;
     self.alert.accessoryView=content;
     __weak typeof(self) weakSelf=self;
     [self.alert beginSheetModalForWindow:window completionHandler:^(NSModalResponse response){
