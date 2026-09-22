@@ -37,7 +37,7 @@ class NativeBundleTests(unittest.TestCase):
         data=subprocess.check_output(['codesign','-d','--entitlements',':-',str(EXT)],stderr=subprocess.DEVNULL)
         ent=plistlib.loads(data)
         self.assertIs(ent['com.apple.security.app-sandbox'],True)
-        self.assertEqual(ent['com.apple.security.scripting-targets'],{'com.apple.FinalCut':['com.apple.FinalCut.library.inspection']})
+        self.assertEqual(ent['com.apple.security.scripting-targets'],{'com.apple.FinalCut':['com.apple.FinalCut.library.inspection'],'com.apple.FinalCutApp':['com.apple.FinalCut.library.inspection']})
         self.assertIs(ent['com.apple.security.automation.apple-events'],True)
         # FCP loads its differently signed ProViewServiceSupport in this process.
         self.assertIs(ent['com.apple.security.cs.disable-library-validation'],True)

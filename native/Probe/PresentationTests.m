@@ -138,9 +138,9 @@ int main(int argc,const char *argv[]) {
         [controller.templatePicker selectItemAtIndex:0];[controller rebuildTitles];
         for (NSString *v in basic) {
             NSXMLDocument *after=[[NSXMLDocument alloc] initWithData:controller.titlePayloads[v] options:0 error:nil];
-            if ([after nodesForXPath:@"/fcpxml/resources/effect/@src" error:nil].count || [after nodesForXPath:@"//title/param" error:nil].count || ![[[after nodesForXPath:@"/fcpxml/resources/effect/@uid" error:nil] firstObject].stringValue isEqual:SubPopBasicTitleUID]) return 30;
+            if ([after nodesForXPath:@"/fcpxml/resources/effect/@src" error:nil].count || [after nodesForXPath:@"//title/param" error:nil].count || ![[[after nodesForXPath:@"/fcpxml/resources/effect/@uid" error:nil] firstObject].stringValue isEqual:SubPopNativeSubtitleUID]) return 30;
         }
-        printf("Tap5a conversion: text, timing, background enabled, and round-trip to Basic passed.\n");
+        printf("Tap5a conversion: text, timing, background enabled, and round-trip to Native passed.\n");
         // Delayed pasteboard requests must survive result cleanup and later edits.
         NSMutableData *mutable=[controller.titlePayloads[@"1.14"] mutableCopy];
         NSMutableDictionary *source=[controller.titlePayloads mutableCopy];source[@"1.14"]=mutable;

@@ -394,7 +394,7 @@ static NSDictionary *Time(CMTime t) {
         self.diagnostics=[NSPopover new]; self.diagnostics.behavior=NSPopoverBehaviorTransient;
         NSViewController *controller=[NSViewController new]; controller.view=[[NSView alloc] initWithFrame:NSMakeRect(0,0,540,360)];
         NSScrollView *scroll=[[NSScrollView alloc] initWithFrame:NSMakeRect(10,10,520,300)]; scroll.hasVerticalScroller=YES; scroll.documentView=self.output; [controller.view addSubview:scroll];
-        NSArray *names=@[@"记录状态",@"重新检查上次拖入",@"音频探针"]; SEL actions[]={@selector(refresh:),@selector(recheckLastDrop:),@selector(probeAudio:)};
+        NSArray *names=@[@"记录状态",@"重新检查上次拖入",@"读取权限诊断"]; SEL actions[]={@selector(refresh:),@selector(recheckLastDrop:),@selector(diagnose:)};
         for (NSUInteger i=0;i<3;i++) { NSButton *b=[NSButton buttonWithTitle:names[i] target:self action:actions[i]]; b.frame=NSMakeRect(10+i*174,322,164,28); [controller.view addSubview:b]; }
         self.diagnostics.contentViewController=controller;
     }
@@ -780,6 +780,7 @@ static NSDictionary *Time(CMTime t) {
     if (!self.observed) { self.observed=YES; [self snapshot:@"initialPlayheadState"]; }
 }
 - (void)validateDroppedProject {
+    if (self.timeline) [self snapshot:@"drop-state-refresh"];
     NSError *error=nil;
     NSData *data=[NSData dataWithContentsOfURL:self.freshDropURL options:0 error:&error];
     NSXMLDocument *doc=data ? [[NSXMLDocument alloc] initWithData:data options:NSXMLNodeLoadExternalEntitiesNever error:&error] : nil;
