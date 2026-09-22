@@ -128,6 +128,7 @@ static NSDictionary *Time(CMTime t) {
 @property NSString *modelRequestID;
 @property NSString *vocabularyDraft;
 @property NSButton *referenceButton;
+@property NSStackView *referenceActions;
 @property NSButton *referenceUndoButton;
 @property NSButton *restoreResultButton;
 @property NSTextField *referenceInfo;

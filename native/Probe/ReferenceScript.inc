@@ -118,10 +118,14 @@
     BOOL busy=self.requestID || self.referenceRequestID;
     NSString *script=[self effectiveReferenceScript];
     self.referenceButton.enabled=!busy && self.dropUID.length && [self isolatedProjectActive] && !self.importInProgress;
-    self.referenceButton.title=script.length ? @"参考脚本 · 已启用" : ([self referenceSettings][@"text"] ? @"参考脚本 · 已停用" : @"参考脚本 · 可选");
+    NSString *referenceState=script.length ? @"已启用" : ([self referenceSettings][@"text"] ? @"已停用" : @"可选");
+    self.referenceButton.toolTip=[NSString stringWithFormat:@"参考脚本 · %@：粘贴或导入脚本，辅助纠错与断句",referenceState];
+    self.referenceButton.contentTintColor=script.length ? SubPopAccent() : nil;
+    [self.referenceButton setAccessibilityValue:referenceState];
     self.referenceUndoButton.hidden=!self.referenceUndoRows || !self.titlePayloads;
     self.referenceUndoButton.enabled=!busy;
     self.restoreResultButton.hidden=self.titlePayloads || !self.observedProjectUID.length || busy;
+    self.referenceActions.hidden=self.referenceUndoButton.hidden && self.restoreResultButton.hidden;
     self.referenceInfo.stringValue=self.referenceRequestID ? @"正在参考脚本整理字幕…" : (self.referenceMessage ?: (script.length ? @"以实际语音为准 · 脚本仅在本机参考" : @"粘贴或导入脚本，辅助纠错与断句"));
     if (self.referenceRequestID) {
         self.statusTitle.stringValue=@"正在参考脚本";self.statusDetail.stringValue=@"正在比对已识别的内容，保留现场表达和字幕时间。";

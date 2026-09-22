@@ -24,10 +24,11 @@
     NSTextField *subtitle=[self label:@"让字幕跟上你的表达" size:11 weight:NSFontWeightRegular];subtitle.textColor=NSColor.secondaryLabelColor;
     NSStackView *identity=[self column:@[brand,subtitle] spacing:2];NSView *spacer=[NSView new];
     self.vocabularyButton=[self toolbarButton:@"词库" symbol:@"text.book.closed" action:@selector(showVocabulary:)];[self.vocabularyButton setAccessibilityLabel:@"词库"];
+    self.referenceButton=[self toolbarButton:@"参考脚本" symbol:@"doc.text" action:@selector(showReferenceScript:)];[self.referenceButton setAccessibilityLabel:@"参考脚本"];
     self.modelsButton=[self toolbarButton:@"模型" symbol:@"square.stack.3d.up" action:@selector(showModels:)];[self.modelsButton setAccessibilityLabel:@"模型管理"];
     NSButton *updates=[self toolbarButton:@"" symbol:@"arrow.triangle.2.circlepath" action:@selector(checkForUpdates:)];updates.toolTip=@"检查更新";[updates setAccessibilityLabel:@"检查更新"];
     NSButton *diagnostics=[self toolbarButton:@"" symbol:@"info.circle" action:@selector(showDiagnostics:)];diagnostics.toolTip=@"连接诊断";[diagnostics setAccessibilityLabel:@"连接诊断"];
-    NSStackView *header=[NSStackView stackViewWithViews:@[self.signal,identity,spacer,self.vocabularyButton,self.modelsButton,updates,diagnostics]];header.spacing=10;header.alignment=NSLayoutAttributeCenterY;[stack addArrangedSubview:header];
+    NSStackView *header=[NSStackView stackViewWithViews:@[self.signal,identity,spacer,self.vocabularyButton,self.referenceButton,self.modelsButton,updates,diagnostics]];header.spacing=10;header.alignment=NSLayoutAttributeCenterY;[stack addArrangedSubview:header];
     self.resultView=[[SubPopTitleDragView alloc] initWithFrame:NSMakeRect(0,0,600,120)];self.resultView.controller=self;self.resultView.target=self;self.resultView.action=@selector(importTitlesToFCP:);[self.resultView setAccessibilityElement:YES];[self.resultView setAccessibilityRole:NSAccessibilityGroupRole];[stack addArrangedSubview:self.resultView];[self.resultView.heightAnchor constraintEqualToConstant:120].active=YES;self.resultView.hidden=YES;
     self.templatePicker=[[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];[self.templatePicker addItemsWithTitles:@[@"普通字幕 · 无底框",@"FCP 原生 · 自适应底框",@"Tap5a · 自适应底框"]];[self.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];self.templatePicker.target=self;self.templatePicker.action=@selector(templateChanged:);[self.templatePicker setAccessibilityLabel:@"字幕样式"];
     NSTextField *templateHint=[self label:@"无需重新识别" size:11 weight:NSFontWeightRegular];templateHint.textColor=NSColor.secondaryLabelColor;
@@ -49,12 +50,11 @@
     NSStackView *selectors=[NSStackView stackViewWithViews:@[left,right]];selectors.spacing=20;selectors.distribution=NSStackViewDistributionFillEqually;
     self.modelDetail=[self label:@"" size:11 weight:NSFontWeightRegular];self.modelDetail.textColor=NSColor.secondaryLabelColor;
     NSTextField *rules=[self label:@"自动整理   去句子标点  ·  自然断句  ·  保护专名和数值" size:11 weight:NSFontWeightRegular];rules.textColor=[NSColor colorWithCalibratedWhite:.68 alpha:1];
-    self.referenceButton=[self toolbarButton:@"参考脚本 · 可选" symbol:@"doc.text" action:@selector(showReferenceScript:)];[self.referenceButton setAccessibilityLabel:@"参考脚本"];
     self.referenceUndoButton=[self toolbarButton:@"撤销脚本整理" symbol:@"arrow.uturn.backward" action:@selector(undoReferenceRefinement:)];self.referenceUndoButton.hidden=YES;
     self.restoreResultButton=[self toolbarButton:@"恢复上次字幕" symbol:@"clock.arrow.circlepath" action:@selector(restoreLastResult:)];self.restoreResultButton.hidden=YES;
-    NSStackView *referenceActions=[NSStackView stackViewWithViews:@[self.referenceButton,[NSView new],self.referenceUndoButton,self.restoreResultButton]];referenceActions.spacing=10;
+    self.referenceActions=[NSStackView stackViewWithViews:@[[NSView new],self.referenceUndoButton,self.restoreResultButton]];self.referenceActions.spacing=10;
     self.referenceInfo=[self label:@"粘贴或导入脚本，辅助纠错与断句" size:11 weight:NSFontWeightRegular];self.referenceInfo.textColor=NSColor.secondaryLabelColor;
-    [stack addArrangedSubview:[self surface:@[selectors,self.modelDetail,rules,referenceActions,self.referenceInfo]]];
+    [stack addArrangedSubview:[self surface:@[selectors,self.modelDetail,rules,self.referenceActions,self.referenceInfo]]];
     self.statusTitle=[self label:@"准备生成字幕" size:14 weight:NSFontWeightSemibold];self.statusDetail=[self label:@"" size:12 weight:NSFontWeightRegular];self.statusDetail.textColor=NSColor.secondaryLabelColor;
     NSStackView *statusLine=[NSStackView stackViewWithViews:@[self.statusTitle,[NSView new]]];statusLine.alignment=NSLayoutAttributeCenterY;
     self.activity=[[SubPopActivityView alloc] initWithFrame:NSMakeRect(0,0,520,56)];[self.activity.heightAnchor constraintEqualToConstant:56].active=YES;
