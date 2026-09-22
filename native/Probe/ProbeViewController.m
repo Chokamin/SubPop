@@ -235,7 +235,7 @@ static NSDictionary *Time(CMTime t) {
 }
 - (void)saveDraft {
     if (!self.resultRequestID || !self.titlePayloads || !self.captionRows) return;
-    NSDictionary *draft=@{@"requestID":self.resultRequestID,@"snapshotSHA":self.requestSHA ?: @"",@"modelID":self.requestModelID ?: @"",@"captions":self.captionRows,@"font":self.fontPicker.titleOfSelectedItem,@"fontSize":self.sizePicker.titleOfSelectedItem,@"tap5aStyle":SubPopNormalizeTap5aStyle(self.tap5aStyle),@"titleTemplate":@(self.templatePicker.indexOfSelectedItem==1)};
+    NSDictionary *draft=@{@"requestID":self.resultRequestID,@"snapshotSHA":self.requestSHA ?: @"",@"modelID":self.requestModelID ?: @"",@"captions":self.captionRows,@"font":self.fontPicker.titleOfSelectedItem,@"fontSize":self.sizePicker.titleOfSelectedItem,@"tap5aStyle":SubPopNormalizeTap5aStyle(self.tap5aStyle),@"templateID":([self usesFileImport] ? @"tap5a" : @"native"),@"titleTemplate":@(self.templatePicker.indexOfSelectedItem==1)};
     NSData *data=[NSJSONSerialization dataWithJSONObject:draft options:0 error:nil];[data writeToURL:[[self evidenceDirectory] URLByAppendingPathComponent:[@"draft-" stringByAppendingString:self.resultRequestID]] atomically:YES];
 }
 - (NSDictionary *)selectedModel {
@@ -370,7 +370,8 @@ static NSDictionary *Time(CMTime t) {
         if (!doc) return;
         SubPopSetTitleTemplate(doc,self.templatePicker.indexOfSelectedItem==1 ? self.tap5aURL : nil);
         if ([self usesFileImport]) SubPopApplyTap5aStyle(doc,self.tap5aStyle);
-        SubPopApplyTitlePosition(doc,self.tap5aStyle);
+        if ([self usesFileImport]) SubPopApplyTitlePosition(doc,self.tap5aStyle);
+        else SubPopSetNativeSubtitle(doc);
         NSArray *titles=[doc nodesForXPath:@"/fcpxml/clip/spine/title" error:nil];
         if (titles.count!=self.captionRows.count) return;
         for (NSUInteger i=0;i<titles.count;i++) {
@@ -471,6 +472,7 @@ static NSDictionary *Time(CMTime t) {
     }
     if (hasRows && [self.resultManifest[@"cloudCleanupPending"] unsignedIntegerValue]>0) self.statusDetail.stringValue=[self.statusDetail.stringValue stringByAppendingString:@" 旧版临时音频尚待清理，请打开云端设置查看。"];
 
+    if (hasRows && !fileImport && ready) self.statusDetail.stringValue=@"拖到原项目起点上方，无需 Tap5a。落轨后将片段项分开，可在 FCP 调整底框、圆角和动画。";
     self.tap5aStyleButton.hidden=![self usesFileImport];self.tap5aStyleButton.enabled=!self.importInProgress;
     self.resultView.enabled=ready && !self.importInProgress;
     self.resultView.toolTip=fileImport ? @"点击导入到 FCP 浏览器。若出现资源库选择，请选择原项目所在资源库；在本次新建的编号事件中将字幕片段拖到原项目起点上方。每次导入都会保留旧版并新建事件。" : @"按住卡片拖到原项目时间线起点上方，落轨后将片段项分开。";
@@ -621,7 +623,7 @@ static NSDictionary *Time(CMTime t) {
             if ([draft[@"snapshotSHA"] isEqual:self.requestSHA] && [draft[@"modelID"] isEqual:self.requestModelID] && [draft[@"captions"] isKindOfClass:NSArray.class] && [draft[@"captions"] count]==self.captionRows.count) {
                 // Restore only text and presentation onto fresh, validated timing/payloads.
                 self.tap5aStyle=SubPopNormalizeTap5aStyle(draft[@"tap5aStyle"]);
-                if ([draft[@"titleTemplate"] boolValue] && [self resolveTap5a]) [self.templatePicker selectItemAtIndex:1];
+                if ([draft[@"templateID"] isEqual:@"tap5a"] && [self resolveTap5a]) [self.templatePicker selectItemAtIndex:1];
                 for (NSUInteger i=0;i<self.captionRows.count;i++) { id text=draft[@"captions"][i][@"text"];if ([text isKindOfClass:NSString.class] && [text length]>0 && [text length]<=500) self.captionRows[i][@"text"]=text; }
                 if ([draft[@"font"] isKindOfClass:NSString.class] && ![self.fontPicker itemWithTitle:draft[@"font"]]) [self.fontPicker addItemWithTitle:draft[@"font"]];
                 if ([self.fontPicker itemWithTitle:draft[@"font"]]) [self.fontPicker selectItemWithTitle:draft[@"font"]];
@@ -629,6 +631,7 @@ static NSDictionary *Time(CMTime t) {
                 if ([self.sizePicker itemWithTitle:draft[@"fontSize"]]) [self.sizePicker selectItemWithTitle:draft[@"fontSize"]];
                 [self rebuildTitles];
             }
+            [self rebuildTitles];
             [self.captionTable reloadData]; }
         [self record:@{@"reason":@"worker-result",@"status":self.titlePayloads ? @"ready-to-drag" : @"result-rejected",@"requestID":self.requestID,@"jobID":response[@"jobID"] ?: @""}];
         if (!self.titlePayloads) [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.requestID=nil; [self updateInterface];
@@ -656,6 +659,9 @@ static NSDictionary *Time(CMTime t) {
     if (!self.titlePayloads || !self.resultDate) { [self record:@{@"reason":@"title-drag-refused",@"status":@"Load a valid completed result first"}]; return; }
     if (![self isolatedProjectActive]) {
         [self record:@{@"reason":@"title-drag-refused",@"status":@"Open the unchanged source project first"}]; return;
+    }
+    if (!SubPopNativeSubtitleAvailable()) {
+        NSAlert *alert=[NSAlert new];alert.messageText=@"未找到 FCP 原生字幕模板";alert.informativeText=@"请更新 Final Cut Pro，或选择 Tap5a 字幕样式。";[alert runModal];return;
     }
     NSString *previousTemplatePath=self.tap5aURL.path;
     if (self.templatePicker.indexOfSelectedItem==1 && ![self resolveTap5a]) {

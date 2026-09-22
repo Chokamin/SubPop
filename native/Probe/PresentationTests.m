@@ -46,6 +46,10 @@ int main(int argc,const char *argv[]) {
         for (NSString *v in payloads) {
             NSXMLDocument *before=[[NSXMLDocument alloc] initWithData:payloads[v] options:0 error:nil];
             NSXMLDocument *after=[[NSXMLDocument alloc] initWithData:controller.titlePayloads[v] options:0 error:nil];
+            NSXMLElement *nativeEffect=[after nodesForXPath:@"/fcpxml/resources/effect[@id='r2']" error:nil].firstObject;
+            if (![[nativeEffect attributeForName:@"uid"].stringValue isEqual:SubPopNativeSubtitleUID]) return 81;
+            if ([after nodesForXPath:@"/fcpxml/clip/spine/title/adjust-transform" error:nil].count) return 82;
+            if ([after nodesForXPath:@"/fcpxml/clip/spine/title/param" error:nil].count) return 83;
             NSArray *a=[before nodesForXPath:@"/fcpxml/clip/spine/title" error:nil],*b=[after nodesForXPath:@"/fcpxml/clip/spine/title" error:nil];
             if (a.count!=b.count || !b.count) return 3;
             for (NSUInteger i=0;i<a.count;i++) {

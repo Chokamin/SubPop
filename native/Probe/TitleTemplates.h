@@ -35,3 +35,25 @@ static void SubPopSetTitleTemplate(NSXMLDocument *doc, NSURL *tap5aURL) {
         }
     }
 }
+
+// Built-in FCP Subtitle title, verified with native Generate Captions XML.
+static NSString * const SubPopNativeSubtitleUID=@".../Titles.localized/Subtitles.localized/Subtitle.localized/Subtitle.moti";
+static inline BOOL SubPopNativeSubtitleAvailable(void) {
+    for (NSString *bundleID in @[@"com.apple.FinalCutApp",@"com.apple.FinalCut"]) {
+        NSURL *app=[NSWorkspace.sharedWorkspace URLForApplicationWithBundleIdentifier:bundleID];
+        NSURL *template=[app URLByAppendingPathComponent:@"Contents/PlugIns/MediaProviders/MotionEffect.fxp/Contents/Resources/METemplates.localized/Titles.localized/Subtitles.localized/Subtitle.localized/Subtitle.moti"];
+        if (template && [NSFileManager.defaultManager fileExistsAtPath:template.path]) return YES;
+    }
+    return NO;
+}
+static inline void SubPopSetNativeSubtitle(NSXMLDocument *doc) {
+    SubPopSetTitleTemplate(doc,nil);
+    NSXMLElement *effect=[doc nodesForXPath:@"/fcpxml/resources/effect[@id='r2']" error:nil].firstObject;
+    [effect attributeForName:@"uid"].stringValue=SubPopNativeSubtitleUID;
+    [effect attributeForName:@"name"].stringValue=@"翻译字幕";
+    for (NSXMLElement *title in [doc nodesForXPath:@"/fcpxml/clip/spine/title" error:nil]) {
+        // The native template supplies its own bottom position and background.
+        for (NSXMLNode *node in [title elementsForName:@"adjust-transform"]) [node detach];
+        [title attributeForName:@"start"].stringValue=@"3600s";
+    }
+}
