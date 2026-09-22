@@ -34,7 +34,8 @@ class SigningPolicyTests(unittest.TestCase):
                     if '-d' in command:
                         enabled = extension_exception if command[-1] == str(extension) else host_exception
                         return subprocess.CompletedProcess(command, 0, stdout=plistlib.dumps(
-                            {'com.apple.security.cs.disable-library-validation': enabled}))
+                            {'com.apple.security.cs.disable-library-validation': enabled,
+                             'com.apple.security.automation.apple-events':True}))
                     return Mock(returncode=0)
 
                 with patch.object(sign_release.subprocess, 'run', side_effect=execute):
@@ -43,3 +44,23 @@ class SigningPolicyTests(unittest.TestCase):
                     else:
                         with self.assertRaisesRegex(ValueError, 'scoped'):
                             sign_release.sign(app, 'fake identity', ent)
+
+    def test_missing_container_apple_events_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            app = Path(temp).resolve() / 'Test.app'
+            extension = app / 'Contents/PlugIns/SubPopProbe.appex'
+            extension.mkdir(parents=True)
+            ent = Path(temp) / 'extension.plist'
+            ent.write_bytes(plistlib.dumps({'com.apple.security.app-sandbox': True,
+                'com.apple.security.cs.disable-library-validation': True}))
+
+            def execute(command, **kwargs):
+                if '-d' in command:
+                    values = {'com.apple.security.cs.disable-library-validation': True,
+                              'com.apple.security.automation.apple-events': True} if command[-1] == str(extension) else {}
+                    return subprocess.CompletedProcess(command, 0, stdout=plistlib.dumps(values))
+                return Mock(returncode=0)
+
+            with patch.object(sign_release.subprocess, 'run', side_effect=execute):
+                with self.assertRaisesRegex(ValueError, 'Both app and extension'):
+                    sign_release.sign(app, 'fake identity', ent)

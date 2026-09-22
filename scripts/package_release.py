@@ -50,7 +50,7 @@ def build(application_identity=None, installer_identity=None):
         sign(APP,application_identity,ROOT/'.subloom/build/probe.entitlements')
     else:
         run('codesign','--force','--sign','-','--entitlements',ROOT/'.subloom/build/probe.entitlements',ext)
-        run('codesign','--force','--sign','-',APP)
+        run('codesign','--force','--sign','-','--entitlements',ROOT/'native/Probe/Container.entitlements',APP)
     run('codesign','--verify','--deep','--strict',APP)
     component=STAGE/'SubPop-component.pkg'
     run('pkgbuild','--root',STAGE/'payload','--identifier','com.chokamin.SubPop.installer','--version',version,'--compression','latest','--min-os-version','15.0','--install-location','/','--ownership','recommended',component)

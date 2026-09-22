@@ -5,6 +5,7 @@ import plistlib
 import subprocess
 
 MACHO = {bytes.fromhex(v) for v in ('feedface','feedfacf','cefaedfe','cffaedfe','cafebabe','bebafeca','cafebabf','bfbafeca')}
+CONTAINER_ENTITLEMENTS = Path(__file__).resolve().parents[1]/'native/Probe/Container.entitlements'
 
 def run(*args):
     subprocess.run([str(a) for a in args], check=True)
@@ -35,7 +36,9 @@ def sign(app, identity, extension_entitlements):
         run(*command,path)
     extension=app/'Contents/PlugIns/SubPopProbe.appex'
     run('codesign','--force','--sign',identity,'--timestamp','--options','runtime','--entitlements',extension_entitlements,extension)
-    run('codesign','--force','--sign',identity,'--timestamp','--options','runtime',app)
+    # TCC attributes extension Apple Events to its containing app. Both need the
+    # hardened-runtime declaration; the extension sandbox still limits reads to FCP.
+    run('codesign','--force','--sign',identity,'--timestamp','--options','runtime','--entitlements',CONTAINER_ENTITLEMENTS,app)
     run('codesign','--verify','--deep','--strict','--verbose=2',app)
     # Valid signatures alone cannot prove that FCP can load its host framework.
     for bundle, expected in ((extension, True), (app, False)):
@@ -43,6 +46,8 @@ def sign(app, identity, extension_entitlements):
         values = plistlib.loads(embedded) if embedded.strip() else {}
         if (values.get('com.apple.security.cs.disable-library-validation') is True) != expected:
             raise ValueError('Library-validation exception must be scoped to the FCP extension')
+        if values.get('com.apple.security.automation.apple-events') is not True:
+            raise ValueError('Both app and extension must declare Apple Events for TCC attribution')
     python_entitlements.unlink()
     print(f'Signed {len(targets)} Mach-O files and app/extension bundles',flush=True)
 

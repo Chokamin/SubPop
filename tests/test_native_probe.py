@@ -44,6 +44,7 @@ class NativeBundleTests(unittest.TestCase):
         host_data=subprocess.check_output(['codesign','-d','--entitlements',':-',str(APP)],stderr=subprocess.DEVNULL)
         host=plistlib.loads(host_data) if host_data.strip() else {}
         self.assertNotIn('com.apple.security.cs.disable-library-validation',host)
+        self.assertEqual(host,{'com.apple.security.automation.apple-events':True})
         self.assertIs(ent['com.apple.security.files.user-selected.read-write'],True)
         self.assertNotIn('com.apple.security.network.server',ent)
         self.assertTrue(ent['com.apple.security.network.client'])  # Explicit GitHub update checks.
