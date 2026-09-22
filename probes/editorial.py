@@ -11,6 +11,11 @@ RULES_VERSION='semantic-phrases-v3-vocabulary'
 def measured_words(data):
     result=[]
     duration=Fraction(data['snapshot']['duration'])
+    # A timeline duration need not land on a 16 kHz PCM sample. The last
+    # decoded sample can extend by less than one sample; clip only this proven
+    # endpoint quantization, never a general overlap or alignment discrepancy.
+    pcm_end=Fraction(data['snapshot'].get('sampleCount',0),16000)
+    endpoint_tolerance=0<pcm_end-duration<=Fraction(1,16000)
     for part in data['results']:
         text=part['text'];words=part['words']
         if ''.join(spoken(w['text']) for w in words)!=spoken(text):
@@ -18,6 +23,9 @@ def measured_words(data):
         cursor=0;previous=Fraction(0)
         for word in words:
             start,end=Fraction(str(word['start'])),Fraction(str(word['end']))
+            if endpoint_tolerance:
+                if duration<end<=pcm_end:end=duration
+                if duration<start<=pcm_end:start=duration
             target=spoken(word['text'])
             if not target or start<previous or end<start or end>duration:
                 raise ValueError('Invalid or overlapping alignment')
@@ -32,11 +40,15 @@ def measured_words(data):
     return result
 
 
-def optimized_captions(data, fps, vocabulary=(), max_chars=20, warnings=None):
+def optimized_captions(data, fps, vocabulary=(), max_chars=20, warnings=None, reference_script='', reference_report=None):
+    from .reference_script import ReferenceScript
+    reference=ReferenceScript(reference_script)
     raw=[];fps=Fraction(fps)
     for index,part in enumerate(data['results']):
         scoped={**data,'results':[part]}
-        words=canonical_words(measured_words(scoped),vocabulary)
+        words=reference.apply(canonical_words(measured_words(scoped),vocabulary),protected_terms=vocabulary)
+        # An explicit vocabulary entry wins over reference-script typography.
+        words=canonical_words(words,vocabulary)
         # The timing fallback must use the same canonical transcript as the normal path.
         scoped={**scoped,'results':[{'text':''.join(w.text for w in words),
             'words':[dict(text=w.text,start=w.start,end=w.end) for w in words]}]}
@@ -62,4 +74,5 @@ def optimized_captions(data, fps, vocabulary=(), max_chars=20, warnings=None):
     for i,row in enumerate(raw):
         row['text']=clean_generated_text(row['text'])
         if i+1<len(raw) and 0<raw[i+1]['start']-row['end']<=Fraction(1,5):row['end']=raw[i+1]['start']
+    if reference_report is not None:reference_report.update(reference.report)
     return quantize([r for r in raw if r['text']],Fraction(data['snapshot']['duration']),fps)

@@ -17,6 +17,7 @@ from .title_fixture import payload, UID
 from .snapshot import prepare, collision
 from .models import DEFAULT_MODEL_ID, model_spec, resolve_model
 from .vocabulary import validate as validate_vocabulary
+from .reference_script import validate as validate_reference, digest as reference_digest
 
 from .paths import ROOT, AUDIO_BINARY
 WORK=ROOT/'.subloom/verification/jobs'
@@ -42,9 +43,16 @@ def preflight(xml, asr, aligner):
 def finalize(directory,state,result,existing):
     frame=Fraction(result['snapshot']['frameDuration']);fps=1/frame
     review=[]
-    rows=optimized_captions(result,fps,state.get('vocabulary',[]),warnings=review)
+    script=state.get('referenceScript','');reference_review={}
+    rows=optimized_captions(result,fps,state.get('vocabulary',[]),warnings=review,reference_script=script,reference_report=reference_review)
     manifest={**result['snapshot'],'projectUID':state['projectUID'],'pcmSHA256':result['pcm_sha256'],'fps':str(fps),'captions':rows,'modelID':state['modelID'],'vocabulary':state.get('vocabulary',[])}
     manifest.update(editorialRules=RULES_VERSION,reviewWarnings=review)
+    manifest.update(referenceSHA256=reference_digest(script),referenceReview=reference_review)
+    if script:
+        original=optimized_captions(result,fps,state.get('vocabulary',[]))
+        manifest['unreferencedCaptions']=original
+        for version in ('1.12','1.13','1.14'):
+            (directory/f'TitleOriginal-{version}.fcpxml').write_bytes(payload({**manifest,'captions':original},version))
     if result.get('cloudProtocol'):
         from .tos_storage import pending_count
         manifest['cloudCleanupPending']=pending_count(ROOT)
@@ -57,7 +65,7 @@ def finalize(directory,state,result,existing):
         return directory
     (directory/'captions.srt').write_text(srt(rows,fps))
     for version in ('1.12','1.13','1.14'):(directory/f'TitleProbe-{version}.fcpxml').write_bytes(payload(manifest,version))
-    outputs={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in directory.iterdir() if p.name.startswith('TitleProbe-') or p.name in ('captions.json','captions.srt')}
+    outputs={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in directory.iterdir() if p.name.startswith(('TitleProbe-','TitleOriginal-')) or p.name in ('captions.json','captions.srt')}
     state.update(status='ready',stage='ready',outputs=outputs,pcmSHA256=result['pcm_sha256'],titleCount=len(rows),device=result['device'])
     save(directory/'status.json',state);print(json.dumps({'ready':str(directory),'titleCount':len(rows)}),flush=True)
     return directory
@@ -88,15 +96,16 @@ def cached_recognition(state, snapshot):
     return None
 
 
-def run(xml,asr,aligner,model_id=DEFAULT_MODEL_ID,audio_mode='dialogue',vocabulary=None,allow_cloud=False):
+def run(xml,asr,aligner,model_id=DEFAULT_MODEL_ID,audio_mode='dialogue',vocabulary=None,allow_cloud=False,reference_script=''):
     # Validate before starting costly work. Each invocation owns a new directory.
     cloud=model_spec(model_id).get('engine')=='doubao'
     if cloud and allow_cloud is not True:raise ValueError('云端识别需要先确认上传音频及计费')
     vocabulary=validate_vocabulary(vocabulary or [])
+    reference_script=validate_reference(reference_script)
     original=xml.read_bytes()
     directory=WORK/str(uuid.uuid4());directory.mkdir(parents=True)
     frozen=directory/'input.fcpxml';frozen.write_bytes(original)
-    state={'vocabulary':vocabulary,'modelID':model_id,'audioMode':audio_mode,'jobID':directory.name,'status':'running','stage':'validate','projectUID':UID,
+    state={'vocabulary':vocabulary,'referenceScript':reference_script,'modelID':model_id,'audioMode':audio_mode,'jobID':directory.name,'status':'running','stage':'validate','projectUID':UID,
            'snapshotSHA256':hashlib.sha256(frozen.read_bytes()).hexdigest(),
            'createdAt':datetime.now(timezone.utc).isoformat(),'source':'explicit XML snapshot; freshness not established by active host'}
     def progress(stage):
@@ -151,5 +160,5 @@ if __name__=='__main__':
     parser.add_argument('--vocabulary-file',type=Path)
     parser.add_argument('--allow-cloud',action='store_true')
     args=parser.parse_args();asr,aligner=resolve_model(args.model)
-    vocabulary=json.loads(args.vocabulary_file.read_text()).get('vocabulary',[]) if args.vocabulary_file else []
-    run(args.xml,asr,aligner,args.model,args.audio_mode,vocabulary,args.allow_cloud)
+    options=json.loads(args.vocabulary_file.read_text()) if args.vocabulary_file else {}
+    run(args.xml,asr,aligner,args.model,args.audio_mode,options.get('vocabulary',[]),args.allow_cloud,options.get('referenceScript',''))

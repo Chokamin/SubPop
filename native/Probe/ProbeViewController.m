@@ -1,4 +1,5 @@
 #import <Cocoa/Cocoa.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import "ProbePresentation.h"
 #import <ProExtension/ProExtension.h>
 #import <ProExtensionHost/ProExtensionHost.h>
@@ -126,6 +127,27 @@ static NSDictionary *Time(CMTime t) {
 @property NSPopUpButton *downloadSourcePicker;
 @property NSString *modelRequestID;
 @property NSString *vocabularyDraft;
+@property NSButton *referenceButton;
+@property NSButton *referenceUndoButton;
+@property NSButton *restoreResultButton;
+@property NSTextField *referenceInfo;
+@property NSAlert *referenceAlert;
+@property NSTextView *referenceEditor;
+@property NSTextField *referenceLimit;
+@property NSString *referenceDraft;
+@property NSString *requestReferenceSHA;
+@property NSString *referenceRequestID;
+@property NSString *referenceSourceResultID;
+@property NSString *referenceProcessingSHA;
+@property NSString *referenceMessage;
+@property NSDate *referenceStarted;
+@property NSUInteger referenceGeneration;
+@property NSArray *referenceSourceRows;
+@property NSArray *referenceUndoRows;
+@property NSDictionary *referenceUndoPayloads;
+@property BOOL referenceUndone;
+@property BOOL historicalResult;
+@property BOOL referenceUndoWasOriginal;
 - (void)updateInterface;
 - (BOOL)canDragResult;
 - (BOOL)receivePasteboard:(NSPasteboard *)pasteboard;
@@ -225,17 +247,17 @@ static NSDictionary *Time(CMTime t) {
     if (!saved || !self.observed || ![self.observedProjectUID isEqual:saved[@"projectUID"]] || !CMTIME_IS_NUMERIC(self.observedProjectDuration)) return;
     CMTime duration=CMTimeMake([saved[@"durationValue"] longLongValue],[saved[@"durationScale"] intValue]);
     if (!CMTIME_IS_NUMERIC(duration) || CMTimeCompare(self.observedProjectDuration,duration)!=0) return;
-    self.restoringSession=YES;self.dropUID=saved[@"projectUID"];self.dropDuration=duration;self.dropName=saved[@"projectName"];
+    self.historicalResult=[saved[@"historicalResult"] boolValue];self.restoringSession=YES;self.dropUID=saved[@"projectUID"];self.dropDuration=duration;self.dropName=saved[@"projectName"];
     NSString *file=saved[@"inputFile"];
     if ([file hasPrefix:@"drop-"] && [file.lastPathComponent isEqual:file]) { self.freshDropURL=[[self evidenceDirectory] URLByAppendingPathComponent:file];NSDate *captured=nil;[self.freshDropURL getResourceValue:&captured forKey:NSURLContentModificationDateKey error:nil];self.freshDropDate=captured; }
-    self.requestVocabulary=saved[@"vocabulary"] ?: @[];self.requestID=saved[@"requestID"];self.requestSHA=saved[@"snapshotSHA"];self.requestModelID=saved[@"modelID"];self.requestGeneration=self.dropGeneration;self.displayState=@"validate";
+    self.requestReferenceSHA=saved[@"referenceSHA256"] ?: @"";self.requestVocabulary=saved[@"vocabulary"] ?: @[];self.requestID=saved[@"requestID"];self.requestSHA=saved[@"snapshotSHA"];self.requestModelID=saved[@"modelID"];self.requestGeneration=self.dropGeneration;self.displayState=@"validate";
     // Keep historical results, but do not reselect a model removed from the catalog.
     for (NSMenuItem *item in self.modelPicker.itemArray) if ([item.representedObject isEqual:self.requestModelID]) { self.selectedModelID=self.requestModelID;[self.modelPicker selectItem:item];break; }
     self.restoringSession=NO;
 }
 - (void)saveDraft {
     if (!self.resultRequestID || !self.titlePayloads || !self.captionRows) return;
-    NSDictionary *draft=@{@"requestID":self.resultRequestID,@"snapshotSHA":self.requestSHA ?: @"",@"modelID":self.requestModelID ?: @"",@"captions":self.captionRows,@"font":self.fontPicker.titleOfSelectedItem,@"fontSize":self.sizePicker.titleOfSelectedItem,@"tap5aStyle":SubPopNormalizeTap5aStyle(self.tap5aStyle),@"templateID":SubPopTitleTemplateID(self.templatePicker.indexOfSelectedItem),@"titleTemplate":@(self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateTap5a)};
+    NSDictionary *draft=@{@"requestID":self.resultRequestID,@"snapshotSHA":self.requestSHA ?: @"",@"modelID":self.requestModelID ?: @"",@"captions":self.captionRows,@"font":self.fontPicker.titleOfSelectedItem,@"fontSize":self.sizePicker.titleOfSelectedItem,@"tap5aStyle":SubPopNormalizeTap5aStyle(self.tap5aStyle),@"referenceUndoCaptions":self.referenceUndoRows ?: @[],@"referenceUndoWasOriginal":@(self.referenceUndoWasOriginal),@"referenceMessage":self.referenceMessage ?: @"",@"referenceUndone":@(self.referenceUndone),@"referenceSHA256":self.requestReferenceSHA ?: @"",@"templateID":SubPopTitleTemplateID(self.templatePicker.indexOfSelectedItem),@"titleTemplate":@(self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateTap5a)};
     NSData *data=[NSJSONSerialization dataWithJSONObject:draft options:0 error:nil];[data writeToURL:[[self evidenceDirectory] URLByAppendingPathComponent:[@"draft-" stringByAppendingString:self.resultRequestID]] atomically:YES];
 }
 - (NSDictionary *)selectedModel {
@@ -257,6 +279,10 @@ static NSDictionary *Time(CMTime t) {
 }
 - (void)audioChanged:(id)sender { if (!self.requestID) { [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.titlePayloads=nil;self.captionRows=nil;self.displayState=self.freshDropURL ? @"input" : @"idle";[self updateInterface]; } }
 - (void)cancelJob:(id)sender {
+    if (self.referenceRequestID) {
+        [@"{}" writeToURL:[[self.bridgeURL URLByAppendingPathComponent:self.referenceRequestID] URLByAppendingPathComponent:@"cancel.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        self.referenceRequestID=nil;self.referenceSourceRows=nil;self.referenceMessage=@"已取消脚本整理，字幕保持原样。";[self updateInterface];return;
+    }
     if (!self.requestID) return;
     NSURL *url=[[self.bridgeURL URLByAppendingPathComponent:self.requestID] URLByAppendingPathComponent:@"cancel.json"];
     [@"{}" writeToURL:url atomically:YES encoding:NSUTF8StringEncoding error:nil];self.cancelButton.enabled=NO;self.statusTitle.stringValue=@"正在取消…";
@@ -269,9 +295,10 @@ static NSDictionary *Time(CMTime t) {
     return [NSString stringWithFormat:@"%02ld:%05.2f",(long)(value/60),fmod(value,60)];
 }
 - (void)tableView:(NSTableView *)tableView setObjectValue:(id)value forTableColumn:(NSTableColumn *)column row:(NSInteger)row {
+    if (self.referenceRequestID || self.requestID) return;
     NSString *text=[value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     if (!text.length || text.length>500) { NSBeep();return; }
-    self.captionRows[row][@"text"]=text;[self rebuildTitles];
+    self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.captionRows[row][@"text"]=text;[self rebuildTitles];
 }
 - (BOOL)resolveTap5a {
     if (self.tap5aURL && SubPopValidTap5a(self.tap5aURL)) return YES;
@@ -400,7 +427,7 @@ static NSDictionary *Time(CMTime t) {
     }
     [self.diagnostics showRelativeToRect:[sender bounds] ofView:sender preferredEdge:NSRectEdgeMaxY];
 }
-- (BOOL)canDragResult { return self.titlePayloads && self.resultDate && [self isolatedProjectActive]; }
+- (BOOL)canDragResult { return !self.referenceRequestID && self.titlePayloads && self.resultDate && [self isolatedProjectActive]; }
 - (BOOL)usesFileImport { return self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateTap5a; }
 - (void)consumeUIEvent:(NSDictionary *)event {
     NSString *reason=event[@"reason"], *status=event[@"status"];
@@ -442,7 +469,7 @@ static NSDictionary *Time(CMTime t) {
     self.serviceLabel.textColor=connected ? NSColor.systemGreenColor : NSColor.secondaryLabelColor;
     self.dropTitle.stringValue=fresh ? (self.dropName ?: @"项目已导入") : @"把项目拖到这里";
     self.dropDetail.stringValue=fresh ? [NSString stringWithFormat:@"%02ld:%02ld · 整个项目 · 修改时间线后请重新拖入",(long)(CMTimeGetSeconds(self.dropDuration)/60),(long)CMTimeGetSeconds(self.dropDuration)%60] : @"从 Final Cut Pro 浏览器拖入整个项目";
-    BOOL busy=self.requestID!=nil;BOOL managing=[self modelOperationBusy];
+    BOOL busy=self.requestID!=nil || self.referenceRequestID!=nil;BOOL managing=[self modelOperationBusy];
     BOOL preparing=[state isEqual:@"preparing"];
     self.generateButton.title=preparing ? @"正在准备…" : (busy ? @"正在处理…" : (connected ? (self.titlePayloads ? @"重新识别" : @"生成字幕") : @"准备本机识别"));
     self.generateButton.enabled=!managing && !preparing && !busy && (!connected || (fresh && [self isolatedProjectActive] && [self selectedModelAvailable]));
@@ -476,10 +503,11 @@ static NSDictionary *Time(CMTime t) {
         ? @"拖到原项目起点上方。落轨后将片段项分开，可在 FCP 调整底框、圆角和动画。"
         : @"拖到原项目起点上方。落轨后将片段项分开，可在 FCP 逐句编辑文字和样式。";
     self.tap5aStyleButton.hidden=![self usesFileImport];self.tap5aStyleButton.enabled=!self.importInProgress;
-    self.resultView.enabled=ready && !self.importInProgress;
+    self.resultView.enabled=ready && !self.importInProgress && !busy;
     self.resultView.toolTip=fileImport ? @"点击导入到 FCP 浏览器。若出现资源库选择，请选择原项目所在资源库；在本次新建的编号事件中将字幕片段拖到原项目起点上方。每次导入都会保留旧版并新建事件。" : @"按住卡片拖到原项目时间线起点上方，落轨后将片段项分开。";
     [self.resultView setAccessibilityRole:fileImport ? NSAccessibilityButtonRole : NSAccessibilityGroupRole];
     [self.resultView setAccessibilityLabel:ready ? (fileImport ? @"导入字幕到 Final Cut Pro" : @"拖回字幕到 Final Cut Pro") : @"请先打开原项目时间线"];
+    [self updateReferenceInterface];
     [self.resultView.window invalidateCursorRectsForView:self.resultView];[self.resultView setNeedsDisplay:YES];
 }
 - (void)toggleReview:(id)sender { self.reviewExpanded=!self.reviewExpanded;[self updateInterface]; }
@@ -553,14 +581,14 @@ static NSDictionary *Time(CMTime t) {
     if (self.requestID || ![self selectedModelAvailable]) return;
     NSString *model=self.selectedModelID;NSString *uid=self.dropUID;NSUInteger generation=self.dropGeneration;
     NSAlert *alert=[NSAlert new];alert.messageText=@"使用豆包云端识别？";
-    alert.informativeText=@"所选范围的音频会直接发送给火山引擎的豆包录音文件识别 2.0。视频画面、项目文件和词库不上传，识别费用由你的火山引擎账户结算。\n\n取消或断网不会重新提交识别，已提交部分仍可能计费。";
+    alert.informativeText=@"所选范围的音频会直接发送给火山引擎的豆包录音文件识别 2.0。视频画面、项目文件、词库和参考脚本不上传，识别费用由你的火山引擎账户结算。\n\n取消或断网不会重新提交识别，已提交部分仍可能计费。";
     [alert addButtonWithTitle:@"上传并识别"];[alert addButtonWithTitle:@"取消"];
     [alert beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse response) {
         if (response==NSAlertFirstButtonReturn && [self.selectedModelID isEqual:model] && [self.dropUID isEqual:uid] && self.dropGeneration==generation) [self submitWorkerJob];
     }];
 }
 - (void)submitWorkerJob {
-    if (self.requestID || [self modelOperationBusy]) return;
+    if (self.requestID || self.referenceRequestID || self.historicalResult || [self modelOperationBusy]) return;
     if (!self.bridgeURL || ![self workerAvailable] || ![self isolatedProjectActive]) {
         [self record:@{@"reason":@"worker-submit",@"status":@"connect-service-and-open-isolated-project-first"}]; return;
     }
@@ -584,17 +612,18 @@ static NSDictionary *Time(CMTime t) {
     BOOL ok=[[NSFileManager defaultManager] createDirectoryAtURL:directory withIntermediateDirectories:NO attributes:nil error:&error];
     if (ok) ok=[data writeToURL:[directory URLByAppendingPathComponent:@"input.fcpxml"] options:NSDataWritingAtomic error:&error];
     NSString *sha=[self sha256:data];
-    self.requestVocabulary=[self effectiveVocabulary];
-    NSDictionary *manifest=@{@"cloudConsent":@([self selectedCloudModel]),@"vocabulary":self.requestVocabulary,@"requestID":request,@"projectUID":self.dropUID,@"xmlSHA256":sha,@"modelID":self.selectedModelID,@"audioMode":self.audioPicker.indexOfSelectedItem==0 ? @"dialogue" : @"all"};
+    self.requestVocabulary=[self effectiveVocabulary];NSString *reference=[self effectiveReferenceScript];self.requestReferenceSHA=[self referenceHash:reference];
+    NSDictionary *manifest=@{@"referenceScript":reference,@"cloudConsent":@([self selectedCloudModel]),@"vocabulary":self.requestVocabulary,@"requestID":request,@"projectUID":self.dropUID,@"xmlSHA256":sha,@"modelID":self.selectedModelID,@"audioMode":self.audioPicker.indexOfSelectedItem==0 ? @"dialogue" : @"all"};
     if (ok) ok=[[NSJSONSerialization dataWithJSONObject:manifest options:0 error:nil] writeToURL:[directory URLByAppendingPathComponent:@"request.json"] options:NSDataWritingAtomic error:&error];
     if (!ok) { [self record:@{@"reason":@"worker-submit",@"status":@"write-failed",@"error":error.localizedDescription ?: @""}]; return; }
     self.jobProgress=nil;self.visibleError=nil;self.requestGeneration=self.dropGeneration; self.requestModelID=self.selectedModelID;self.cancelButton.enabled=YES;
     self.requestID=request; self.requestSHA=sha; self.lastJobStage=nil; self.generateButton.enabled=NO;
-    self.resultLoadAttempted=YES; self.titlePayloads=nil;
-    [NSUserDefaults.standardUserDefaults setObject:@{@"vocabulary":self.requestVocabulary,@"requestID":request,@"snapshotSHA":sha,@"modelID":self.selectedModelID,@"projectUID":self.dropUID,@"projectName":self.dropName ?: @"",@"durationValue":@(self.dropDuration.value),@"durationScale":@(self.dropDuration.timescale),@"inputFile":latest.lastPathComponent} forKey:@"pendingSession"];
+    self.resultLoadAttempted=YES; self.titlePayloads=nil;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;self.referenceUndone=NO;
+    [NSUserDefaults.standardUserDefaults setObject:@{@"referenceSHA256":self.requestReferenceSHA,@"vocabulary":self.requestVocabulary,@"requestID":request,@"snapshotSHA":sha,@"modelID":self.selectedModelID,@"projectUID":self.dropUID,@"projectName":self.dropName ?: @"",@"durationValue":@(self.dropDuration.value),@"durationScale":@(self.dropDuration.timescale),@"inputFile":latest.lastPathComponent} forKey:@"pendingSession"];
     [self record:@{@"reason":@"worker-submit",@"status":@"submitted",@"requestID":request,@"snapshotDate":latestDate.description ?: @"",@"source":@"received project snapshot; original capture date retained; edits after capture require another drop"}];
 }
 - (void)pollWorker:(NSTimer *)timer {
+    [self pollReferenceRefinement];
     [self updateInterface];
     if (!self.requestID) return;
     NSURL *directory=[self.bridgeURL URLByAppendingPathComponent:self.requestID isDirectory:YES];
@@ -608,7 +637,7 @@ static NSDictionary *Time(CMTime t) {
     self.jobProgress=[response[@"progress"] isKindOfClass:NSNumber.class] ? response[@"progress"] : nil;
     if ([response[@"status"] isEqual:@"ready"]) {
         NSMutableDictionary *payloads=[NSMutableDictionary new];
-        BOOL valid=[(response[@"manifest"][@"vocabulary"] ?: @[]) isEqual:(self.requestVocabulary ?: @[])] && [response[@"modelID"] isEqual:self.requestModelID] && self.requestGeneration==self.dropGeneration && [self isolatedProjectActive] && [response[@"snapshotSHA256"] isEqual:self.requestSHA] &&
+        BOOL valid=[(response[@"manifest"][@"referenceSHA256"] ?: @"") isEqual:(self.requestReferenceSHA ?: @"")] && [(response[@"manifest"][@"vocabulary"] ?: @[]) isEqual:(self.requestVocabulary ?: @[])] && [response[@"modelID"] isEqual:self.requestModelID] && self.requestGeneration==self.dropGeneration && [self isolatedProjectActive] && [response[@"snapshotSHA256"] isEqual:self.requestSHA] &&
             [response[@"projectUID"] isEqual:self.dropUID] &&
             [response[@"payloads"] isKindOfClass:NSDictionary.class] && [response[@"outputs"] isKindOfClass:NSDictionary.class];
         if (valid) for (NSString *version in @[@"1.12",@"1.13",@"1.14"]) {
@@ -618,11 +647,36 @@ static NSDictionary *Time(CMTime t) {
             if (![[self sha256:data] isEqual:response[@"outputs"][name]]) { valid=NO; break; }
             payloads[version]=data;
         }
+        NSMutableDictionary *originals=[NSMutableDictionary new];
+        if (valid && self.requestReferenceSHA.length) for (NSString *version in @[@"1.12",@"1.13",@"1.14"]) {
+            id text=response[@"originalPayloads"][version];if (![text isKindOfClass:NSString.class]) {valid=NO;break;}
+            NSData *data=[text dataUsingEncoding:NSUTF8StringEncoding];NSString *name=[NSString stringWithFormat:@"TitleOriginal-%@.fcpxml",version];
+            if (![[self sha256:data] isEqual:response[@"outputs"][name]]) {valid=NO;break;}originals[version]=data;
+        }
+        if (valid && self.requestReferenceSHA.length && ![response[@"manifest"][@"unreferencedCaptions"] isKindOfClass:NSArray.class]) valid=NO;
         if (valid && payloads.count==3) { self.titlePayloads=payloads; self.resultDate=NSDate.date;self.resultManifest=response[@"manifest"];self.tap5aStyle=SubPopNormalizeTap5aStyle([NSUserDefaults.standardUserDefaults dictionaryForKey:@"tap5aStylePreset"]);NSString *presetFont=self.tap5aStyle[@"textFont"],*presetSize=[self.tap5aStyle[@"textSize"] stringValue];
             if (![self.fontPicker itemWithTitle:presetFont]) [self.fontPicker addItemWithTitle:presetFont];[self.fontPicker selectItemWithTitle:presetFont];
             if (![self.sizePicker itemWithTitle:presetSize]) [self.sizePicker addItemWithTitle:presetSize];[self.sizePicker selectItemWithTitle:presetSize];[self.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];self.resultRequestID=self.requestID;self.captionRows=[NSMutableArray new];for (NSDictionary *row in response[@"manifest"][@"captions"]) [self.captionRows addObject:row.mutableCopy];
+            self.referenceUndone=NO;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
+            if (self.requestReferenceSHA.length) {
+                self.referenceUndoRows=response[@"manifest"][@"unreferencedCaptions"];self.referenceUndoPayloads=originals;self.referenceUndoWasOriginal=YES;
+                self.referenceMessage=[self referenceSummary:response[@"manifest"][@"referenceReview"]];
+            }
             NSDictionary *draft=[self readJSON:[[self evidenceDirectory] URLByAppendingPathComponent:[@"draft-" stringByAppendingString:self.requestID]]];
-            if ([draft[@"snapshotSHA"] isEqual:self.requestSHA] && [draft[@"modelID"] isEqual:self.requestModelID] && [draft[@"captions"] isKindOfClass:NSArray.class] && [draft[@"captions"] count]==self.captionRows.count) {
+            BOOL sameDraft=[draft[@"snapshotSHA"] isEqual:self.requestSHA] && [draft[@"modelID"] isEqual:self.requestModelID] && [(draft[@"referenceSHA256"] ?: @"") isEqual:(self.requestReferenceSHA ?: @"")];
+            if (sameDraft && [draft[@"referenceUndone"] boolValue] && self.referenceUndoRows) {
+                self.captionRows=[NSMutableArray new];for (NSDictionary *row in self.referenceUndoRows) [self.captionRows addObject:row.mutableCopy];
+                self.titlePayloads=self.referenceUndoPayloads;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceUndone=YES;self.referenceMessage=@"已撤销脚本整理";
+            }
+            if (sameDraft && [draft[@"referenceUndoCaptions"] count]) {
+                BOOL original=[draft[@"referenceUndoWasOriginal"] boolValue];
+                NSArray *source=original ? response[@"manifest"][@"unreferencedCaptions"] : response[@"manifest"][@"captions"];
+                if ([self referenceRows:draft[@"referenceUndoCaptions"] matchTimingOf:source]) {
+                    self.referenceUndoRows=draft[@"referenceUndoCaptions"];self.referenceUndoPayloads=original ? originals : payloads;self.referenceUndoWasOriginal=original;
+                }
+            }
+            if (sameDraft && [draft[@"referenceMessage"] isKindOfClass:NSString.class] && [draft[@"referenceMessage"] length]) self.referenceMessage=draft[@"referenceMessage"];
+            if (sameDraft && [self referenceRows:draft[@"captions"] matchTimingOf:self.captionRows]) {
                 // Restore only text and presentation onto fresh, validated timing/payloads.
                 self.tap5aStyle=SubPopNormalizeTap5aStyle(draft[@"tap5aStyle"]);
                 SubPopTitleTemplate restoredTemplate=SubPopTitleTemplateFromDraft(draft);
@@ -701,7 +755,7 @@ static NSDictionary *Time(CMTime t) {
     if (self.tap5aScoped) [self.tap5aURL stopAccessingSecurityScopedResource];self.tap5aScoped=NO;self.tap5aURL=nil;
     [self.bridgeTimer invalidate]; self.bridgeTimer=nil;
     if (self.bridgeScoped) [self.bridgeURL stopAccessingSecurityScopedResource];
-    self.freshDropURL=nil; self.freshDropDate=nil; self.titlePayloads=nil; self.resultDate=nil; self.dropGeneration++;
+    self.freshDropURL=nil; self.freshDropDate=nil; self.titlePayloads=nil; self.resultDate=nil; self.dropGeneration++;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
     self.bridgeScoped=NO; self.bridgeURL=nil; self.requestID=nil; [self updateInterface];
     [self.timeline removeTimelineObserver:self]; self.timeline = nil; self.host = nil; self.observed = NO; self.observedProjectUID=nil;self.observedProjectDuration=kCMTimeInvalid;
     [super viewWillDisappear];
@@ -780,7 +834,7 @@ static NSDictionary *Time(CMTime t) {
     }
     [self record:result];
 }
-- (void)activeSequenceChanged { self.freshDropURL=nil; self.titlePayloads=nil; self.dropGeneration++; self.observed=YES; [self snapshot:@"activeSequenceChanged"]; }
+- (void)activeSequenceChanged { self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;self.freshDropURL=nil; self.titlePayloads=nil; self.dropGeneration++; self.observed=YES; [self snapshot:@"activeSequenceChanged"]; }
 - (void)sequenceTimeRangeChanged { self.observed=YES; [self snapshot:@"sequenceTimeRangeChanged"]; }
 - (void)playheadTimeChanged {
     // Captions are anchored to the whole project, never to the playhead.
@@ -823,9 +877,10 @@ static NSDictionary *Time(CMTime t) {
     [self.diagnostics close];[self updateInterface];
 }
 - (BOOL)receivePasteboard:(NSPasteboard *)pasteboard {
-    if (self.requestID) return NO;
+    if (self.requestID || self.referenceRequestID) return NO;
+    self.historicalResult=NO;
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];
-    self.freshDropURL=nil; self.freshDropDate=nil; self.titlePayloads=nil; self.resultDate=nil; self.dropGeneration++;
+    self.freshDropURL=nil; self.freshDropDate=nil; self.titlePayloads=nil; self.resultDate=nil; self.dropGeneration++;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
     NSMutableArray *saved = [NSMutableArray new];
     for (NSPasteboardType type in pasteboard.types) {
         if (![type hasPrefix:@"com.apple.finalcutpro.xml"]) continue;
@@ -843,4 +898,5 @@ static NSDictionary *Time(CMTime t) {
     return self.freshDropURL!=nil;
 }
 #include "Preferences.inc"
+#include "ReferenceScript.inc"
 @end

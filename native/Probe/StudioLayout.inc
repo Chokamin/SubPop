@@ -49,7 +49,12 @@
     NSStackView *selectors=[NSStackView stackViewWithViews:@[left,right]];selectors.spacing=20;selectors.distribution=NSStackViewDistributionFillEqually;
     self.modelDetail=[self label:@"" size:11 weight:NSFontWeightRegular];self.modelDetail.textColor=NSColor.secondaryLabelColor;
     NSTextField *rules=[self label:@"自动整理   去句子标点  ·  自然断句  ·  保护专名和数值" size:11 weight:NSFontWeightRegular];rules.textColor=[NSColor colorWithCalibratedWhite:.68 alpha:1];
-    [stack addArrangedSubview:[self surface:@[selectors,self.modelDetail,rules]]];
+    self.referenceButton=[self toolbarButton:@"参考脚本 · 可选" symbol:@"doc.text" action:@selector(showReferenceScript:)];[self.referenceButton setAccessibilityLabel:@"参考脚本"];
+    self.referenceUndoButton=[self toolbarButton:@"撤销脚本整理" symbol:@"arrow.uturn.backward" action:@selector(undoReferenceRefinement:)];self.referenceUndoButton.hidden=YES;
+    self.restoreResultButton=[self toolbarButton:@"恢复上次字幕" symbol:@"clock.arrow.circlepath" action:@selector(restoreLastResult:)];self.restoreResultButton.hidden=YES;
+    NSStackView *referenceActions=[NSStackView stackViewWithViews:@[self.referenceButton,[NSView new],self.referenceUndoButton,self.restoreResultButton]];referenceActions.spacing=10;
+    self.referenceInfo=[self label:@"粘贴或导入脚本，辅助纠错与断句" size:11 weight:NSFontWeightRegular];self.referenceInfo.textColor=NSColor.secondaryLabelColor;
+    [stack addArrangedSubview:[self surface:@[selectors,self.modelDetail,rules,referenceActions,self.referenceInfo]]];
     self.statusTitle=[self label:@"准备生成字幕" size:14 weight:NSFontWeightSemibold];self.statusDetail=[self label:@"" size:12 weight:NSFontWeightRegular];self.statusDetail.textColor=NSColor.secondaryLabelColor;
     NSStackView *statusLine=[NSStackView stackViewWithViews:@[self.statusTitle,[NSView new]]];statusLine.alignment=NSLayoutAttributeCenterY;
     self.activity=[[SubPopActivityView alloc] initWithFrame:NSMakeRect(0,0,520,56)];[self.activity.heightAnchor constraintEqualToConstant:56].active=YES;

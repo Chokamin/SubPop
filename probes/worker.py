@@ -14,10 +14,12 @@ import xml.etree.ElementTree as ET
 from .run_job import ROOT, save
 from .title_fixture import UID
 from .vocabulary import validate as validate_vocabulary
+from .reference_script import validate as validate_reference, digest as reference_digest
 from .models import DEFAULT_MODEL_ID, model_spec, resolve_model, availability
 
 BRIDGE=ROOT/'.subloom/verification/bridge'
 MAX_XML=16*1024*1024
+MAX_REQUEST=4*1024*1024
 
 
 def valid_id(value):
@@ -29,7 +31,7 @@ def request_input(directory):
     if directory.is_symlink() or not valid_id(directory.name):raise ValueError('Invalid request directory')
     request=directory/'request.json';xml=directory/'input.fcpxml'
     if request.is_symlink() or xml.is_symlink():raise ValueError('Linked input refused')
-    if request.stat().st_size>16384 or not 0<xml.stat().st_size<=MAX_XML:raise ValueError('Invalid input size')
+    if request.stat().st_size>MAX_REQUEST or not 0<xml.stat().st_size<=MAX_XML:raise ValueError('Invalid input size')
     data=json.loads(request.read_text())
     if data.get('requestID')!=directory.name or not isinstance(data.get('projectUID'),str) or not data.get('projectUID'):raise ValueError('Wrong request identity')
     raw=xml.read_bytes()
@@ -38,6 +40,7 @@ def request_input(directory):
     projects=ET.fromstring(raw).findall('.//project')
     if len(projects)!=1 or projects[0].get('uid')!=data['projectUID']:raise ValueError('Snapshot project identity mismatch')
     validate_vocabulary(data.get('vocabulary',[]))
+    validate_reference(data.get('referenceScript',''))
     spec=model_spec(data.get('modelID', DEFAULT_MODEL_ID))
     if spec.get('engine')=='doubao' and data.get('cloudConsent') is not True:raise ValueError('云端识别需要先确认上传音频及计费')
     if data.get('audioMode','dialogue') not in ('dialogue','all'):raise ValueError('Invalid audio mode')
@@ -46,6 +49,8 @@ def request_input(directory):
 
 def job_command(directory):
     request=json.loads((directory/'request.json').read_text())
+    if request.get('kind')=='reference':
+        return [sys.executable,'-B','-m','probes.reference_job','--request',str(directory)]
     model_id=request.get('modelID', DEFAULT_MODEL_ID)
     resolve_model(model_id)
     cloud=model_spec(model_id).get('engine')=='doubao'
@@ -64,6 +69,7 @@ def publish_result(directory, job):
     request_data=json.loads((directory/'request.json').read_text()) if (directory/'request.json').exists() else {'projectUID':UID}
     if status['projectUID']!=request_data['projectUID']:raise ValueError('Wrong project')
     if status.get('vocabulary',[])!=validate_vocabulary(request_data.get('vocabulary',[])):raise ValueError('Result vocabulary mismatch')
+    if reference_digest(status.get('referenceScript',''))!=reference_digest(request_data.get('referenceScript','')):raise ValueError('Result reference mismatch')
     if status['status']=='blocked-no-audio':
         save(directory/'response.json',{'requestID':directory.name,'modelID':model_id,'status':'blocked-no-audio',
              'stage':'silent','projectUID':status['projectUID'],'jobID':job.name,'snapshotSHA256':status['snapshotSHA256']})
@@ -75,14 +81,18 @@ def publish_result(directory, job):
         return
     if status['status']!='ready':raise ValueError('Result not ready')
     if hashlib.sha256((job/'captions.json').read_bytes()).hexdigest()!=status['outputs']['captions.json']:raise ValueError('Caption checksum mismatch')
-    titles={}
+    titles={};originals={}
     for version in ('1.12','1.13','1.14'):
         name=f'TitleProbe-{version}.fcpxml';data=(job/name).read_bytes()
         if hashlib.sha256(data).hexdigest()!=status['outputs'][name]:raise ValueError('Output checksum mismatch')
         titles[version]=data.decode('utf-8')
+        if reference_digest(request_data.get('referenceScript','')):
+            name=f'TitleOriginal-{version}.fcpxml';data=(job/name).read_bytes()
+            if hashlib.sha256(data).hexdigest()!=status['outputs'][name]:raise ValueError('Original output checksum mismatch')
+            originals[version]=data.decode('utf-8')
     save(directory/'response.json',{'requestID':directory.name,'modelID':model_id,'status':'ready','stage':'ready',
          'projectUID':status['projectUID'],'jobID':job.name,'titleCount':status['titleCount'],'payloads':titles,
-         'outputs':status['outputs'],'snapshotSHA256':status['snapshotSHA256'],'pcmSHA256':status['pcmSHA256'],'manifest':json.loads((job/'captions.json').read_text())})
+         'originalPayloads':originals,'outputs':status['outputs'],'snapshotSHA256':status['snapshotSHA256'],'pcmSHA256':status['pcmSHA256'],'manifest':json.loads((job/'captions.json').read_text())})
 
 
 def model_request(directory):
@@ -144,8 +154,9 @@ def serve():
                 if code is not None:
                     try:
                         if cancelled:raise InterruptedError('已取消识别。云端任务已提交部分可能计费。' if json.loads((request/'request.json').read_text()).get('cloudConsent') is True else '已取消识别')
-                        if code!=0 or ready is None:raise ValueError(job_error or 'Recognition failed; see this request worker.log')
-                        publish_result(request,ready)
+                        is_reference=json.loads((request/'request.json').read_text()).get('kind')=='reference'
+                        if code!=0 or (ready is None and not is_reference):raise ValueError(job_error or 'Recognition failed; see this request worker.log')
+                        if not is_reference:publish_result(request,ready)
                     except Exception as error:save(request/'response.json',{'requestID':request.name,'status':'cancelled' if isinstance(error,InterruptedError) else 'failed','stage':'worker','error':str(error)})
                     log.close();active=None
             else:
@@ -161,14 +172,17 @@ def serve():
                         continue
                     try:
                         request_path=candidate/'request.json'
-                        if request_path.is_symlink() or request_path.stat().st_size>16384:raise ValueError('Invalid request size or link')
+                        if request_path.is_symlink() or request_path.stat().st_size>MAX_REQUEST:raise ValueError('Invalid request size or link')
                         raw_request=json.loads(request_path.read_text())
                         if raw_request.get('kind')=='model':
                             task=model_request(candidate);model_directory=candidate
                             save(response,{'requestID':candidate.name,'modelID':task['modelID'],'operation':task['operation'],'status':'running','stage':'connecting'})
                             model_process=subprocess.Popen([sys.executable,'-B','-m','probes.model_download','--request',str(candidate)],cwd=ROOT,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True)
                             model_started=time.monotonic();break
-                        xml=request_input(candidate)
+                        if raw_request.get('kind')=='reference':
+                            from .reference_job import read_request
+                            read_request(candidate)
+                        else:xml=request_input(candidate)
                         request=candidate;offset=0;buffer='';ready=None;job_error=None
                         save(response,{'requestID':candidate.name,'status':'running','stage':'starting'})
                         log=(candidate/'worker.log').open('w')
