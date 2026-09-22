@@ -214,7 +214,9 @@ X 正值向右，Y 正值向上；偏移以项目像素为单位，支持正负�
 ~/Library/Application Support/SubPop
 ```
 
-面板中的「检查更新」会查询 GitHub 正式 Release，并提供下载页，由你下载安装。各版本的改动和校验文件见 [Releases](https://github.com/Chokamin/SubPop/releases)。
+面板中的「检查更新」默认先连接 GitHub，失败后自动尝试镜像。也可以选择「仅 GitHub」或「镜像优先」，并修改镜像地址；默认使用 [GH-Proxy](https://gh-proxy.com/docs/github-accelerator)，版本查询和安装包下载都支持备用通道。公共镜像的可用性取决于网络及服务状态。
+
+点击「下载安装包」并选择保存位置后，SubPop 会下载正式 PKG，验证文件大小、SHA-256、SubPop 开发者签名和包内产品版本，通过后才保存。关闭更新窗口可取消下载；下载完成后由你打开安装，不会自动替换正在运行的应用。更新源只接收公开的版本查询和文件下载请求，不会收到项目、音频、参考脚本或 API Key。各版本的改动和校验文件见 [Releases](https://github.com/Chokamin/SubPop/releases)。
 
 遇到问题可提交 [GitHub Issue](https://github.com/Chokamin/SubPop/issues)，附上 macOS、FCP、SubPop 版本，使用的模型、复现步骤和错误提示即可，无需上传私人视频。
 

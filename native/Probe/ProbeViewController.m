@@ -7,7 +7,7 @@
 #import <CommonCrypto/CommonDigest.h>
 #import "StudioChrome.h"
 #import "RuntimePaths.h"
-#import "Updates.h"
+#import "UpdatePanel.h"
 #import "TitleDragProvider.h"
 #import "TitleTemplates.h"
 #import "Tap5aInstaller.h"
@@ -115,8 +115,7 @@ static NSDictionary *Time(CMTime t) {
 @property NSPopover *diagnostics;
 @property NSButton *vocabularyButton;
 @property NSButton *modelsButton;
-@property NSAlert *updateAlert;
-@property NSURL *updateURL;
+@property SubPopUpdatePanel *updatesPanel;
 @property NSArray *requestVocabulary;
 @property NSAlert *modelAlert;
 @property NSMutableDictionary *modelRows;
@@ -752,6 +751,7 @@ static NSDictionary *Time(CMTime t) {
     [self restoreBridge];
 }
 - (void)viewWillDisappear {
+    [self.updatesPanel close];
     [self.activity.wave setWorking:NO];
     if (self.tap5aScoped) [self.tap5aURL stopAccessingSecurityScopedResource];self.tap5aScoped=NO;self.tap5aURL=nil;
     [self.bridgeTimer invalidate]; self.bridgeTimer=nil;
