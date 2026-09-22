@@ -9,7 +9,7 @@
 为 Final Cut Pro 制作的本机中文字幕插件。<br>
 拖入项目，识别语音，校对与调整样式，再把字幕放回时间线。
 
-**[下载 SubPop 1.1.0](https://github.com/Chokamin/SubPop/releases/download/v1.1.0/SubPop-1.1.0-arm64.pkg)** · [所有版本](https://github.com/Chokamin/SubPop/releases) · [反馈问题](https://github.com/Chokamin/SubPop/issues)
+**[下载 SubPop 1.2.0](https://github.com/Chokamin/SubPop/releases/download/v1.2.0/SubPop-1.2.0-arm64.pkg)** · [所有版本](https://github.com/Chokamin/SubPop/releases) · [反馈问题](https://github.com/Chokamin/SubPop/issues)
 
 Apple Silicon · macOS 15+ · PKG 约 210 MB<br>
 Developer ID 签名 · Apple 公证
@@ -23,6 +23,7 @@ Developer ID 签名 · Apple 公证
 - **从项目开始**：直接接收 FCP 浏览器中的完整项目，省去手动导出音频。
 - **在本机识别**：四种模型可选，下载后离线运行，识别时不上传音频或视频。
 - **整理中文表达**：自动断句、去除句子标点，保留数值、单位与技术标识；词库帮助统一专名写法。
+- **参考脚本校对**：粘贴或导入文案，在可靠匹配时辅助纠错和统一写法，保留现场表达与脚本的差异。
 - **整批调整样式**：搭配 Tap5a 自适应底框，统一设置文字、底框、位置与效果，边调边预览。
 - **回到 FCP 编辑**：生成可逐句修改的 Title 字幕片段，继续完成剪辑。
 
