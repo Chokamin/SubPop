@@ -1,5 +1,22 @@
 #import <Cocoa/Cocoa.h>
 
+typedef NS_ENUM(NSInteger, SubPopTitleTemplate) {
+    SubPopTitleTemplateBasic=0,
+    SubPopTitleTemplateNative=1,
+    SubPopTitleTemplateTap5a=2,
+};
+static inline NSString *SubPopTitleTemplateID(NSInteger index) {
+    if (index==SubPopTitleTemplateNative) return @"native";
+    if (index==SubPopTitleTemplateTap5a) return @"tap5a";
+    return @"basic";
+}
+static inline SubPopTitleTemplate SubPopTitleTemplateFromDraft(NSDictionary *draft) {
+    if ([draft[@"templateID"] isEqual:@"native"]) return SubPopTitleTemplateNative;
+    if ([draft[@"templateID"] isEqual:@"tap5a"]) return SubPopTitleTemplateTap5a;
+    if (!draft[@"templateID"] && [draft[@"titleTemplate"] boolValue]) return SubPopTitleTemplateTap5a;
+    return SubPopTitleTemplateBasic;
+}
+
 static NSString * const SubPopBasicTitleUID=@".../Titles.localized/Bumper:Opener.localized/Basic Title.localized/Basic Title.moti";
 static NSString *SubPopTap5aUID(NSURL *url) {
     NSArray *parts=url.path.pathComponents;
@@ -25,6 +42,9 @@ static void SubPopSetTitleTemplate(NSXMLDocument *doc, NSURL *tap5aURL) {
     for (NSXMLElement *title in [doc nodesForXPath:@"/fcpxml/clip/spine/title" error:nil]) {
         // Only SubPop-owned flat title payloads enter this function.
         for (NSXMLNode *param in [title elementsForName:@"param"]) [param detach];
+        // Basic and Tap5a start at zero; discard the native Subtitle template's
+        // one-hour source start when switching back. Timeline offsets stay intact.
+        [title attributeForName:@"start"].stringValue=@"0s";
         if (tap5aUID) {
             NSArray *params=@[@[@"Enable",@"9999/10658/100/1825821409/2/100",@"1"],@[@"Enable",@"9999/10658/100/1825821410/2/100",@"0"]];
             for (NSArray *values in params) {

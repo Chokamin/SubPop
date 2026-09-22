@@ -235,7 +235,7 @@ static NSDictionary *Time(CMTime t) {
 }
 - (void)saveDraft {
     if (!self.resultRequestID || !self.titlePayloads || !self.captionRows) return;
-    NSDictionary *draft=@{@"requestID":self.resultRequestID,@"snapshotSHA":self.requestSHA ?: @"",@"modelID":self.requestModelID ?: @"",@"captions":self.captionRows,@"font":self.fontPicker.titleOfSelectedItem,@"fontSize":self.sizePicker.titleOfSelectedItem,@"tap5aStyle":SubPopNormalizeTap5aStyle(self.tap5aStyle),@"templateID":([self usesFileImport] ? @"tap5a" : @"native"),@"titleTemplate":@(self.templatePicker.indexOfSelectedItem==1)};
+    NSDictionary *draft=@{@"requestID":self.resultRequestID,@"snapshotSHA":self.requestSHA ?: @"",@"modelID":self.requestModelID ?: @"",@"captions":self.captionRows,@"font":self.fontPicker.titleOfSelectedItem,@"fontSize":self.sizePicker.titleOfSelectedItem,@"tap5aStyle":SubPopNormalizeTap5aStyle(self.tap5aStyle),@"templateID":SubPopTitleTemplateID(self.templatePicker.indexOfSelectedItem),@"titleTemplate":@(self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateTap5a)};
     NSData *data=[NSJSONSerialization dataWithJSONObject:draft options:0 error:nil];[data writeToURL:[[self evidenceDirectory] URLByAppendingPathComponent:[@"draft-" stringByAppendingString:self.resultRequestID]] atomically:YES];
 }
 - (NSDictionary *)selectedModel {
@@ -305,7 +305,7 @@ static NSDictionary *Time(CMTime t) {
     [NSUserDefaults.standardUserDefaults setObject:bookmark forKey:@"tap5aTemplateBookmark"];
     if (self.tap5aScoped) [self.tap5aURL stopAccessingSecurityScopedResource];
     self.tap5aURL=scopedURL;self.tap5aScoped=scoped;
-    [self.templatePicker selectItemAtIndex:1];[self rebuildTitles];return YES;
+    [self.templatePicker selectItemAtIndex:SubPopTitleTemplateTap5a];[self rebuildTitles];return YES;
 }
 - (void)chooseTap5aTemplate {
     NSOpenPanel *panel=[NSOpenPanel openPanel];panel.canChooseDirectories=NO;panel.allowsMultipleSelection=NO;
@@ -344,8 +344,8 @@ static NSDictionary *Time(CMTime t) {
 }
 - (void)templateChanged:(id)sender {
     [self.view.window makeFirstResponder:nil];
-    if (self.templatePicker.indexOfSelectedItem==1 && ![self resolveTap5a]) {
-        [self.templatePicker selectItemAtIndex:0];[self rebuildTitles];
+    if (self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateTap5a && ![self resolveTap5a]) {
+        [self.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];[self rebuildTitles];
         NSAlert *choice=[NSAlert new];choice.messageText=@"准备 Tap5a 自适应底框";
         choice.informativeText=@"可以从作者源下载并安装，也可以选择已经安装的模板。下载需要联网，并首次授权「影片」文件夹。";
         [choice addButtonWithTitle:@"下载并安装 Tap5a"];[choice addButtonWithTitle:@"选择已安装的模板…"];[choice addButtonWithTitle:@"取消"];
@@ -368,10 +368,10 @@ static NSDictionary *Time(CMTime t) {
     for (NSString *version in self.titlePayloads) {
         NSXMLDocument *doc=[[NSXMLDocument alloc] initWithData:self.titlePayloads[version] options:NSXMLNodeLoadExternalEntitiesNever error:nil];
         if (!doc) return;
-        SubPopSetTitleTemplate(doc,self.templatePicker.indexOfSelectedItem==1 ? self.tap5aURL : nil);
+        SubPopSetTitleTemplate(doc,self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateTap5a ? self.tap5aURL : nil);
         if ([self usesFileImport]) SubPopApplyTap5aStyle(doc,self.tap5aStyle);
-        if ([self usesFileImport]) SubPopApplyTitlePosition(doc,self.tap5aStyle);
-        else SubPopSetNativeSubtitle(doc);
+        if (self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative) SubPopSetNativeSubtitle(doc);
+        else SubPopApplyTitlePosition(doc,self.tap5aStyle);
         NSArray *titles=[doc nodesForXPath:@"/fcpxml/clip/spine/title" error:nil];
         if (titles.count!=self.captionRows.count) return;
         for (NSUInteger i=0;i<titles.count;i++) {
@@ -401,7 +401,7 @@ static NSDictionary *Time(CMTime t) {
     [self.diagnostics showRelativeToRect:[sender bounds] ofView:sender preferredEdge:NSRectEdgeMaxY];
 }
 - (BOOL)canDragResult { return self.titlePayloads && self.resultDate && [self isolatedProjectActive]; }
-- (BOOL)usesFileImport { return self.templatePicker.indexOfSelectedItem==1; }
+- (BOOL)usesFileImport { return self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateTap5a; }
 - (void)consumeUIEvent:(NSDictionary *)event {
     NSString *reason=event[@"reason"], *status=event[@"status"];
     if ([event[@"error"] isKindOfClass:NSString.class]) self.visibleError=event[@"error"];
@@ -472,7 +472,9 @@ static NSDictionary *Time(CMTime t) {
     }
     if (hasRows && [self.resultManifest[@"cloudCleanupPending"] unsignedIntegerValue]>0) self.statusDetail.stringValue=[self.statusDetail.stringValue stringByAppendingString:@" 旧版临时音频尚待清理，请打开云端设置查看。"];
 
-    if (hasRows && !fileImport && ready) self.statusDetail.stringValue=@"拖到原项目起点上方，无需 Tap5a。落轨后将片段项分开，可在 FCP 调整底框、圆角和动画。";
+    if (hasRows && !fileImport && ready) self.statusDetail.stringValue=self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative
+        ? @"拖到原项目起点上方。落轨后将片段项分开，可在 FCP 调整底框、圆角和动画。"
+        : @"拖到原项目起点上方。落轨后将片段项分开，可在 FCP 逐句编辑文字和样式。";
     self.tap5aStyleButton.hidden=![self usesFileImport];self.tap5aStyleButton.enabled=!self.importInProgress;
     self.resultView.enabled=ready && !self.importInProgress;
     self.resultView.toolTip=fileImport ? @"点击导入到 FCP 浏览器。若出现资源库选择，请选择原项目所在资源库；在本次新建的编号事件中将字幕片段拖到原项目起点上方。每次导入都会保留旧版并新建事件。" : @"按住卡片拖到原项目时间线起点上方，落轨后将片段项分开。";
@@ -618,12 +620,13 @@ static NSDictionary *Time(CMTime t) {
         }
         if (valid && payloads.count==3) { self.titlePayloads=payloads; self.resultDate=NSDate.date;self.resultManifest=response[@"manifest"];self.tap5aStyle=SubPopNormalizeTap5aStyle([NSUserDefaults.standardUserDefaults dictionaryForKey:@"tap5aStylePreset"]);NSString *presetFont=self.tap5aStyle[@"textFont"],*presetSize=[self.tap5aStyle[@"textSize"] stringValue];
             if (![self.fontPicker itemWithTitle:presetFont]) [self.fontPicker addItemWithTitle:presetFont];[self.fontPicker selectItemWithTitle:presetFont];
-            if (![self.sizePicker itemWithTitle:presetSize]) [self.sizePicker addItemWithTitle:presetSize];[self.sizePicker selectItemWithTitle:presetSize];[self.templatePicker selectItemAtIndex:0];self.resultRequestID=self.requestID;self.captionRows=[NSMutableArray new];for (NSDictionary *row in response[@"manifest"][@"captions"]) [self.captionRows addObject:row.mutableCopy];
+            if (![self.sizePicker itemWithTitle:presetSize]) [self.sizePicker addItemWithTitle:presetSize];[self.sizePicker selectItemWithTitle:presetSize];[self.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];self.resultRequestID=self.requestID;self.captionRows=[NSMutableArray new];for (NSDictionary *row in response[@"manifest"][@"captions"]) [self.captionRows addObject:row.mutableCopy];
             NSDictionary *draft=[self readJSON:[[self evidenceDirectory] URLByAppendingPathComponent:[@"draft-" stringByAppendingString:self.requestID]]];
             if ([draft[@"snapshotSHA"] isEqual:self.requestSHA] && [draft[@"modelID"] isEqual:self.requestModelID] && [draft[@"captions"] isKindOfClass:NSArray.class] && [draft[@"captions"] count]==self.captionRows.count) {
                 // Restore only text and presentation onto fresh, validated timing/payloads.
                 self.tap5aStyle=SubPopNormalizeTap5aStyle(draft[@"tap5aStyle"]);
-                if ([draft[@"templateID"] isEqual:@"tap5a"] && [self resolveTap5a]) [self.templatePicker selectItemAtIndex:1];
+                SubPopTitleTemplate restoredTemplate=SubPopTitleTemplateFromDraft(draft);
+                if (restoredTemplate!=SubPopTitleTemplateTap5a || [self resolveTap5a]) [self.templatePicker selectItemAtIndex:restoredTemplate];
                 for (NSUInteger i=0;i<self.captionRows.count;i++) { id text=draft[@"captions"][i][@"text"];if ([text isKindOfClass:NSString.class] && [text length]>0 && [text length]<=500) self.captionRows[i][@"text"]=text; }
                 if ([draft[@"font"] isKindOfClass:NSString.class] && ![self.fontPicker itemWithTitle:draft[@"font"]]) [self.fontPicker addItemWithTitle:draft[@"font"]];
                 if ([self.fontPicker itemWithTitle:draft[@"font"]]) [self.fontPicker selectItemWithTitle:draft[@"font"]];
@@ -660,14 +663,9 @@ static NSDictionary *Time(CMTime t) {
     if (![self isolatedProjectActive]) {
         [self record:@{@"reason":@"title-drag-refused",@"status":@"Open the unchanged source project first"}]; return;
     }
-    if (!SubPopNativeSubtitleAvailable()) {
-        NSAlert *alert=[NSAlert new];alert.messageText=@"未找到 FCP 原生字幕模板";alert.informativeText=@"请更新 Final Cut Pro，或选择 Tap5a 字幕样式。";[alert runModal];return;
+    if (self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative && !SubPopNativeSubtitleAvailable()) {
+        NSAlert *alert=[NSAlert new];alert.messageText=@"未找到 FCP 原生字幕模板";alert.informativeText=@"请更新 Final Cut Pro，或选择普通字幕、Tap5a 字幕样式。";[alert runModal];return;
     }
-    NSString *previousTemplatePath=self.tap5aURL.path;
-    if (self.templatePicker.indexOfSelectedItem==1 && ![self resolveTap5a]) {
-        NSAlert *alert=[NSAlert new];alert.messageText=@"Tap5a 模板已移动或无法读取";alert.informativeText=@"请重新选择 Tap5a 样式并定位已安装模板，或切换为基础字幕。";[alert runModal];return;
-    }
-    if (self.templatePicker.indexOfSelectedItem==1 && ![previousTemplatePath isEqual:self.tap5aURL.path]) [self rebuildTitles];
     SubPopTitleDragProvider *provider=[[SubPopTitleDragProvider alloc] initWithPayloads:self.titlePayloads];
     __weak SubPopProbeViewController *weakSelf=self;
     NSUInteger generation=self.dropGeneration;

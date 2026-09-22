@@ -46,9 +46,9 @@ int main(int argc,const char *argv[]) {
         for (NSString *v in payloads) {
             NSXMLDocument *before=[[NSXMLDocument alloc] initWithData:payloads[v] options:0 error:nil];
             NSXMLDocument *after=[[NSXMLDocument alloc] initWithData:controller.titlePayloads[v] options:0 error:nil];
-            NSXMLElement *nativeEffect=[after nodesForXPath:@"/fcpxml/resources/effect[@id='r2']" error:nil].firstObject;
-            if (![[nativeEffect attributeForName:@"uid"].stringValue isEqual:SubPopNativeSubtitleUID]) return 81;
-            if ([after nodesForXPath:@"/fcpxml/clip/spine/title/adjust-transform" error:nil].count) return 82;
+            NSXMLElement *basicEffect=[after nodesForXPath:@"/fcpxml/resources/effect[@id='r2']" error:nil].firstObject;
+            if (![[basicEffect attributeForName:@"uid"].stringValue isEqual:SubPopBasicTitleUID]) return 81;
+            if ([after nodesForXPath:@"/fcpxml/clip/spine/title/adjust-transform[@position='0 -40']" error:nil].count!=controller.captionRows.count) return 82;
             if ([after nodesForXPath:@"/fcpxml/clip/spine/title/param" error:nil].count) return 83;
             NSArray *a=[before nodesForXPath:@"/fcpxml/clip/spine/title" error:nil],*b=[after nodesForXPath:@"/fcpxml/clip/spine/title" error:nil];
             if (a.count!=b.count || !b.count) return 3;
@@ -70,7 +70,12 @@ int main(int argc,const char *argv[]) {
         if (SubPopValidTap5a(validURL)) return 32;
         [NSFileManager.defaultManager removeItemAtPath:tempRoot error:nil];
         NSDictionary *basic=controller.titlePayloads;
-        controller.templatePicker=[[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];[controller.templatePicker addItemsWithTitles:@[@"Basic",@"Tap5a"]];
+        controller.templatePicker=[[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];[controller.templatePicker addItemsWithTitles:@[@"Basic",@"Native",@"Tap5a"]];
+        for (NSNumber *index in @[@(SubPopTitleTemplateBasic),@(SubPopTitleTemplateNative),@(SubPopTitleTemplateTap5a)]) {
+            NSDictionary *draft=@{@"templateID":SubPopTitleTemplateID(index.integerValue),@"titleTemplate":@YES};
+            if (SubPopTitleTemplateFromDraft(draft)!=index.integerValue) return 84;
+        }
+        if (SubPopTitleTemplateFromDraft(@{})!=SubPopTitleTemplateBasic || SubPopTitleTemplateFromDraft(@{@"templateID":@"unknown"})!=SubPopTitleTemplateBasic || SubPopTitleTemplateFromDraft(@{@"titleTemplate":@YES})!=SubPopTitleTemplateTap5a) return 85;
         controller.tap5aURL=[NSURL fileURLWithPath:@"/tmp/Titles.localized/Tap5a/Tap5a Autosize Text Background/Tap5a Autosize Text Background.moti"];
         if (SubPopTap5aUID([NSURL fileURLWithPath:@"/tmp/Other.moti"])) return 24;
         controller.tap5aStyle=SubPopNormalizeTap5aStyle(@{@"positionX":@120,@"positionY":@108,@"outlineEnabled":@1,@"outlineWidth":@3,@"shadowEnabled":@1,@"shadowBlur":@7,@"glowEnabled":@1,@"glowRadius":@12,@"textFace":@"Bold",@"kerning":@3.5,@"lineSpacing":@12,@"textColor":@[@1,@0.5,@0],@"roundness":@30,@"opacity":@65,@"width":@12,@"border":@1,@"top":@25,@"backgroundColor":@[@0.1,@0.2,@0.3]});
@@ -84,7 +89,7 @@ int main(int argc,const char *argv[]) {
         SubPopApplyTitlePosition(positionDoc,@{});if (![[positionDoc nodesForXPath:@"//adjust-transform/@position" error:nil].firstObject.stringValue isEqual:@"0 -40"]) return 50;
         NSDictionary *invalid=SubPopNormalizeTap5aStyle(@{@"roundness":@999,@"width":@(-1),@"top":@(NAN),@"backgroundColor":@[@1]});
         if ([invalid[@"roundness"] doubleValue]!=100 || [invalid[@"width"] doubleValue]!=3 || [invalid[@"top"] doubleValue]!=10 || ![invalid[@"backgroundColor"] isEqual:@[@0,@0,@0]]) return 41;
-        [controller.templatePicker selectItemAtIndex:1];[controller rebuildTitles];
+        [controller.templatePicker selectItemAtIndex:SubPopTitleTemplateTap5a];[controller rebuildTitles];
         for (NSString *v in basic) {
             NSXMLDocument *before=[[NSXMLDocument alloc] initWithData:basic[v] options:0 error:nil];
             NSXMLDocument *after=[[NSXMLDocument alloc] initWithData:controller.titlePayloads[v] options:0 error:nil];
@@ -135,12 +140,27 @@ int main(int argc,const char *argv[]) {
             if (SubPopTitleImportXML([bad dataUsingEncoding:NSUTF8StringEncoding],@"Test",1,&error) || !error) return 38;
         }
         puts("Tap5a file import: all versions preserve titles and timing; no project/library writes; invalid results rejected.");
-        [controller.templatePicker selectItemAtIndex:0];[controller rebuildTitles];
+        [controller.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];[controller rebuildTitles];
         for (NSString *v in basic) {
             NSXMLDocument *after=[[NSXMLDocument alloc] initWithData:controller.titlePayloads[v] options:0 error:nil];
-            if ([after nodesForXPath:@"/fcpxml/resources/effect/@src" error:nil].count || [after nodesForXPath:@"//title/param" error:nil].count || ![[[after nodesForXPath:@"/fcpxml/resources/effect/@uid" error:nil] firstObject].stringValue isEqual:SubPopNativeSubtitleUID]) return 30;
+            if ([after nodesForXPath:@"/fcpxml/resources/effect/@src" error:nil].count || [after nodesForXPath:@"//title/param" error:nil].count || ![[[after nodesForXPath:@"/fcpxml/resources/effect/@uid" error:nil] firstObject].stringValue isEqual:SubPopBasicTitleUID]) return 30;
         }
-        printf("Tap5a conversion: text, timing, background enabled, and round-trip to Native passed.\n");
+        NSDictionary *plain=[controller.titlePayloads copy];
+        [controller.templatePicker selectItemAtIndex:SubPopTitleTemplateNative];[controller rebuildTitles];
+        for (NSString *v in basic) {
+            NSXMLDocument *native=[[NSXMLDocument alloc] initWithData:controller.titlePayloads[v] options:0 error:nil];
+            if (![[[native nodesForXPath:@"/fcpxml/resources/effect/@uid" error:nil] firstObject].stringValue isEqual:SubPopNativeSubtitleUID] || [native nodesForXPath:@"//title/param|//title/adjust-transform" error:nil].count) return 86;
+            if ([native nodesForXPath:@"//title[@start='3600s']" error:nil].count!=controller.captionRows.count) return 87;
+            NSXMLDocument *before=[[NSXMLDocument alloc] initWithData:plain[v] options:0 error:nil];
+            NSArray *a=[before nodesForXPath:@"//title" error:nil],*b=[native nodesForXPath:@"//title" error:nil];
+            for (NSUInteger i=0;i<a.count;i++) {
+                for (NSString *key in @[@"offset",@"duration"]) if (![[a[i] attributeForName:key].stringValue isEqual:[b[i] attributeForName:key].stringValue]) return 88;
+                if (![[a[i] nodesForXPath:@"text" error:nil].firstObject.XMLString isEqual:[b[i] nodesForXPath:@"text" error:nil].firstObject.XMLString]) return 89;
+            }
+        }
+        [controller.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];[controller rebuildTitles];
+        if (![plain isEqual:controller.titlePayloads]) return 90;
+        printf("Three templates: Basic default, Native/Tap5a conversion, plain round-trip and draft identities passed.\n");
         // Delayed pasteboard requests must survive result cleanup and later edits.
         NSMutableData *mutable=[controller.titlePayloads[@"1.14"] mutableCopy];
         NSMutableDictionary *source=[controller.titlePayloads mutableCopy];source[@"1.14"]=mutable;

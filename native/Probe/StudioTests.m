@@ -54,6 +54,7 @@ int main(int argc,const char *argv[]) {
         SubPopPreviewController *c=[SubPopPreviewController new];
         c.previewCatalog=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:@(argv[1])] options:0 error:nil];
         [c loadView];NSWindow *window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,660,740) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];window.contentView=c.view;
+        if (c.templatePicker.numberOfItems!=3 || c.templatePicker.indexOfSelectedItem!=SubPopTitleTemplateBasic || ![c.templatePicker.titleOfSelectedItem isEqual:@"普通字幕 · 无底框"]) return 111;
         NSString *initialModel=c.selectedModelID;
         c.selectedModelID=@"doubao-cloud";[c updateInterface];
         if (![c.scopeLabel.stringValue containsString:@"上传音频"] || ![c.modelDetail.stringValue containsString:@"云端"]) return 100;
@@ -78,7 +79,7 @@ int main(int argc,const char *argv[]) {
             if (NSMinY(result)<0 || NSMaxY(result)>c.view.bounds.size.height) return 7;
             [c toggleReview:nil];if (c.captionScroll.hidden || c.editorControls.hidden) return 8;
             [c toggleReview:nil];if (!c.captionScroll.hidden || !c.editorControls.hidden) return 9;
-            [c.templatePicker selectItemAtIndex:1];[c updateInterface];
+            [c.templatePicker selectItemAtIndex:SubPopTitleTemplateTap5a];[c updateInterface];
             if (![c usesFileImport] || ![c.resultView.accessibilityRole isEqual:NSAccessibilityButtonRole] || ![c.resultView.accessibilityLabel isEqual:@"导入字幕到 Final Cut Pro"] || !c.resultView.enabled) return 13;
             c.importInvocationCount=0;
             if (![c.resultView accessibilityPerformPress] || c.importInvocationCount!=1) return 17;
@@ -92,9 +93,14 @@ int main(int argc,const char *argv[]) {
                 NSBitmapImageRep *image=[c.view bitmapImageRepForCachingDisplayInRect:c.view.bounds];[c.view cacheDisplayInRect:c.view.bounds toBitmapImageRep:image];
                 [[image representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:@"/tmp/subpop-tap5a-import-preview.png" atomically:YES];
             }
-            [c.templatePicker selectItemAtIndex:0];[c updateInterface];
+            [c.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];[c updateInterface];
             if ([c usesFileImport] || ![c.resultView.accessibilityLabel isEqual:@"拖回字幕到 Final Cut Pro"]) return 16;
+            if ([c.statusDetail.stringValue containsString:@"底框"]) return 113;
             if ([c.resultView accessibilityPerformPress] || c.importInvocationCount!=3) return 20;
+            [c.templatePicker selectItemAtIndex:SubPopTitleTemplateNative];[c updateInterface];
+            if ([c usesFileImport] || !c.tap5aStyleButton.hidden || ![c.resultView.accessibilityLabel isEqual:@"拖回字幕到 Final Cut Pro"]) return 112;
+            if (![c.statusDetail.stringValue containsString:@"底框"]) return 114;
+            [c.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];[c updateInterface];
             c.requestID=@"preview";c.displayState=@"recognize";c.jobProgress=@.42;[c updateInterface];
             if (c.activity.hidden || c.activity.stage!=1 || ![c.activity.currentLabel.stringValue containsString:@"聆听"]) return 70;
             if (c.jobBar.hidden || fabs(c.jobBar.doubleValue-.42)>.001 || c.cancelButton.hidden || c.generateButton.enabled) return 4;
@@ -109,7 +115,7 @@ int main(int argc,const char *argv[]) {
             if (!c.activity.hidden || c.activity.wave.running || c.activity.outgoingRow || c.activity.row.layer.filters.count) return 71;
             if ([c.activity.wave.bars[0] animationForKey:@"working"]) return 6;
         }
-        [c.templatePicker selectItemAtIndex:1];c.resultRequestID=@"style-test";[window orderFront:nil];
+        [c.templatePicker selectItemAtIndex:SubPopTitleTemplateTap5a];c.resultRequestID=@"style-test";[window orderFront:nil];
         if (argc==4) c.freshDropURL=[NSURL fileURLWithPath:@(argv[3])];
         [c showTap5aStyle:nil];
         if (c.tap5aStyleControls.count!=35 || !window.attachedSheet) return 21;
