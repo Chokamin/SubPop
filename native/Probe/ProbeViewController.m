@@ -394,7 +394,7 @@ static NSDictionary *Time(CMTime t) {
         self.diagnostics=[NSPopover new]; self.diagnostics.behavior=NSPopoverBehaviorTransient;
         NSViewController *controller=[NSViewController new]; controller.view=[[NSView alloc] initWithFrame:NSMakeRect(0,0,540,360)];
         NSScrollView *scroll=[[NSScrollView alloc] initWithFrame:NSMakeRect(10,10,520,300)]; scroll.hasVerticalScroller=YES; scroll.documentView=self.output; [controller.view addSubview:scroll];
-        NSArray *names=@[@"记录状态",@"重新检查上次拖入",@"读取权限诊断"]; SEL actions[]={@selector(refresh:),@selector(recheckLastDrop:),@selector(diagnose:)};
+        NSArray *names=@[@"记录状态",@"重新检查上次拖入",@"授权读取 FCP"]; SEL actions[]={@selector(refresh:),@selector(recheckLastDrop:),@selector(diagnose:)};
         for (NSUInteger i=0;i<3;i++) { NSButton *b=[NSButton buttonWithTitle:names[i] target:self action:actions[i]]; b.frame=NSMakeRect(10+i*174,322,164,28); [controller.view addSubview:b]; }
         self.diagnostics.contentViewController=controller;
     }
@@ -729,23 +729,33 @@ static NSDictionary *Time(CMTime t) {
         dispatch_async(dispatch_get_main_queue(), ^{ sender.enabled=YES; [self record:result]; });
     });
 }
-// Read only the application's public libraries collection; never modifies the timeline.
-- (void)diagnose:(id)sender {
-    NSArray<NSRunningApplication *> *apps = [NSRunningApplication runningApplicationsWithBundleIdentifier:self.host.bundleIdentifier];
-    NSMutableArray *results = [NSMutableArray new];
-    for (NSRunningApplication *app in apps) {
-        NSAppleEventDescriptor *spec = [NSAppleEventDescriptor recordDescriptor];
-        [spec setDescriptor:[NSAppleEventDescriptor descriptorWithTypeCode:'fxlb'] forKeyword:'want'];
-        [spec setDescriptor:[NSAppleEventDescriptor descriptorWithEnumCode:'indx'] forKeyword:'form'];
-        [spec setDescriptor:[NSAppleEventDescriptor descriptorWithInt32:1] forKeyword:'seld'];
-        [spec setDescriptor:[NSAppleEventDescriptor nullDescriptor] forKeyword:'from'];
-        NSAppleEventDescriptor *event = [NSAppleEventDescriptor appleEventWithEventClass:'core' eventID:'getd' targetDescriptor:[NSAppleEventDescriptor descriptorWithProcessIdentifier:app.processIdentifier] returnID:-1 transactionID:0];
-        [event setParamDescriptor:[spec coerceToDescriptorType:'obj '] forKeyword:'----'];
-        NSError *error = nil;
-        NSAppleEventDescriptor *reply = [event sendEventWithOptions:NSAppleEventSendWaitForReply timeout:5 error:&error];
-        [results addObject:@{@"pid":@(app.processIdentifier), @"bundle":app.bundleIdentifier ?: @"", @"path":app.bundleURL.path ?: @"", @"errorDomain":error.domain ?: @"", @"errorCode":@(error.code), @"replyError":@([[reply paramDescriptorForKeyword:'errn'] int32Value]), @"reply":reply.description ?: @"nil"}];
-    }
-    [self record:@{@"reason":@"public-library-read-diagnostic", @"runningHosts":results}];
+// Explicit, asynchronous read keeps the system authorization request alive without
+// blocking the extension or timing out at the SDK's two-second startup limit.
+- (void)diagnose:(NSButton *)sender {
+    NSString *bundle=[self.host.bundleIdentifier copy];
+    if (![@[@"com.apple.FinalCut",@"com.apple.FinalCutApp"] containsObject:bundle]) return;
+    NSArray<NSRunningApplication *> *apps=[NSRunningApplication runningApplicationsWithBundleIdentifier:bundle];
+    sender.enabled=NO;
+    [self record:@{@"reason":@"public-library-read-diagnostic",@"status":@"等待系统授权；如出现 SubPop 读取 Final Cut Pro 的提示，请点允许。"}];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0), ^{
+        NSMutableArray *results=[NSMutableArray new];
+        for (NSRunningApplication *app in apps) {
+            NSAppleEventDescriptor *spec=[NSAppleEventDescriptor recordDescriptor];
+            [spec setDescriptor:[NSAppleEventDescriptor descriptorWithTypeCode:'fxlb'] forKeyword:'want'];
+            [spec setDescriptor:[NSAppleEventDescriptor descriptorWithEnumCode:'indx'] forKeyword:'form'];
+            [spec setDescriptor:[NSAppleEventDescriptor descriptorWithInt32:1] forKeyword:'seld'];
+            [spec setDescriptor:[NSAppleEventDescriptor nullDescriptor] forKeyword:'from'];
+            NSAppleEventDescriptor *event=[NSAppleEventDescriptor appleEventWithEventClass:'core' eventID:'getd' targetDescriptor:[NSAppleEventDescriptor descriptorWithProcessIdentifier:app.processIdentifier] returnID:-1 transactionID:0];
+            [event setParamDescriptor:[spec coerceToDescriptorType:'obj '] forKeyword:'----'];
+            NSError *error=nil;
+            NSAppleEventDescriptor *reply=[event sendEventWithOptions:NSAppleEventSendDefaultOptions timeout:120 error:&error];
+            [results addObject:@{@"pid":@(app.processIdentifier),@"bundle":app.bundleIdentifier ?: @"",@"errorDomain":error.domain ?: @"",@"errorCode":@(error.code),@"replyError":@([[reply paramDescriptorForKeyword:'errn'] int32Value]),@"reply":reply.description ?: @"nil"}];
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            sender.enabled=YES;
+            [self record:@{@"reason":@"public-library-read-diagnostic",@"runningHosts":results}];
+        });
+    });
 }
 - (void)snapshot:(NSString *)reason {
     if (!self.observed) { [self record:@{@"status":@"observer has not delivered state", @"reason":reason}]; return; }
