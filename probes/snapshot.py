@@ -4,6 +4,9 @@ import xml.etree.ElementTree as ET
 from .title_fixture import EFFECT
 from .readback import seconds
 
+NATIVE_SUBTITLE_EFFECT='.../Titles.localized/Subtitles.localized/Subtitle.localized/Subtitle.moti'
+SILENT_TITLE_EFFECTS={EFFECT,NATIVE_SUBTITLE_EFFECT}
+
 
 def prepare(data, generic=False):
     if len(data)>16*1024*1024 or b'<!ENTITY' in data.upper():raise ValueError('Unsafe snapshot size or entity declaration')
@@ -30,7 +33,8 @@ def prepare(data, generic=False):
         clip_start=seconds(clip.get('start',asset.get('start','0s') if asset is not None else '0s'))
         for title in list(clip):
             if title.tag!='title':continue
-            if effects.get(title.get('ref'))!=EFFECT:raise ValueError('Unverified title template')
+            effect=effects.get(title.get('ref'))
+            if effect not in SILENT_TITLE_EFFECTS:raise ValueError('Unverified title template')
             if set(title.attrib)-{'ref','lane','offset','start','duration','name','enabled','role'}:raise ValueError('Unverified title attributes')
             if any(child.tag not in (('text','text-style-def','param','adjust-transform') if generic else ('text','text-style-def','param')) for child in title):raise ValueError('Title audio, effects or nested items unverified')
             for child in title:
@@ -38,8 +42,11 @@ def prepare(data, generic=False):
                     if len(child) or set(child.attrib)-{'position','scale','rotation','anchor','enabled'}:raise ValueError('Unsupported title transform')
                     continue
                 if child.tag=='param':
-                    if len(child) or set(child.attrib)-{'name','key','value'} or child.get('key') not in ('9999/999166631/999166633/2/351','9999/999166631/999166633/2/354/999169573/401'):
-                        raise ValueError('Unverified Basic Title parameter')
+                    basic_keys=('9999/999166631/999166633/2/351','9999/999166631/999166633/2/354/999169573/401')
+                    key=child.get('key','')
+                    native_key=key.startswith('9999/') and all(part.isdecimal() for part in key.split('/'))
+                    if len(child) or set(child.attrib)-{'name','key','value'} or 'value' not in child.attrib or not (key in basic_keys if effect==EFFECT else native_key):
+                        raise ValueError('Unverified title parameter')
                     continue
                 if any(t.tag!='text-style' or len(t) for t in child):raise ValueError('Unsupported title text structure')
             start=base+seconds(title.get('offset','0s'));end=start+seconds(title.get('duration','0s'))

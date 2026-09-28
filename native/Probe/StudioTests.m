@@ -112,6 +112,14 @@ int main(int argc,const char *argv[]) {
             if (c.exportActions.hidden || !c.srtExportButton.enabled || !c.fcpxmlExportButton.enabled ||
                 fabs(c.srtExportButton.frame.size.width-c.fcpxmlExportButton.frame.size.width)>1) return 112;
             if (c.clearResultButton.hidden || !NSContainsRect(c.view.bounds,[c.clearResultButton convertRect:c.clearResultButton.bounds toView:c.view])) return 128;
+            if (width.intValue==840) {
+                NSMutableDictionary *withCollision=m.mutableCopy;
+                withCollision[@"existingTitleCollision"]=@{@"status":@"conflict",@"existingTitles":@2,@"overlappingRows":@1};
+                c.resultManifest=withCollision;
+                [c updateInterface];
+                if ([c.statusDetail.stringValue rangeOfString:@"已有 2 条字幕"].location==NSNotFound) return 129;
+                c.resultManifest=m;[c updateInterface];
+            }
             if (width.intValue==580) {
                 NSBitmapImageRep *image=[c.view bitmapImageRepForCachingDisplayInRect:c.view.bounds];[c.view cacheDisplayInRect:c.view.bounds toBitmapImageRep:image];
                 [[image representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:@"/tmp/subpop-ready-preview.png" atomically:YES];

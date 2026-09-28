@@ -538,6 +538,9 @@ static NSDictionary *Time(CMTime t) {
     if (hasRows && !fileImport && ready && !self.resultWasDragged) self.statusDetail.stringValue=self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative
         ? @"拖到原项目起点上方。落轨后将片段项分开，可在 FCP 调整底框、圆角和动画。"
         : @"拖到原项目起点上方。落轨后将片段项分开，可在 FCP 逐句编辑文字和样式。";
+    NSDictionary *existingCollision=self.resultManifest[@"existingTitleCollision"];
+    if (hasRows && [existingCollision[@"overlappingRows"] unsignedIntegerValue]>0)
+        self.statusDetail.stringValue=[NSString stringWithFormat:@"当前项目已有 %lu 条字幕。拖回新字幕前，请在 FCP 移除旧字幕层，避免叠加；原字幕不会自动删除。",(unsigned long)[existingCollision[@"existingTitles"] unsignedIntegerValue]];
     self.tap5aStyleButton.hidden=![self usesFileImport];self.tap5aStyleButton.enabled=!self.importInProgress;
     self.resultView.enabled=ready && !self.importInProgress && !busy;
     self.resultView.toolTip=fileImport ? @"点击导入到 FCP 浏览器。若出现资源库选择，请选择原项目所在资源库；在本次新建的编号事件中将字幕片段拖到原项目起点上方。每次导入都会保留旧版并新建事件。" : @"按住卡片拖到原项目时间线起点上方，落轨后将片段项分开。";
@@ -647,7 +650,12 @@ static NSDictionary *Time(CMTime t) {
     if (![self selectedCloudModel]) {[self submitWorkerJob];return;}
     NSString *model=self.selectedModelID;NSString *uid=self.dropUID;NSUInteger generation=self.dropGeneration;
     NSAlert *alert=[NSAlert new];alert.messageText=@"使用豆包云端识别？";
-    alert.informativeText=@"所选范围的音频会直接发送给火山引擎的豆包录音文件识别 2.0。视频画面、项目文件、词库和参考脚本不上传，识别费用由你的火山引擎账户结算。\n\n取消或断网不会重新提交识别，已提交部分仍可能计费。";
+    NSString *notice=@"所选范围的音频会直接发送给火山引擎的豆包录音文件识别 2.0。视频画面、项目文件、词库和参考脚本不上传，识别费用由你的火山引擎账户结算。\n\n取消或断网不会重新提交识别，已提交部分仍可能计费。";
+    NSData *snapshot=[NSData dataWithContentsOfURL:self.freshDropURL];
+    NSXMLDocument *document=snapshot ? [[NSXMLDocument alloc] initWithData:snapshot options:NSXMLNodeLoadExternalEntitiesNever error:nil] : nil;
+    NSUInteger existing=[document nodesForXPath:@"//project/sequence//title" error:nil].count;
+    if (existing) notice=[notice stringByAppendingFormat:@"\n\n当前项目已有 %lu 条标题字幕。新结果不会覆盖它们；拖回前请自行移除旧字幕层，避免叠加。",(unsigned long)existing];
+    alert.informativeText=notice;
     [alert addButtonWithTitle:@"上传并识别"];[alert addButtonWithTitle:@"取消"];
     [alert beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse response) {
         if (response==NSAlertFirstButtonReturn && [self.selectedModelID isEqual:model] && [self.dropUID isEqual:uid] && self.dropGeneration==generation) [self submitWorkerJob];

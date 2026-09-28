@@ -48,3 +48,19 @@ class JobTests(unittest.TestCase):
             state=json.loads(next((root/'jobs').glob('*/status.json')).read_text())
             self.assertEqual(state['status'],'failed')
             self.assertEqual(state['stage'],'validate')
+
+    def test_existing_titles_warn_but_still_generate_draggable_result(self):
+        rows=[{'text':'重新识别','start_frame':0,'end_frame':25}]
+        existing=[{'text':'旧字幕','start_frame':0,'end_frame':25,'enabled':True}]
+        result={'snapshot':{'frameDuration':'1/25','totalFrames':25},'pcm_sha256':'pcm','device':'cpu'}
+        state={'projectUID':'project','modelID':'test','vocabulary':[]}
+        with tempfile.TemporaryDirectory() as temp:
+            output=Path(temp)
+            with patch.object(run_job,'optimized_captions',return_value=rows),patch.object(run_job,'payload',return_value=b'<fcpxml/>'):
+                run_job.finalize(output,state,result,existing)
+            manifest=json.loads((output/'captions.json').read_text())
+            status=json.loads((output/'status.json').read_text())
+            self.assertEqual(status['status'],'ready')
+            self.assertEqual(manifest['existingTitleCollision']['status'],'conflict')
+            self.assertEqual(manifest['existingTitleCollision']['overlappingRows'],1)
+            self.assertTrue((output/'TitleProbe-1.14.fcpxml').is_file())

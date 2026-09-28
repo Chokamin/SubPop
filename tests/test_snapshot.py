@@ -1,7 +1,7 @@
 from pathlib import Path
 import unittest
 import xml.etree.ElementTree as ET
-from probes.snapshot import prepare,collision
+from probes.snapshot import prepare,collision,NATIVE_SUBTITLE_EFFECT
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -52,6 +52,21 @@ class SnapshotTests(unittest.TestCase):
             if mode=='template':root.find('.//effect').set('uid','unverified')
             else:ET.SubElement(root.find('.//title'),'audio' if mode=='audio' else 'filter-audio')
             with self.assertRaises(ValueError):prepare(ET.tostring(root))
+
+    def test_native_fcp_subtitles_are_removed_only_from_audio_copy(self):
+        root=ET.parse(ROOT/'tests/fixtures/fcp-12.3-title-split.fcpxml').getroot()
+        root.find('.//effect').set('uid',NATIVE_SUBTITLE_EFFECT)
+        first=root.find('.//title')
+        first.set('start','3600s')
+        ET.SubElement(first,'param',name='Background Width',key='9999/3336678691/100/3336678692/2/100',value='0.6208')
+        original=ET.tostring(root)
+        normalized,existing=prepare(original,generic=True)
+        self.assertEqual(len(existing),3)
+        self.assertEqual(len(ET.fromstring(normalized).findall('.//title')),0)
+        self.assertEqual(len(ET.fromstring(original).findall('.//title')),3)
+        ET.SubElement(first,'audio')
+        with self.assertRaisesRegex(ValueError,'Title audio'):
+            prepare(ET.tostring(root),generic=True)
 
     def test_fresh_host_drop_matches_actual_duplicate_decision(self):
         import json

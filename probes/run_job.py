@@ -56,17 +56,15 @@ def finalize(directory,state,result,existing):
     if result.get('cloudProtocol'):
         from .tos_storage import pending_count
         manifest['cloudCleanupPending']=pending_count(ROOT)
-    save(directory/'captions.json',manifest)
     check=collision(rows,existing);save(directory/'collision.json',check)
-    if check['status']!='clear':
-        state.update(status='blocked-existing-titles',stage=check['status'],collision=check,
-                     pcmSHA256=result['pcm_sha256'],titleCount=len(rows),device=result['device'])
-        save(directory/'status.json',state);print(json.dumps({'ready':str(directory),'blocked':check['status']}),flush=True)
-        return directory
+    # Output is a separate draggable clip. Existing FCP titles remain untouched;
+    # report overlaps so the editor can remove the old layer before dragging.
+    manifest['existingTitleCollision']=check
+    save(directory/'captions.json',manifest)
     (directory/'captions.srt').write_text(srt(rows,fps))
     for version in ('1.12','1.13','1.14'):(directory/f'TitleProbe-{version}.fcpxml').write_bytes(payload(manifest,version))
     outputs={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in directory.iterdir() if p.name.startswith(('TitleProbe-','TitleOriginal-')) or p.name in ('captions.json','captions.srt')}
-    state.update(status='ready',stage='ready',outputs=outputs,pcmSHA256=result['pcm_sha256'],titleCount=len(rows),device=result['device'])
+    state.update(status='ready',stage='ready',outputs=outputs,collision=check,pcmSHA256=result['pcm_sha256'],titleCount=len(rows),device=result['device'])
     save(directory/'status.json',state);print(json.dumps({'ready':str(directory),'titleCount':len(rows)}),flush=True)
     return directory
 
