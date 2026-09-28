@@ -2,6 +2,7 @@
 #import "RuntimePaths.h"
 #import "CloudSettings.h"
 #import "OnlineUpdate.h"
+#import "ApplicationMenu.h"
 // Background model runner and independent fullscreen preview host.
 @interface SubPopFullscreenWindow : NSWindow
 @end
@@ -175,6 +176,7 @@ int main(int argc, const char *argv[]) {
         }
         NSApplication *app=NSApplication.sharedApplication;
         [app setActivationPolicy:NSApplicationActivationPolicyAccessory];
+        SubPopInstallApplicationMenu(app);
         SubPopAppDelegate *delegate=[SubPopAppDelegate new]; app.delegate=delegate; [app run];
     }
     return 0;
