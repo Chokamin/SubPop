@@ -15,6 +15,7 @@
 #import "ScrubbableNumberField.h"
 #import "Tap5aPreview.h"
 #import "TitleImport.h"
+#import "CaptionExport.h"
 
 static NSDictionary *Time(CMTime t) {
     return @{ @"value": @(t.value), @"timescale": @(t.timescale), @"flags": @(t.flags), @"epoch": @(t.epoch) };
@@ -69,6 +70,11 @@ static NSDictionary *Time(CMTime t) {
 @property NSString *lastVisualState;
 @property SubPopActivityView *activity;
 @property SubPopTitleDragView *resultView;
+@property NSStackView *exportActions;
+@property NSButton *srtExportButton;
+@property NSButton *fcpxmlExportButton;
+@property NSTextField *exportStatus;
+@property BOOL exportInProgress;
 @property NSString *displayState;
 @property NSString *dropName;
 @property NSDate *engineLaunchDate;
@@ -219,6 +225,7 @@ static NSDictionary *Time(CMTime t) {
 @implementation SubPopProbeViewController
 #include "Updates.inc"
 #include "TitleImport.inc"
+#include "CaptionExport.inc"
 - (NSURL *)evidenceDirectory {
     NSURL *base = [[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject;
     NSURL *folder = [base URLByAppendingPathComponent:@"SubPopProbe"];
@@ -413,7 +420,7 @@ static NSDictionary *Time(CMTime t) {
         updated[version]=[doc XMLDataWithOptions:NSXMLNodePrettyPrint];
     }
     if (![self.titlePayloads isEqual:updated]) self.importMessage=nil;
-    self.titlePayloads=updated;[self.captionTable reloadData];[self saveDraft];[self updateInterface];
+    self.titlePayloads=updated;self.exportStatus.stringValue=@"";[self.captionTable reloadData];[self saveDraft];[self updateInterface];
 }
 - (void)primaryAction:(id)sender { if (![self workerAvailable]) [self connectWorker:sender]; else [self startWorkerJob:sender]; }
 - (void)showDiagnostics:(id)sender {
@@ -480,6 +487,10 @@ static NSDictionary *Time(CMTime t) {
     BOOL newlyReady=hasRows && self.resultView.hidden;
     if (newlyReady || !hasRows) self.reviewExpanded=NO;
     self.captionScroll.hidden=!hasRows || !self.reviewExpanded;self.editorControls.hidden=!hasRows || !self.reviewExpanded;self.resultView.hidden=!hasRows;self.reviewHeader.hidden=!hasRows;
+    self.exportActions.hidden=!hasRows;
+    self.srtExportButton.enabled=hasRows && !self.exportInProgress;
+    self.fcpxmlExportButton.enabled=hasRows && !self.exportInProgress;
+    self.exportStatus.hidden=!hasRows || !self.exportStatus.stringValue.length;
     self.captionCount.stringValue=[NSString stringWithFormat:@"字幕预览  ·  %lu 条",(unsigned long)self.captionRows.count];
     self.reviewToggle.title=self.reviewExpanded ? @"收起预览与样式 ▴" : @"展开预览与样式 ▾";
     if (newlyReady) {SubPopReveal(self.resultView);[self.view layoutSubtreeIfNeeded];[self.resultView scrollRectToVisible:self.resultView.bounds];}

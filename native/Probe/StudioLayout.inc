@@ -29,6 +29,14 @@
     NSButton *updates=[self toolbarButton:@"" symbol:@"arrow.triangle.2.circlepath" action:@selector(checkForUpdates:)];updates.toolTip=@"检查更新";[updates setAccessibilityLabel:@"检查更新"];
     NSStackView *header=[NSStackView stackViewWithViews:@[self.signal,identity,spacer,self.vocabularyButton,self.referenceButton,self.modelsButton,updates]];header.spacing=10;header.alignment=NSLayoutAttributeCenterY;[stack addArrangedSubview:header];
     self.resultView=[[SubPopTitleDragView alloc] initWithFrame:NSMakeRect(0,0,600,120)];self.resultView.controller=self;self.resultView.target=self;self.resultView.action=@selector(importTitlesToFCP:);[self.resultView setAccessibilityElement:YES];[self.resultView setAccessibilityRole:NSAccessibilityGroupRole];[stack addArrangedSubview:self.resultView];[self.resultView.heightAnchor constraintEqualToConstant:120].active=YES;self.resultView.hidden=YES;
+    self.srtExportButton=[self toolbarButton:@"下载 SRT 文件…" symbol:@"text.page" action:@selector(downloadSRT:)];
+    self.fcpxmlExportButton=[self toolbarButton:@"下载 FCPXML 文件…" symbol:@"film.stack" action:@selector(downloadFCPXML:)];
+    self.exportActions=[NSStackView stackViewWithViews:@[self.srtExportButton,self.fcpxmlExportButton]];
+    self.exportActions.spacing=10;self.exportActions.distribution=NSStackViewDistributionFillEqually;
+    [stack addArrangedSubview:self.exportActions];self.exportActions.hidden=YES;
+    self.exportStatus=[self label:@"" size:11 weight:NSFontWeightRegular];
+    self.exportStatus.textColor=NSColor.secondaryLabelColor;
+    [stack addArrangedSubview:self.exportStatus];self.exportStatus.hidden=YES;
     self.templatePicker=[[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];[self.templatePicker addItemsWithTitles:@[@"普通字幕 · 无底框",@"FCP 原生 · 自适应底框",@"Tap5a · 自适应底框"]];[self.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];self.templatePicker.target=self;self.templatePicker.action=@selector(templateChanged:);[self.templatePicker setAccessibilityLabel:@"字幕样式"];
     NSTextField *templateHint=[self label:@"无需重新识别" size:11 weight:NSFontWeightRegular];templateHint.textColor=NSColor.secondaryLabelColor;
     self.tap5aStyleButton=[self toolbarButton:@"整批样式" symbol:@"slider.horizontal.3" action:@selector(showTap5aStyle:)];

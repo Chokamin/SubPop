@@ -6,10 +6,9 @@ static NSString *SubPopTitleImportEventName(NSUInteger sequence) {
 static NSString *SubPopTitleImportClipName(NSString *projectName,NSUInteger sequence) {
     return [NSString stringWithFormat:@"%@ · Tap5a 字幕 %03lu",projectName.length ? projectName : @"SubPop",(unsigned long)sequence];
 }
-// A fresh event keeps FCP's imported result separate from the previous browser
-// selection. Reusing one event leaves old clips selected after repeated imports.
-// Import only a browser clip, never a project or a replacement timeline.
-static NSData *SubPopTitleImportXML(NSData *payload, NSString *projectName, NSUInteger sequence, NSError **error) {
+// Package the generated clip in a fresh event. The file imports a browser clip,
+// never a project or a replacement timeline.
+static NSData *SubPopTitleEventXML(NSData *payload, NSString *eventName, NSString *clipName, NSError **error) {
     NSXMLDocument *doc=payload.length ? [[NSXMLDocument alloc] initWithData:payload options:NSXMLNodeLoadExternalEntitiesNever error:error] : nil;
     NSArray *clips=[doc nodesForXPath:@"/fcpxml/clip" error:nil];
     NSXMLElement *clip=clips.firstObject;
@@ -20,11 +19,25 @@ static NSData *SubPopTitleImportXML(NSData *payload, NSString *projectName, NSUI
         return nil;
     }
     [clip detach];
-    [clip attributeForName:@"name"].stringValue=SubPopTitleImportClipName(projectName,sequence);
+    [clip attributeForName:@"name"].stringValue=clipName;
     NSXMLElement *event=[NSXMLElement elementWithName:@"event"];
-    [event addAttribute:[NSXMLNode attributeWithName:@"name" stringValue:SubPopTitleImportEventName(sequence)]];
+    [event addAttribute:[NSXMLNode attributeWithName:@"name" stringValue:eventName]];
     [event addChild:clip];[doc.rootElement addChild:event];
     // FCP validates against its external DTD, so this is not a standalone document.
     doc.standalone=NO;
     return [doc XMLDataWithOptions:NSXMLNodePrettyPrint|NSXMLNodeCompactEmptyElement];
+}
+
+// A fresh event keeps FCP's imported result separate from the previous browser
+// selection. Reusing one event leaves old clips selected after repeated imports.
+static NSData *SubPopTitleImportXML(NSData *payload, NSString *projectName, NSUInteger sequence, NSError **error) {
+    return SubPopTitleEventXML(payload,SubPopTitleImportEventName(sequence),
+                               SubPopTitleImportClipName(projectName,sequence),error);
+}
+
+static NSData *SubPopTitleExportXML(NSData *payload, NSString *projectName, NSUInteger sequence, NSError **error) {
+    NSString *name=projectName.length ? projectName : @"SubPop";
+    return SubPopTitleEventXML(payload,
+        [NSString stringWithFormat:@"SubPop 导出字幕 %03lu",(unsigned long)sequence],
+        [NSString stringWithFormat:@"%@ · 字幕 %03lu",name,(unsigned long)sequence],error);
 }

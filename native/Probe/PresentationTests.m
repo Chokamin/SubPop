@@ -43,6 +43,15 @@ int main(int argc,const char *argv[]) {
         controller.captionTable=[NSTableView new];
         NSTableColumn *column=[[NSTableColumn alloc] initWithIdentifier:@"text"];
         [controller tableView:controller.captionTable setObjectValue:@"校对 & <保留> 3.5% USB-C" forTableColumn:column row:0];
+        NSError *srtError=nil;
+        NSData *srtData=SubPopSRTExportData(controller.captionRows,manifest[@"frameDuration"],&srtError);
+        NSString *srtText=[[NSString alloc] initWithData:srtData encoding:NSUTF8StringEncoding];
+        if (!srtData || srtError || ![srtText containsString:@"校对 & <保留> 3.5% USB-C"] ||
+            ![srtText hasPrefix:@"1\n00:00:07,508 --> 00:00:09,109\n"]) return 86;
+        if (![SubPopSRTExportData(@[@{@"text":@"逐帧校验",@"start_frame":@1,@"end_frame":@2}],@"1001/30000",nil)
+            isEqual:[@"1\n00:00:00,033 --> 00:00:00,067\n逐帧校验\n\n" dataUsingEncoding:NSUTF8StringEncoding]]) return 87;
+        NSError *badSRT=nil;
+        if (SubPopSRTExportData(@[@{@"text":@"坏时间",@"start_frame":@2,@"end_frame":@2}],@"1/25",&badSRT) || !badSRT) return 88;
         for (NSString *v in payloads) {
             NSXMLDocument *before=[[NSXMLDocument alloc] initWithData:payloads[v] options:0 error:nil];
             NSXMLDocument *after=[[NSXMLDocument alloc] initWithData:controller.titlePayloads[v] options:0 error:nil];
@@ -122,6 +131,15 @@ int main(int argc,const char *argv[]) {
             if (importTitles.count!=b.count || [importDoc nodesForXPath:@"//project|//library|/fcpxml/clip" error:nil].count) return 34;
             if (![[importDoc nodesForXPath:@"/fcpxml/event/@name" error:nil].firstObject.stringValue isEqual:@"SubPop 字幕 001"] ||
                 ![[importDoc nodesForXPath:@"/fcpxml/event/clip/@name" error:nil].firstObject.stringValue isEqual:@"项目 & <测试> · Tap5a 字幕 001"]) return 35;
+            NSError *exportError=nil;
+            NSData *exportData=SubPopTitleExportXML(controller.titlePayloads[v],@"项目 & <测试>",3,&exportError);
+            NSXMLDocument *exportDoc=[[NSXMLDocument alloc] initWithData:exportData options:NSXMLNodeLoadExternalEntitiesNever error:nil];
+            if (!exportData || exportError ||
+                ![[exportDoc nodesForXPath:@"/fcpxml/event/@name" error:nil].firstObject.stringValue isEqual:@"SubPop 导出字幕 003"] ||
+                ![[exportDoc nodesForXPath:@"/fcpxml/event/clip/@name" error:nil].firstObject.stringValue isEqual:@"项目 & <测试> · 字幕 003"] ||
+                [exportDoc nodesForXPath:@"//project|//library|/fcpxml/clip" error:nil].count ||
+                [exportDoc nodesForXPath:@"/fcpxml/event/clip/spine/title" error:nil].count!=b.count ||
+                ![[exportDoc nodesForXPath:@"/fcpxml/event/clip/spine/title[1]/text/text-style" error:nil].firstObject.stringValue isEqual:@"校对 & <保留> 3.5% USB-C"]) return 89;
             NSData *second=SubPopTitleImportXML(controller.titlePayloads[v],@"项目 & <测试>",2,nil);
             NSXMLDocument *secondDoc=[[NSXMLDocument alloc] initWithData:second options:NSXMLNodeLoadExternalEntitiesNever error:nil];
             if (![[secondDoc nodesForXPath:@"/fcpxml/event/clip/@name" error:nil].firstObject.stringValue isEqual:@"项目 & <测试> · Tap5a 字幕 002"]) return 62;
@@ -144,12 +162,16 @@ int main(int argc,const char *argv[]) {
         for (NSString *v in basic) {
             NSXMLDocument *after=[[NSXMLDocument alloc] initWithData:controller.titlePayloads[v] options:0 error:nil];
             if ([after nodesForXPath:@"/fcpxml/resources/effect/@src" error:nil].count || [after nodesForXPath:@"//title/param" error:nil].count || ![[[after nodesForXPath:@"/fcpxml/resources/effect/@uid" error:nil] firstObject].stringValue isEqual:SubPopBasicTitleUID]) return 30;
+            NSXMLDocument *exported=[[NSXMLDocument alloc] initWithData:SubPopTitleExportXML(controller.titlePayloads[v],@"测试",4,nil) options:0 error:nil];
+            if (![[[exported nodesForXPath:@"/fcpxml/resources/effect/@uid" error:nil] firstObject].stringValue isEqual:SubPopBasicTitleUID]) return 91;
         }
         NSDictionary *plain=[controller.titlePayloads copy];
         [controller.templatePicker selectItemAtIndex:SubPopTitleTemplateNative];[controller rebuildTitles];
         for (NSString *v in basic) {
             NSXMLDocument *native=[[NSXMLDocument alloc] initWithData:controller.titlePayloads[v] options:0 error:nil];
             if (![[[native nodesForXPath:@"/fcpxml/resources/effect/@uid" error:nil] firstObject].stringValue isEqual:SubPopNativeSubtitleUID] || [native nodesForXPath:@"//title/param|//title/adjust-transform" error:nil].count) return 86;
+            NSXMLDocument *exported=[[NSXMLDocument alloc] initWithData:SubPopTitleExportXML(controller.titlePayloads[v],@"测试",5,nil) options:0 error:nil];
+            if (![[[exported nodesForXPath:@"/fcpxml/resources/effect/@uid" error:nil] firstObject].stringValue isEqual:SubPopNativeSubtitleUID]) return 92;
             if ([native nodesForXPath:@"//title[@start='3600s']" error:nil].count!=controller.captionRows.count) return 87;
             NSXMLDocument *before=[[NSXMLDocument alloc] initWithData:plain[v] options:0 error:nil];
             NSArray *a=[before nodesForXPath:@"//title" error:nil],*b=[native nodesForXPath:@"//title" error:nil];

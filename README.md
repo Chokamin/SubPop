@@ -97,6 +97,8 @@ SubPop 以实际识别的语音为准，在上下文匹配时辅助校正同音�
 
 切换字幕样式或重新导入无需再次识别。调整样式后会生成一份新字幕，**不会同步修改 FCP 时间线上已有的字幕**；请按需移除旧版，避免重叠。SubPop 也不会读取后来在 FCP 中修改的文字。
 
+**开发版新增，尚未包含在上方 1.2.1 安装包中：**识别完成后，结果卡片下方可选择「下载 SRT 文件」或「下载 FCPXML 文件」，自行指定保存位置。SRT 包含当前校对后的文字和逐句时间，不包含底框等视觉样式；FCPXML 包含当前选中的字幕样式和文字，可在 FCP 中作为新的浏览器字幕片段导入，不会替换现有项目。两个文件都只反映 SubPop 当前结果，不会读取你之后在 FCP 时间线上做的修改。
+
 ## 安装 Tap5a（可选）
 
 当前适配的是 **Tap5a Autosize Text Background**，不是 Multiline Text Background 或其他 Tap5a 模板。模板由 [Tapio Haaja（tap5a）](https://github.com/tap5a/free-final-cut-pro-x-plugins#tap5a-autosize-text-background) 提供。SubPop 从作者源下载安装，保留作者说明，不随安装包重新分发模板。
