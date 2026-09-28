@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 from probes import project
 from probes.snapshot import prepare
 from probes.title_fixture import payload
-from probes.caption_fixture import captions,srt
+from probes.caption_fixture import captions,srt,quantize
 
 FIXTURE=Path(__file__).parent/'fixtures/fcp-12.3-native-drop.fcpxml'
 
@@ -110,3 +110,93 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(len(existing),3)
         self.assertEqual(existing[1]['start_frame'],84)
         self.assertNotIn(b'<title ',normalized)
+
+    def components(self):
+        data=(FIXTURE.parent/'component-clips.fcpxml').read_bytes()
+        normalized,existing=prepare(data,generic=True)
+        self.assertEqual(existing,[])
+        return ET.fromstring(normalized)
+
+    def test_component_clips_keep_vo_cuts_and_sample_accurate_tail(self):
+        root=self.components();plan=self.inspect(root)
+        self.assertEqual(plan['duration'],'1203/200')
+        self.assertEqual(plan['sampleCount'],96240)
+        self.assertEqual(plan['totalFrames'],151)
+        self.assertEqual([(s['assetRef'],s['startSample'],s['sampleCount'],s['source_start'],s['role']) for s in plan['segments']],
+                         [('voice',0,32000,'10','VO'),('voice',32000,32000,'18','VO'),('voice',64000,32240,'30','VO')])
+        self.assertEqual(self.inspect(root,'all')['segments'],plan['segments'])
+        # Enabling the detached camera audio includes only its visible 0..2s,
+        # not its 60-second source or its -1s lead before the sequence.
+        root.find('.//clip/clip').set('enabled','1')
+        camera=self.inspect(root)['segments'][0]
+        self.assertEqual((camera['assetRef'],camera['source_start'],camera['startSample'],camera['sampleCount']),('camera','2',0,32000))
+
+    def test_contained_gain_and_mute_do_not_change_independent_connections(self):
+        root=self.components();clip=root.find('.//spine/clip');clip.find('clip').set('enabled','1')
+        ET.SubElement(clip.find('clip'),'adjust-volume',amount='-6dB')
+        plan=self.inspect(root)
+        self.assertAlmostEqual(plan['segments'][0]['gain'],10**(-6/20))
+        self.assertEqual(plan['segments'][1]['gain'],1)
+        clip.find('clip').set('enabled','0')
+        self.assertTrue(all(s['assetRef']=='voice' for s in self.inspect(root)['segments']))
+
+    def test_dual_mono_roles_mutes_and_incomplete_channel_selection(self):
+        for role in ('dialogue.voice','VO.voice','旁白.旁白-1'):
+            root=self.components()
+            for c in root.findall('.//audio-channel-source'):c.set('role',role)
+            self.assertEqual(len(self.inspect(root)['segments']),3)
+        root=self.components()
+        for c in root.findall('.//audio-channel-source'):c.set('role','music.music-1')
+        self.assertEqual(self.inspect(root)['segments'],[])
+        self.assertEqual(len(self.inspect(root,'all')['segments']),3)
+        for key,value in (('enabled','0'),('active','0'),('role','music.music-1'),('srcCh','2'),('outCh','R')):
+            root=self.components();root.find('.//audio-channel-source').set(key,value)
+            with self.subTest(key=key):
+                with self.assertRaises(ValueError):self.inspect(root)
+        root=self.components()
+        for c in root.findall('.//audio-channel-source'):c.set('enabled','0')
+        self.assertEqual(self.inspect(root)['segments'],[])
+
+    def test_contained_source_trim_and_unsupported_audio_not_silently_ignored(self):
+        root=self.components();clip=root.find('.//spine/clip')
+        audio=ET.SubElement(clip,'audio',ref='camera',offset='100s',start='100s',duration='60s',srcCh='1, 2')
+        segment=self.inspect(root)['segments'][1]
+        self.assertEqual((segment['source_start'],segment['startSample'],segment['sampleCount']),('2',0,32000))
+        for tag in ('filter-audio','timeMap'):
+            child=ET.SubElement(audio,tag)
+            with self.assertRaises(ValueError):self.inspect(root)
+            audio.remove(child)
+        root.find('.//sequence').set('duration','7s')
+        with self.assertRaisesRegex(ValueError,'范围不完整'):self.inspect(root)
+
+    def test_subframe_project_endpoint_keeps_last_caption_and_frame_payload(self):
+        plan=self.inspect(self.components());duration=Fraction(plan['duration'])
+        rows=quantize([{'text':'最后一个字','start':Fraction(6),'end':duration}],duration,25)
+        self.assertEqual(rows,[{'text':'最后一个字','start_frame':150,'end_frame':151}])
+        for version in ('1.12','1.13','1.14'):
+            xml=ET.fromstring(payload({**plan,'captions':rows},version))
+            self.assertEqual(xml.find('clip').get('duration'),'151/25s')
+        with self.assertRaises(ValueError):quantize([{'text':'越界','start':Fraction(6),'end':duration+1}],duration,25)
+
+    def test_native_render_component_cuts_equal_explicit_source_slices(self):
+        import wave
+        from array import array
+        with tempfile.TemporaryDirectory() as temp:
+            directory=Path(temp);media=directory/'voice.wav'
+            # A different constant per source second exposes wrong source
+            # offsets; the two source channels differ to exercise the downmix.
+            with wave.open(str(media),'wb') as out:
+                out.setparams((2,2,16000,0,'NONE','not compressed'))
+                for second in range(60):out.writeframes(array('h',[100+second*90,200+second*70]).tobytes()*16000)
+            root=self.components();root.find("resources/asset[@id='voice']/media-rep").set('src',media.as_uri())
+            xml=directory/'input.fcpxml';xml.write_bytes(ET.tostring(root))
+            binary=FIXTURE.parents[2]/'.subloom/build/SubPopAudioProbeCLI'
+            mixed=project.render(xml,directory,binary,'COMPONENT-PROJECT')
+            actual=(directory/mixed['pcmFile']).read_bytes()
+            seq=root.find('.//sequence');seq.set('duration','60s');spine=seq.find('spine');spine.clear()
+            ET.SubElement(spine,'asset-clip',ref='voice',offset='0s',start='0s',duration='60s',audioRole='dialogue')
+            xml.write_bytes(ET.tostring(root));whole=project.render(xml,directory,binary,'COMPONENT-PROJECT')
+            source=(directory/whole['pcmFile']).read_bytes();unit=16000*4
+            self.assertEqual(actual,source[10*unit:12*unit]+source[18*unit:20*unit]+source[30*unit:30*unit+32240*4])
+            self.assertEqual(len(actual),96240*4)
+            self.assertFalse(mixed['silent'])

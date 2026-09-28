@@ -2,10 +2,21 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from unittest.mock import patch
 from probes import run_job
 
 class JobTests(unittest.TestCase):
+    def test_preflight_uses_selected_audio_mode_for_component_roles(self):
+        root=ET.parse(Path(__file__).parent/'fixtures/component-clips.fcpxml').getroot()
+        root.findall('.//audio-channel-source')[1].set('role','music.music-1')
+        with tempfile.TemporaryDirectory() as temp:
+            xml=Path(temp)/'input.fcpxml';xml.write_bytes(ET.tostring(root))
+            with self.assertRaises(ValueError):run_job.preflight(xml,None,None)
+            snapshot=run_job.preflight(xml,None,None,'all')
+            self.assertEqual(snapshot['audioMode'],'all')
+            self.assertEqual(len(snapshot['segments']),3)
+
     def test_preflight_refuses_other_project_before_decode(self):
         with patch.object(run_job,'inspect',return_value={'uid':'other'}):
             with self.assertRaises(ValueError):run_job.preflight(Path('x'),Path('a'),Path('b'))

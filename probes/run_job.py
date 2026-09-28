@@ -29,8 +29,8 @@ def save(path,value):
     temp.replace(path)
 
 
-def preflight(xml, asr, aligner):
-    snapshot=inspect(xml)
+def preflight(xml, asr, aligner, audio_mode='dialogue'):
+    snapshot=inspect(xml,audio_mode)
     if not snapshot['uid']:raise ValueError('Project UID required')
     for model in (asr,aligner):
         if model is None:continue
@@ -115,7 +115,7 @@ def run(xml,asr,aligner,model_id=DEFAULT_MODEL_ID,audio_mode='dialogue',vocabula
         progress('validate')
         normalized,existing=prepare(frozen.read_bytes(),generic=True)
         audioXML=directory/'audio-input.fcpxml';audioXML.write_bytes(normalized)
-        snapshot=preflight(audioXML,asr,aligner)
+        snapshot=preflight(audioXML,asr,aligner,audio_mode)
         state['projectUID']=snapshot['uid']
         recovered=cached_recognition(state,snapshot)
         if recovered:

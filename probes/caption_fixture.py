@@ -69,7 +69,9 @@ def quantize(raw, duration, fps):
     rows=[]
     for row in raw:
         start=(row['start']*fps).__floor__();end=(row['end']*fps).__ceil__()
-        if end<=start or Fraction(end,fps)>duration:raise ValueError('Invalid caption duration')
+        # Audio can end between video frames. Keep outward rounding through the
+        # final containing frame without extending the underlying PCM clock.
+        if end<=start or end>(duration*fps).__ceil__():raise ValueError('Invalid caption duration')
         if rows and start<rows[-1]['end_frame']:
             # Outward rounding can make disjoint intervals share one frame.
             # Use a shared boundary nearest to the measured gap's midpoint.

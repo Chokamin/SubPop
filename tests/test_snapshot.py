@@ -61,3 +61,20 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(collision(previous,existing),evidence['collision'])
         self.assertEqual(evidence['status'],'blocked-existing-titles')
         self.assertFalse(evidence['titlePayloadsGenerated'])
+
+    def test_basic_title_nested_in_component_clip_preserves_source_clock(self):
+        from copy import deepcopy
+        source=ET.parse(ROOT/'tests/fixtures/fcp-12.3-title-split.fcpxml')
+        effect=deepcopy(source.find('.//effect'))
+        root=ET.parse(ROOT/'tests/fixtures/component-clips.fcpxml').getroot()
+        root.find('resources').append(effect)
+        parent=root.find('.//spine/gap/clip')
+        title=deepcopy(source.find('.//title'));title.set('ref',effect.get('id'))
+        title.set('offset','140s');title.set('duration','1s');parent.append(title)
+        raw=ET.tostring(root);normalized,existing=prepare(raw,generic=True)
+        self.assertEqual(len(existing),1)
+        self.assertEqual((existing[0]['start_frame'],existing[0]['end_frame']),(100,125))
+        self.assertFalse(ET.fromstring(normalized).findall('.//title'))
+        self.assertEqual(len(ET.fromstring(raw).findall('.//title')),1)
+        ET.SubElement(title,'audio')
+        with self.assertRaises(ValueError):prepare(ET.tostring(root),generic=True)

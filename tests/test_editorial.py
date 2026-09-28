@@ -21,6 +21,14 @@ class CleanupTests(unittest.TestCase):
 
 @unittest.skipUnless(importlib.util.find_spec('jieba'),'Run with SubPop .venv for lexical integration')
 class EditorialTests(unittest.TestCase):
+    def test_subframe_project_tail_survives_editorial_millisecond_rounding(self):
+        data={'snapshot':{'duration':'2719951/20000','sampleCount':2175961,'relative_start':'0','project':'Tail'},
+              'results':[{'text':'尾部验证','words':[{'text':'尾部验证','start':135.9,'end':135.99755}]}]}
+        rows=optimized_captions(data,Fraction(30000,1001))
+        self.assertEqual(rows,[{'text':'尾部验证','start_frame':4072,'end_frame':4076}])
+        data['results'][0]['words'][0]['end']=136.01
+        with self.assertRaises(ValueError):optimized_captions(data,Fraction(30000,1001))
+
     def test_number_units_and_vocabulary_survive_length_boundary(self):
         words=[Word('我们测得',0,.8),Word('0.1',.8,1),Word('毫秒',1.1,1.3),Word('延迟',1.3,1.6)]
         self.assertEqual([r.text for r in make_captions(words,max_chars=6)],['我们测得','0.1毫秒延迟'])

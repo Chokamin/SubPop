@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic regression: detached camera audio, dual-mono VO, video effects,
+     and a connected audio tail ending between video frames. No user media. -->
+<fcpxml version="1.14">
+  <resources>
+    <format id="f" frameDuration="1/25s" width="1920" height="1080"/>
+    <asset id="camera" start="100s" duration="60s" hasVideo="1" format="f" hasAudio="1" audioSources="1" audioChannels="2">
+      <media-rep kind="original-media" src="file:///synthetic/camera.mov"/>
+    </asset>
+    <asset id="voice" start="0s" duration="60s" hasAudio="1" audioSources="1" audioChannels="2">
+      <media-rep kind="original-media" src="file:///synthetic/voice.wav"/>
+    </asset>
+    <effect id="adjustment" uid="synthetic-adjustment-video"/>
+  </resources>
+  <project name="Component regression" uid="COMPONENT-PROJECT">
+    <sequence format="f" duration="1203/200s" tcStart="0s" audioLayout="stereo" audioRate="48k">
+      <spine>
+        <clip offset="0s" start="102s" duration="2s">
+          <video ref="camera" offset="100s" start="100s" duration="60s"/>
+          <clip lane="-1" offset="101s" start="101s" duration="3s" enabled="0">
+            <gap offset="100s" start="100s" duration="60s">
+              <audio ref="camera" lane="-1" offset="100s" start="100s" duration="60s" role="dialogue.dialogue-1" srcCh="1, 2"/>
+            </gap>
+          </clip>
+          <asset-clip ref="voice" lane="-1" offset="102s" start="10s" duration="2s" audioRole="dialogue">
+            <audio-channel-source srcCh="1" role="VO.VO-1"/>
+            <audio-channel-source srcCh="2" role="VO.VO-1"/>
+          </asset-clip>
+          <video ref="adjustment" lane="2" offset="102s" start="0s" duration="4s" role="adjustments"/>
+        </clip>
+        <clip offset="2s" start="110s" duration="2s">
+          <video ref="camera" offset="100s" start="100s" duration="60s"/>
+          <asset-clip ref="voice" lane="-1" offset="110s" start="18s" duration="2s" audioRole="dialogue">
+            <audio-channel-source srcCh="1" role="VO.VO-1"/>
+            <audio-channel-source srcCh="2" role="VO.VO-1"/>
+          </asset-clip>
+        </clip>
+        <gap offset="4s" start="50s" duration="2s">
+          <asset-clip ref="voice" lane="-1" offset="50s" start="30s" duration="403/200s" audioRole="dialogue">
+            <audio-channel-source srcCh="1" role="VO.VO-1"/>
+            <audio-channel-source srcCh="2" role="VO.VO-2"/>
+          </asset-clip>
+          <clip lane="1" offset="50s" start="140s" duration="2s">
+            <video ref="camera" offset="100s" start="100s" duration="60s"/>
+          </clip>
+        </gap>
+      </spine>
+    </sequence>
+  </project>
+</fcpxml>

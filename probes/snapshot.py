@@ -11,14 +11,15 @@ def prepare(data, generic=False):
     projects=root.findall('.//project')
     if len(projects)!=1:raise ValueError('One project required')
     seq=projects[0].find('sequence');spine=seq.find('spine') if seq is not None else None
-    if spine is None or not 1<=len(spine)<=(5000 if generic else 64) or any(c.tag not in ('asset-clip','gap') for c in spine):raise ValueError('Consecutive clips/gaps required')
+    story_tags=('asset-clip','gap','clip','audio','video') if generic else ('asset-clip','gap')
+    if spine is None or not 1<=len(spine)<=(5000 if generic else 64) or any(c.tag not in story_tags for c in spine):raise ValueError('暂不支持此时间线结构；请展开复合片段或多机位后重试' if generic else 'Consecutive clips/gaps required')
     effects={e.get('id'):e.get('uid') for e in root.findall('resources/effect')}
     duration=seconds(seq.get('duration','0s'));existing=[]
     fmt=root.find(f"resources/format[@id='{seq.get('format')}']")
     fps=1/seconds(fmt.get('frameDuration','1/25s')) if generic and fmt is not None else Fraction(25)
     def clips(nodes, origin, parent_start):
         for clip in nodes:
-            if clip.tag not in ('asset-clip','gap'):continue
+            if clip.tag not in story_tags:continue
             asset=root.find(f"resources/asset[@id='{clip.get('ref')}']")
             start=seconds(clip.get('start',asset.get('start','0s') if asset is not None else '0s'))
             position=origin+seconds(clip.get('offset','0s'))-parent_start
