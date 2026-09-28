@@ -145,7 +145,7 @@ static void SubPopReveal(NSView *view) {
         BOOL animate=active && wasVisible && self.window && !NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion;
         if (animate) [self prepareOutgoingRow];else [self clearTransition];
         [self.wave setWorking:NO];self.wave.visualStage=next;self.wave.needsLayout=YES;
-        NSDictionary *labels=@{@"preparing":@"正在唤醒本机识别",@"validate":@"正在读取项目",@"decode":@"正在准备音频",@"recognize":@"正在聆听，生成字幕",@"generate-titles":@"正在整理断句与时间"};
+        NSDictionary *labels=@{@"model-download":@"正在准备识别模型",@"preparing":@"正在唤醒本机识别",@"validate":@"正在读取项目",@"decode":@"正在准备音频",@"recognize":@"正在聆听，生成字幕",@"generate-titles":@"正在整理断句与时间"};
         self.currentLabel.stringValue=labels[state] ?: @"正在处理";
         self.needsLayout=YES;
         if (animate) {

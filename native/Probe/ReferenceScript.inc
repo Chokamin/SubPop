@@ -31,7 +31,7 @@
     }];
 }
 - (void)showReferenceScript:(id)sender {
-    if (self.requestID || self.referenceRequestID || !self.dropUID.length || ![self isolatedProjectActive] || self.referenceAlert) return;
+    if (self.requestID || self.referenceRequestID || self.pendingRecognition || !self.dropUID.length || ![self isolatedProjectActive] || self.referenceAlert) return;
     NSString *project=self.dropUID;
     NSAlert *alert=[NSAlert new];self.referenceAlert=alert;alert.messageText=@"参考脚本";
     alert.informativeText=@"以实际说出的内容为准，参考脚本校正疑似错词、统一写法和辅助断句。\n现场改说、临时补充和未读出的段落会保留差异，不会照抄整篇脚本。";
@@ -66,7 +66,7 @@
 }
 - (void)startReferenceRefinement {
     NSString *script=[self effectiveReferenceScript];
-    if (!script.length || self.requestID || self.referenceRequestID || !self.captionRows.count || ![self isolatedProjectActive]) return;
+    if (!script.length || self.requestID || self.referenceRequestID || self.pendingRecognition || !self.captionRows.count || ![self isolatedProjectActive]) return;
     if (![self workerAvailable]) {self.referenceMessage=@"请先连接本机服务，再整理当前字幕。";[self updateInterface];return;}
     [self.view.window makeFirstResponder:nil];
     NSString *identifier=NSUUID.UUID.UUIDString.lowercaseString;NSURL *directory=[self.bridgeURL URLByAppendingPathComponent:identifier];
@@ -115,7 +115,7 @@
     self.referenceMessage=@"已撤销本次脚本整理";[self rebuildTitles];[self.captionTable reloadData];[self updateInterface];
 }
 - (void)updateReferenceInterface {
-    BOOL busy=self.requestID || self.referenceRequestID;
+    BOOL busy=self.requestID || self.referenceRequestID || self.pendingRecognition;
     NSString *script=[self effectiveReferenceScript];
     self.referenceButton.enabled=!busy && self.dropUID.length && [self isolatedProjectActive] && !self.importInProgress;
     NSString *referenceState=script.length ? @"已启用" : ([self referenceSettings][@"text"] ? @"已停用" : @"可选");

@@ -131,6 +131,9 @@ static NSDictionary *Time(CMTime t) {
 @property NSButton *downloadCancel;
 @property NSPopUpButton *downloadSourcePicker;
 @property NSString *modelRequestID;
+@property NSAlert *modelDownloadAlert;
+@property NSDictionary *pendingRecognition;
+@property NSDate *modelReadyObservedDate;
 @property NSString *vocabularyDraft;
 @property NSButton *referenceButton;
 @property NSStackView *referenceActions;
@@ -249,7 +252,7 @@ static NSDictionary *Time(CMTime t) {
 #include "StudioLayout.inc"
 #include "Tap5aStyle.inc"
 - (void)restoreSession {
-    if (self.restoringSession || self.requestID || self.titlePayloads || !self.bridgeURL || !self.timeline || ![self workerAvailable]) return;
+    if (self.restoringSession || self.requestID || self.pendingRecognition || self.titlePayloads || !self.bridgeURL || !self.timeline || ![self workerAvailable]) return;
     NSDictionary *saved=[NSUserDefaults.standardUserDefaults dictionaryForKey:@"pendingSession"];
     if (!saved || !self.observed || ![self.observedProjectUID isEqual:saved[@"projectUID"]] || !CMTIME_IS_NUMERIC(self.observedProjectDuration)) return;
     CMTime duration=CMTimeMake([saved[@"durationValue"] longLongValue],[saved[@"durationScale"] intValue]);
@@ -278,14 +281,15 @@ static NSDictionary *Time(CMTime t) {
     return NO;
 }
 - (void)modelChanged:(id)sender {
-    if (self.requestID) return;
+    if (self.requestID || self.pendingRecognition) return;
     self.selectedModelID=self.modelPicker.selectedItem.representedObject;
     [NSUserDefaults.standardUserDefaults setObject:self.selectedModelID forKey:@"selectedModelID"];
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.titlePayloads=nil;self.captionRows=nil;self.displayState=self.freshDropURL ? @"input" : @"idle";
     [self record:@{@"reason":@"model-selected",@"modelID":self.selectedModelID}];
 }
-- (void)audioChanged:(id)sender { if (!self.requestID) { [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.titlePayloads=nil;self.captionRows=nil;self.displayState=self.freshDropURL ? @"input" : @"idle";[self updateInterface]; } }
+- (void)audioChanged:(id)sender { if (!self.requestID && !self.pendingRecognition) { [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.titlePayloads=nil;self.captionRows=nil;self.displayState=self.freshDropURL ? @"input" : @"idle";[self updateInterface]; } }
 - (void)cancelJob:(id)sender {
+    if (self.pendingRecognition) { [self cancelModelDownload:sender];return; }
     if (self.referenceRequestID) {
         [@"{}" writeToURL:[[self.bridgeURL URLByAppendingPathComponent:self.referenceRequestID] URLByAppendingPathComponent:@"cancel.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
         self.referenceRequestID=nil;self.referenceSourceRows=nil;self.referenceMessage=@"已取消脚本整理，字幕保持原样。";[self updateInterface];return;
@@ -434,7 +438,7 @@ static NSDictionary *Time(CMTime t) {
     }
     [self.diagnostics showRelativeToRect:[sender bounds] ofView:sender preferredEdge:NSRectEdgeMaxY];
 }
-- (BOOL)canDragResult { return !self.referenceRequestID && self.titlePayloads && self.resultDate && [self isolatedProjectActive]; }
+- (BOOL)canDragResult { return !self.pendingRecognition && !self.referenceRequestID && self.titlePayloads && self.resultDate && [self isolatedProjectActive]; }
 - (BOOL)usesFileImport { return self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateTap5a; }
 - (void)consumeUIEvent:(NSDictionary *)event {
     NSString *reason=event[@"reason"], *status=event[@"status"];
@@ -468,7 +472,7 @@ static NSDictionary *Time(CMTime t) {
     if ([state isEqual:@"error"] && self.visibleError.length) self.statusDetail.stringValue=self.visibleError;
     if ([state isEqual:@"recognize"] && self.jobProgress) self.statusTitle.stringValue=[NSString stringWithFormat:@"正在识别语音 · %.0f%%",100*self.jobProgress.doubleValue];
     self.serviceLabel.stringValue=connected ? @"● 本机就绪" : ([[self readJSON:[self.bridgeURL URLByAppendingPathComponent:@"service.json"]][@"status"] isEqual:@"updating"] ? @"正在更新 SubPop" : (self.bridgeURL ? @"本机服务未就绪" : @"首次使用 · 点击准备本机识别"));
-    self.modelDetail.stringValue=[NSString stringWithFormat:@"%@ · %@ · %@",[self selectedModel][@"description"] ?: @"",[self selectedModelAvailable] ? @"已安装" : @"模型未就绪",[[self selectedModel][@"engine"] isEqual:@"mlx-whisper"] ? @"本机 MLX" : @"本机 CPU"];
+    self.modelDetail.stringValue=[NSString stringWithFormat:@"%@ · %@ · %@",[self selectedModel][@"description"] ?: @"",[self selectedModelAvailable] ? @"已安装" : @"首次识别时下载",[[self selectedModel][@"engine"] isEqual:@"mlx-whisper"] ? @"本机 MLX" : @"本机 CPU"];
     BOOL cloud=[self selectedCloudModel];
     if (cloud) self.modelDetail.stringValue=[NSString stringWithFormat:@"豆包云端 · %@ · 按账户计费",[self selectedModelAvailable] ? @"已配置，尚需有效服务额度" : @"请先配置 API Key"];
     self.scopeLabel.stringValue=cloud ? @"云端识别会上传音频至火山引擎 · 按账户计费" : @"音频留在本机  ·  字幕回到你的时间线";
@@ -476,10 +480,10 @@ static NSDictionary *Time(CMTime t) {
     self.serviceLabel.textColor=connected ? NSColor.systemGreenColor : NSColor.secondaryLabelColor;
     self.dropTitle.stringValue=fresh ? (self.dropName ?: @"项目已导入") : @"把项目拖到这里";
     self.dropDetail.stringValue=fresh ? [NSString stringWithFormat:@"%02ld:%02ld · 整个项目 · 修改时间线后请重新拖入",(long)(CMTimeGetSeconds(self.dropDuration)/60),(long)CMTimeGetSeconds(self.dropDuration)%60] : @"从 Final Cut Pro 浏览器拖入整个项目";
-    BOOL busy=self.requestID!=nil || self.referenceRequestID!=nil;BOOL managing=[self modelOperationBusy];
+    BOOL busy=self.requestID!=nil || self.referenceRequestID!=nil || self.pendingRecognition!=nil;BOOL managing=[self modelOperationBusy];
     BOOL preparing=[state isEqual:@"preparing"];
     self.generateButton.title=preparing ? @"正在准备…" : (busy ? @"正在处理…" : (connected ? (self.titlePayloads ? @"重新识别" : @"生成字幕") : @"准备本机识别"));
-    self.generateButton.enabled=!managing && !preparing && !busy && (!connected || (fresh && [self isolatedProjectActive] && [self selectedModelAvailable]));
+    self.generateButton.enabled=(!connected || !managing || [self selectedModelDownloadInProgress]) && !self.modelDownloadAlert && !preparing && !busy && (!connected || (fresh && [self isolatedProjectActive]));
     self.vocabularyButton.enabled=!busy;self.vocabularyButton.title=[NSString stringWithFormat:@"词库 · %lu",(unsigned long)[self effectiveVocabulary].count];
     self.modelPicker.enabled=!busy && !managing;self.audioPicker.enabled=!busy;self.cancelButton.hidden=!busy;
     BOOL hasRows=self.titlePayloads && self.captionRows.count;
@@ -501,7 +505,7 @@ static NSDictionary *Time(CMTime t) {
     if (hasRows && [self.resultManifest[@"reviewWarnings"] count]) self.statusDetail.stringValue=[NSString stringWithFormat:@"已自动整理 · %lu 段时间需校对，保留原断句 · 拖回后可逐句编辑",(unsigned long)[self.resultManifest[@"reviewWarnings"] count]];
     if (self.lastVisualState && ![self.lastVisualState isEqual:state]) SubPopReveal(self.statusTitle);
     self.lastVisualState=state;
-    if (connected && ![self selectedModelAvailable] && !busy) { self.statusTitle.stringValue=@"所选模型尚未就绪";self.statusDetail.stringValue=cloud ? @"点击“模型”，为豆包配置语音 API Key，或选择本机模型。" : @"点击“模型管理”下载，或选择已安装的模型。"; }
+    [self updateModelPreparationInterface];
 
     BOOL ready=[self canDragResult];BOOL fileImport=[self usesFileImport];
     if (hasRows && fileImport && ready) {
@@ -544,7 +548,7 @@ static NSDictionary *Time(CMTime t) {
 }
 - (void)showModelSettings:(id)sender {
     NSAlert *alert=[NSAlert new]; alert.messageText=@"使用帮助";
-    alert.informativeText=@"在主面板选择 Qwen3-ASR 0.6B 或 1.7B。选择会被记住，每次任务使用所选模型。缺少模型时，点击“模型管理”下载；“词库”可填写人名、品牌和专业词。\n\n默认仅识别对白角色。请在 FCP 将背景音乐设为“音乐”角色；需要保留全部声音时选择“所有音频”。\n\n视频类型不限，单次项目不设固定时长上限。长视频会分段识别，可随时取消。支持普通剪切、单声道／立体声及连接音频。暂不支持变速、多机位、复合片段、音频效果或音量关键帧。";
+    alert.informativeText=@"先拖入项目，再选择模型并生成字幕。所选本机模型尚未下载时，确认弹窗后会先下载，再自动开始识别；也可在“模型”中提前下载。“词库”可填写人名、品牌和专业词。\n\n默认仅识别对白角色。请在 FCP 将背景音乐设为“音乐”角色；需要保留全部声音时选择“所有音频”。\n\n视频类型不限，单次项目不设固定时长上限。长视频会分段识别，可随时取消。支持普通剪切、单声道／立体声及连接音频。暂不支持变速、多机位、复合片段、音频效果或音量关键帧。";
     [alert addButtonWithTitle:@"完成"]; [alert addButtonWithTitle:@"重新准备识别"];
     [alert beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse result) { if (result==NSAlertSecondButtonReturn) [self connectWorker:nil]; }];
 }
@@ -588,8 +592,14 @@ static NSDictionary *Time(CMTime t) {
     }];
 }
 - (void)startWorkerJob:(id)sender {
+    if (self.requestID || self.referenceRequestID || self.pendingRecognition || self.modelDownloadAlert || self.historicalResult || !self.freshDropURL || !self.freshDropDate || ![self isolatedProjectActive] || ![self workerAvailable]) return;
+    if (![self selectedModelAvailable]) {
+        if (![self selectedCloudModel]) { [self confirmModelDownload];return; }
+        NSAlert *setup=[NSAlert new];setup.messageText=@"先配置豆包云端识别";setup.informativeText=@"项目已保留。请先保存你的语音 API Key，再点击生成字幕。";
+        [setup addButtonWithTitle:@"配置 API Key"];[setup addButtonWithTitle:@"取消"];
+        [setup beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse response){if(response==NSAlertFirstButtonReturn)[self openCloudSettings:nil];}];return;
+    }
     if (![self selectedCloudModel]) {[self submitWorkerJob];return;}
-    if (self.requestID || ![self selectedModelAvailable]) return;
     NSString *model=self.selectedModelID;NSString *uid=self.dropUID;NSUInteger generation=self.dropGeneration;
     NSAlert *alert=[NSAlert new];alert.messageText=@"使用豆包云端识别？";
     alert.informativeText=@"所选范围的音频会直接发送给火山引擎的豆包录音文件识别 2.0。视频画面、项目文件、词库和参考脚本不上传，识别费用由你的火山引擎账户结算。\n\n取消或断网不会重新提交识别，已提交部分仍可能计费。";
@@ -599,7 +609,7 @@ static NSDictionary *Time(CMTime t) {
     }];
 }
 - (void)submitWorkerJob {
-    if (self.requestID || self.referenceRequestID || self.historicalResult || [self modelOperationBusy]) return;
+    if (self.requestID || self.referenceRequestID || self.pendingRecognition || self.historicalResult || [self modelOperationBusy]) return;
     if (!self.bridgeURL || ![self workerAvailable] || ![self isolatedProjectActive]) {
         [self record:@{@"reason":@"worker-submit",@"status":@"connect-service-and-open-isolated-project-first"}]; return;
     }
@@ -635,9 +645,10 @@ static NSDictionary *Time(CMTime t) {
 }
 - (void)pollWorker:(NSTimer *)timer {
     NSDictionary *install=[self readJSON:[self.bridgeURL URLByAppendingPathComponent:@"update-installing.json"]];
-    if([install[@"timestamp"] isKindOfClass:NSNumber.class] && fabs(NSDate.date.timeIntervalSince1970-[install[@"timestamp"] doubleValue])<8 && !self.requestID && !self.referenceRequestID && !self.importInProgress) {
+    if([install[@"timestamp"] isKindOfClass:NSNumber.class] && fabs(NSDate.date.timeIntervalSince1970-[install[@"timestamp"] doubleValue])<8 && !self.requestID && !self.pendingRecognition && !self.referenceRequestID && !self.importInProgress) {
         [self saveDraft];[self.view.window close];return;
     }
+    [self pollModelPreparation];
     [self pollReferenceRefinement];
     [self updateInterface];
     if (!self.requestID) return;
@@ -766,6 +777,7 @@ static NSDictionary *Time(CMTime t) {
     [self restoreBridge];
 }
 - (void)viewWillDisappear {
+    [self clearPendingRecognition];
     [self.updatesPanel close];
     [self.activity.wave setWorking:NO];
     if (self.tap5aScoped) [self.tap5aURL stopAccessingSecurityScopedResource];self.tap5aScoped=NO;self.tap5aURL=nil;
@@ -850,7 +862,7 @@ static NSDictionary *Time(CMTime t) {
     }
     [self record:result];
 }
-- (void)activeSequenceChanged { self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;self.freshDropURL=nil; self.titlePayloads=nil; self.dropGeneration++; self.observed=YES; [self snapshot:@"activeSequenceChanged"]; }
+- (void)activeSequenceChanged { [self clearPendingRecognition];self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;self.freshDropURL=nil; self.titlePayloads=nil; self.dropGeneration++; self.observed=YES; [self snapshot:@"activeSequenceChanged"]; }
 - (void)sequenceTimeRangeChanged { self.observed=YES; [self snapshot:@"sequenceTimeRangeChanged"]; }
 - (void)playheadTimeChanged {
     // Captions are anchored to the whole project, never to the playhead.
@@ -894,6 +906,7 @@ static NSDictionary *Time(CMTime t) {
 }
 - (BOOL)receivePasteboard:(NSPasteboard *)pasteboard {
     if (self.requestID || self.referenceRequestID) return NO;
+    [self clearPendingRecognition];
     self.historicalResult=NO;
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];
     self.freshDropURL=nil; self.freshDropDate=nil; self.titlePayloads=nil; self.resultDate=nil; self.dropGeneration++;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
@@ -914,5 +927,6 @@ static NSDictionary *Time(CMTime t) {
     return self.freshDropURL!=nil;
 }
 #include "Preferences.inc"
+#include "ModelPreparation.inc"
 #include "ReferenceScript.inc"
 @end

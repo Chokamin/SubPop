@@ -15,7 +15,7 @@
     return terms.count<=100 && total<=2000 ? terms.array : nil;
 }
 - (void)showVocabulary:(id)sender {
-    if (self.requestID) return;
+    if (self.requestID || self.pendingRecognition) return;
     NSAlert *alert=[NSAlert new];alert.messageText=@"词库";
     alert.informativeText=@"填写人名、品牌和专业词，每行一个，也可以用逗号分隔。\n辅助识别，并统一词条的大小写、空格和等值数字写法；修改在下一次识别生效。";
     NSView *view=[[NSView alloc] initWithFrame:NSMakeRect(0,0,480,238)];
@@ -35,7 +35,14 @@
 }
 - (NSDictionary *)modelTaskState {
     if (!self.modelRequestID) self.modelRequestID=[NSUserDefaults.standardUserDefaults stringForKey:@"modelRequestID"];
-    if (self.modelRequestID && self.bridgeURL) return [self readJSON:[[self.bridgeURL URLByAppendingPathComponent:self.modelRequestID] URLByAppendingPathComponent:@"response.json"]] ?: @{@"status":@"queued",@"stage":@"queued"};
+    if (self.modelRequestID && self.bridgeURL) {
+        NSURL *directory=[self.bridgeURL URLByAppendingPathComponent:self.modelRequestID];
+        NSDictionary *response=[self readJSON:[directory URLByAppendingPathComponent:@"response.json"]];
+        if (response) return response;
+        NSMutableDictionary *queued=[[self readJSON:[directory URLByAppendingPathComponent:@"request.json"]] mutableCopy];
+        if (queued) {queued[@"status"]=@"queued";queued[@"stage"]=@"queued";return queued;}
+        return @{};
+    }
     return [self readJSON:[self.bridgeURL URLByAppendingPathComponent:@"service.json"]][@"modelTask"] ?: @{};
 }
 - (BOOL)modelOperationBusy { NSString *status=[self modelTaskState][@"status"];return [status isEqual:@"queued"] || [status isEqual:@"running"]; }
@@ -73,19 +80,19 @@
 }
 - (void)updateModelManager {
     if (!self.modelAlert) return;
-    NSDictionary *service=[self readJSON:[self.bridgeURL URLByAppendingPathComponent:@"service.json"]];NSDictionary *task=[self modelTaskState];BOOL busy=[self modelOperationBusy];
+    NSDictionary *service=[self readJSON:[self.bridgeURL URLByAppendingPathComponent:@"service.json"]];NSDictionary *task=[self modelTaskState];BOOL busy=[self modelOperationBusy];BOOL processing=self.requestID || self.referenceRequestID || self.pendingRecognition;
     for (NSDictionary *spec in self.modelCatalog) {
         NSDictionary *available=nil;for (NSDictionary *model in service[@"models"]) if ([model[@"id"] isEqual:spec[@"id"]]) available=model;
         NSDictionary *row=self.modelRows[spec[@"id"]];BOOL installed=[available[@"installed"] boolValue];BOOL selected=[self.selectedModelID isEqual:spec[@"id"]];
         unsigned long long bytes=0;for (NSNumber *size in [spec[@"files"] allValues]) bytes+=size.unsignedLongLongValue;
         NSTextField *status=row[@"status"];status.stringValue=[NSString stringWithFormat:@"%@ · %.2f GB",installed ? @"✓ 已安装" : @"需要下载或修复",bytes/1e9];status.textColor=installed ? NSColor.systemGreenColor : NSColor.secondaryLabelColor;
-        NSButton *action=row[@"action"];action.title=installed ? (selected ? @"正在使用" : @"使用此模型") : @"下载模型";action.enabled=[self workerAvailable] && !busy && !self.requestID && !(installed && selected);
-        NSButton *remove=row[@"remove"];remove.hidden=![available[@"hasFiles"] boolValue];remove.enabled=!busy && !self.requestID && [self workerAvailable];
+        NSButton *action=row[@"action"];action.title=installed ? (selected ? @"正在使用" : @"使用此模型") : @"下载模型";action.enabled=[self workerAvailable] && !busy && !processing && !(installed && selected);
+        NSButton *remove=row[@"remove"];remove.hidden=![available[@"hasFiles"] boolValue];remove.enabled=!busy && !processing && [self workerAvailable];
         if ([spec[@"engine"] isEqual:@"doubao"]) {
             status.stringValue=[available[@"cleanupPending"] unsignedIntegerValue]>0 ? @"旧版临时音频待清理 · 打开云端设置" : (installed ? @"已配置 · 未验证服务额度" : @"尚需配置 API Key");
             action.title=installed ? (selected ? @"正在使用" : @"使用此模型") : @"配置云端识别";
-            action.enabled=!self.requestID && !(installed && selected);
-            remove.hidden=NO;remove.title=@"云端设置…";remove.action=@selector(openCloudSettings:);remove.enabled=!self.requestID;
+            action.enabled=!processing && !(installed && selected);
+            remove.hidden=NO;remove.title=@"云端设置…";remove.action=@selector(openCloudSettings:);remove.enabled=!processing;
         }
     }
     NSString *status=task[@"status"],*stage=task[@"stage"];
@@ -110,19 +117,21 @@
 - (void)downloadSourceChanged:(id)sender {
     [NSUserDefaults.standardUserDefaults setObject:self.downloadSourcePicker.indexOfSelectedItem==1 ? @"official" : @"auto" forKey:@"downloadSource"];
 }
-- (void)submitModelOperation:(NSString *)operation model:(NSString *)modelID {
-    if (self.requestID || [self modelOperationBusy] || ![self workerAvailable]) return;
+- (NSString *)submitModelOperation:(NSString *)operation model:(NSString *)modelID {
+    if (self.requestID || self.referenceRequestID || self.pendingRecognition || [self modelOperationBusy] || ![self workerAvailable]) return nil;
     NSString *request=NSUUID.UUID.UUIDString.lowercaseString;NSURL *directory=[self.bridgeURL URLByAppendingPathComponent:request];NSError *error=nil;
     BOOL ok=[[NSFileManager defaultManager] createDirectoryAtURL:directory withIntermediateDirectories:NO attributes:nil error:&error];
     NSDictionary *data=@{@"requestID":request,@"kind":@"model",@"operation":operation,@"modelID":modelID,@"downloadSource":[NSUserDefaults.standardUserDefaults stringForKey:@"downloadSource"] ?: @"auto"};
     if (ok) ok=[[NSJSONSerialization dataWithJSONObject:data options:0 error:nil] writeToURL:[directory URLByAppendingPathComponent:@"request.json"] options:NSDataWritingAtomic error:&error];
-    if (!ok) {self.downloadLabel.stringValue=error.localizedDescription ?: @"无法创建下载任务";return;}
+    if (!ok) {self.visibleError=error.localizedDescription ?: @"无法创建下载任务";self.downloadLabel.stringValue=self.visibleError;return nil;}
     self.modelRequestID=request;[NSUserDefaults.standardUserDefaults setObject:request forKey:@"modelRequestID"];[self updateInterface];
+    return request;
 }
 - (void)openCloudSettings:(id)sender {
     [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:@"subpop-probe://cloud-settings"]];
 }
 - (void)modelAction:(NSButton *)sender {
+    if (self.requestID || self.referenceRequestID || self.pendingRecognition) return;
     NSDictionary *service=[self readJSON:[self.bridgeURL URLByAppendingPathComponent:@"service.json"]];BOOL installed=NO;
     for (NSDictionary *model in service[@"models"]) if ([model[@"id"] isEqual:sender.identifier]) installed=[model[@"installed"] boolValue];
     if (!installed && [sender.identifier isEqual:@"doubao-cloud"]) {[self openCloudSettings:nil];return;}
@@ -138,5 +147,7 @@
 }
 - (void)cancelModelDownload:(id)sender {
     if (!self.modelRequestID) return;
+    if (self.pendingRecognition) { [self clearPendingRecognition];self.displayState=@"model-download-cancelled"; }
     [@"{}" writeToURL:[[self.bridgeURL URLByAppendingPathComponent:self.modelRequestID] URLByAppendingPathComponent:@"cancel.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];self.downloadCancel.enabled=NO;self.downloadLabel.stringValue=@"正在暂停下载…";
+    [self updateInterface];
 }
