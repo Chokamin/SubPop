@@ -9,7 +9,7 @@
 为 Final Cut Pro 制作的本机中文字幕插件。<br>
 拖入项目，识别语音，校对与调整样式，再把字幕放回时间线。
 
-**[下载 SubPop 1.2.1](https://github.com/Chokamin/SubPop/releases/download/v1.2.1/SubPop-1.2.1-arm64.pkg)** · [所有版本](https://github.com/Chokamin/SubPop/releases) · [反馈问题](https://github.com/Chokamin/SubPop/issues)
+**[下载 SubPop 1.3.0](https://github.com/Chokamin/SubPop/releases/download/v1.3.0/SubPop-1.3.0-arm64.pkg)** · [所有版本](https://github.com/Chokamin/SubPop/releases) · [反馈问题](https://github.com/Chokamin/SubPop/issues)
 
 Apple Silicon · macOS 15+ · PKG 约 210 MB<br>
 Developer ID 签名 · Apple 公证
@@ -97,7 +97,7 @@ SubPop 以实际识别的语音为准，在上下文匹配时辅助校正同音�
 
 切换字幕样式或重新导入无需再次识别。调整样式后会生成一份新字幕，**不会同步修改 FCP 时间线上已有的字幕**；请按需移除旧版，避免重叠。SubPop 也不会读取后来在 FCP 中修改的文字。
 
-**开发版新增，尚未包含在上方 1.2.1 安装包中：**识别完成后，结果卡片下方可选择「下载 SRT 文件」或「下载 FCPXML 文件」，自行指定保存位置。SRT 包含当前校对后的文字和逐句时间，不包含底框等视觉样式；FCPXML 包含当前选中的字幕样式和文字，可在 FCP 中作为新的浏览器字幕片段导入，不会替换现有项目。两个文件都只反映 SubPop 当前结果，不会读取你之后在 FCP 时间线上做的修改。
+识别完成后，结果卡片下方可选择「下载 SRT 文件」或「下载 FCPXML 文件」，自行指定保存位置。SRT 包含当前校对后的文字和逐句时间，不包含底框等视觉样式；FCPXML 包含当前选中的字幕样式和文字，可在 FCP 中作为新的浏览器字幕片段导入，不会替换现有项目。两个文件都只反映 SubPop 当前结果，不会读取你之后在 FCP 时间线上做的修改。
 
 ## 安装 Tap5a（可选）
 

@@ -34,6 +34,10 @@
     NSTextField *mirrorLabel=[NSTextField labelWithString:@"镜像地址"];mirrorLabel.frame=NSMakeRect(0,112,76,22);[content addSubview:mirrorLabel];
     self.mirrorField=[[NSTextField alloc] initWithFrame:NSMakeRect(80,110,348,25)];
     self.mirrorField.stringValue=SubPopUpdateMirror([NSUserDefaults.standardUserDefaults stringForKey:@"updateMirrorURL"]) ?: SubPopDefaultUpdateMirror;
+    // This is a URL, not prose. Writing Tools can open an empty floating panel
+    // when AppKit automatically selects this field as an alert's first responder.
+    if (@available(macOS 15.2, *)) self.mirrorField.allowsWritingTools=NO;
+    self.mirrorField.automaticTextCompletionEnabled=NO;
     self.mirrorField.placeholderString=SubPopDefaultUpdateMirror;self.mirrorField.font=[NSFont systemFontOfSize:12];[self.mirrorField setAccessibilityLabel:@"镜像地址"];[content addSubview:self.mirrorField];
     self.status=[NSTextField wrappingLabelWithString:@""];self.status.frame=NSMakeRect(0,70,430,32);self.status.font=[NSFont systemFontOfSize:12];self.status.textColor=NSColor.secondaryLabelColor;[content addSubview:self.status];
     self.progress=[[NSProgressIndicator alloc] initWithFrame:NSMakeRect(0,51,430,6)];self.progress.style=NSProgressIndicatorStyleBar;self.progress.minValue=0;self.progress.maxValue=1;[content addSubview:self.progress];
@@ -50,6 +54,7 @@
         [actions.heightAnchor constraintEqualToConstant:32]]];
     for(NSButton *button in actions.arrangedSubviews)[button.heightAnchor constraintEqualToConstant:32].active=YES;
     self.alert.accessoryView=content;
+    self.alert.window.initialFirstResponder=self.checkButton;
     __weak typeof(self) weakSelf=self;
     [self.alert beginSheetModalForWindow:window completionHandler:^(NSModalResponse response){
         typeof(self) strongSelf=weakSelf;[strongSelf.client cancel];strongSelf.client=nil;strongSelf.alert=nil;
