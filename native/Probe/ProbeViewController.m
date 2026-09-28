@@ -168,6 +168,9 @@ static NSDictionary *Time(CMTime t) {
 @property BOOL resultWasDragged;
 @property NSButton *clearResultButton;
 @property BOOL referenceUndoWasOriginal;
+@property (weak) NSWindow *lifecycleWindow;
+@property BOOL windowMiniaturizing;
+@property BOOL observingTimeline;
 - (void)updateInterface;
 - (BOOL)canDragResult;
 - (BOOL)receivePasteboard:(NSPasteboard *)pasteboard;
@@ -825,14 +828,34 @@ static NSDictionary *Time(CMTime t) {
 }
 - (void)viewDidAppear {
     [super viewDidAppear];
+    NSWindow *window=self.view.window;
+    if (window!=self.lifecycleWindow) {
+        if (self.lifecycleWindow) [NSNotificationCenter.defaultCenter removeObserver:self name:NSWindowWillMiniaturizeNotification object:self.lifecycleWindow];
+        if (self.lifecycleWindow) [NSNotificationCenter.defaultCenter removeObserver:self name:NSWindowDidDeminiaturizeNotification object:self.lifecycleWindow];
+        self.lifecycleWindow=window;
+        if (window) {
+            [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(windowWillMiniaturize:) name:NSWindowWillMiniaturizeNotification object:window];
+            [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(windowDidDeminiaturize:) name:NSWindowDidDeminiaturizeNotification object:window];
+        }
+    }
+    self.windowMiniaturizing=NO;
+    if (self.observingTimeline && self.bridgeURL) { [self updateInterface];return; }
     id candidate = ProExtensionHostSingleton();
     if (![candidate conformsToProtocol:@protocol(FCPXHost)]) { [self record:@{@"status":@"host unavailable"}]; return; }
     self.host = candidate; self.timeline = self.host.timeline;
     [self record:@{@"status":@"waiting for timeline observer", @"host":self.host.name ?: @"", @"version":self.host.versionString ?: @"", @"bundle":self.host.bundleIdentifier ?: @""}];
-    [self.timeline addTimelineObserver:self];
-    [self restoreBridge];
+    if (!self.observingTimeline) { [self.timeline addTimelineObserver:self];self.observingTimeline=YES; }
+    if (!self.bridgeURL) [self restoreBridge];
 }
+- (void)windowWillMiniaturize:(NSNotification *)notification { self.windowMiniaturizing=YES; }
+- (void)windowDidDeminiaturize:(NSNotification *)notification { self.windowMiniaturizing=NO;[self updateInterface]; }
 - (void)viewWillDisappear {
+    // FCP's hosted window sends this callback while miniaturizing. The view is
+    // still the same session and will be shown again without viewDidAppear.
+    if (self.windowMiniaturizing || self.view.window.isMiniaturized) { [super viewWillDisappear];return; }
+    [NSNotificationCenter.defaultCenter removeObserver:self name:NSWindowWillMiniaturizeNotification object:self.lifecycleWindow];
+    [NSNotificationCenter.defaultCenter removeObserver:self name:NSWindowDidDeminiaturizeNotification object:self.lifecycleWindow];
+    self.lifecycleWindow=nil;self.windowMiniaturizing=NO;
     self.validatingDrop=NO;
     [self clearPendingRecognition];
     [self.updatesPanel close];
@@ -842,9 +865,11 @@ static NSDictionary *Time(CMTime t) {
     if (self.bridgeScoped) [self.bridgeURL stopAccessingSecurityScopedResource];
     self.freshDropURL=nil; self.freshDropDate=nil; self.titlePayloads=nil; self.resultDate=nil; self.dropGeneration++;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
     self.bridgeScoped=NO; self.bridgeURL=nil; self.requestID=nil; [self updateInterface];
-    [self.timeline removeTimelineObserver:self]; self.timeline = nil; self.host = nil; self.observed = NO; self.observedProjectUID=nil;self.observedProjectDuration=kCMTimeInvalid;
+    if (self.observingTimeline) [self.timeline removeTimelineObserver:self];self.observingTimeline=NO;
+    self.timeline = nil; self.host = nil; self.observed = NO; self.observedProjectUID=nil;self.observedProjectDuration=kCMTimeInvalid;
     [super viewWillDisappear];
 }
+- (void)dealloc { [NSNotificationCenter.defaultCenter removeObserver:self]; }
 - (void)refresh:(id)sender { [self snapshot:@"manual"]; }
 - (void)probeAudio:(NSButton *)sender {
     NSURL *directory=[self evidenceDirectory];

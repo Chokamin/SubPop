@@ -92,7 +92,14 @@ int main(int argc,const char *argv[]) {
         check(c.dropGeneration==oldGeneration+1 && [c.displayState isEqual:@"input"],@"late validation of an older drop cannot consume the newer drop");
         receiveDrop(c);c.switchDuringHostRead=YES;settleDrop(c);
         check(!c.freshDropURL && !c.requestID,@"project change during host read invalidates deferred work");
-        receiveDrop(c);c.timeline=nil;[c viewWillDisappear];
+        receiveDrop(c);
+        NSURL *minimizedDrop=c.freshDropURL;
+        [c windowWillMiniaturize:[NSNotification notificationWithName:NSWindowWillMiniaturizeNotification object:window]];
+        [c viewWillDisappear];
+        check([c.freshDropURL isEqual:minimizedDrop] && c.bridgeURL && !c.titlePayloads && c.validatingDrop,
+              @"minimizing keeps the active project and service connection");
+        [c windowDidDeminiaturize:[NSNotification notificationWithName:NSWindowDidDeminiaturizeNotification object:window]];
+        c.timeline=nil;[c viewWillDisappear];
         [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.2]];
         check(!c.freshDropURL && !c.validatingDrop,@"closing the panel cannot resurrect a pending drop");
         c.bridgeURL=temporary;

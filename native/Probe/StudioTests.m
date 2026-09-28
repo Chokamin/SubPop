@@ -108,6 +108,14 @@ int main(int argc,const char *argv[]) {
             NSRect model=[c.modelPicker convertRect:c.modelPicker.bounds toView:c.view],audio=[c.audioPicker convertRect:c.audioPicker.bounds toView:c.view];
             if (model.size.width<100 || audio.size.width<100 || NSMaxX(model)>NSMinX(audio) || NSMaxX(audio)>width.doubleValue) return 2;
             c.resultManifest=m;c.captionRows=[m[@"captions"] mutableCopy];c.titlePayloads=@{@"1.14":[NSData data]};c.displayState=@"ready";[c updateInterface];[c.captionTable reloadData];[c.view layoutSubtreeIfNeeded];
+            if (width.intValue==840) {
+                NSUInteger readyCount=c.captionRows.count;
+                [c windowWillMiniaturize:[NSNotification notificationWithName:NSWindowWillMiniaturizeNotification object:window]];
+                [c viewWillDisappear];
+                if (!c.titlePayloads || c.captionRows.count!=readyCount || ![c.displayState isEqual:@"ready"] || c.resultView.hidden) return 130;
+                [c windowDidDeminiaturize:[NSNotification notificationWithName:NSWindowDidDeminiaturizeNotification object:window]];
+                if (!c.titlePayloads || c.captionRows.count!=readyCount || c.resultView.hidden) return 131;
+            }
             if (!c.captionScroll.hidden || c.resultView.hidden || c.captionTable.numberOfRows!=(NSInteger)[m[@"captions"] count]) return 3;
             if (c.exportActions.hidden || !c.srtExportButton.enabled || !c.fcpxmlExportButton.enabled ||
                 fabs(c.srtExportButton.frame.size.width-c.fcpxmlExportButton.frame.size.width)>1) return 112;
