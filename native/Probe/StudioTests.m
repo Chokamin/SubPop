@@ -4,6 +4,7 @@
 @interface SubPopPreviewController : SubPopProbeViewController
 @property NSDictionary *previewCatalog;
 @property NSUInteger importInvocationCount;
+@property NSUInteger draftSaveCount;
 @end
 @implementation SubPopPreviewController
 - (NSDictionary *)readJSON:(NSURL *)url { return url ? [super readJSON:url] : self.previewCatalog; }
@@ -12,6 +13,7 @@
 - (BOOL)isolatedProjectActive { return YES; }
 - (BOOL)canDragResult { return self.titlePayloads.count>0; }
 - (void)restoreSession {}
+- (void)saveDraft { self.draftSaveCount++; }
 - (void)importTitlesToFCP:(id)sender { self.importInvocationCount++; }
 @end
 int main(int argc,const char *argv[]) {
@@ -62,6 +64,17 @@ int main(int argc,const char *argv[]) {
         if (![c.scopeLabel.stringValue containsString:@"上传音频"] || ![c.modelDetail.stringValue containsString:@"云端"]) return 100;
         c.selectedModelID=initialModel;[c updateInterface];
         if (![c.scopeLabel.stringValue containsString:@"留在本机"]) return 101;
+        c.resultManifest=@{@"captions":@[@{@"text":@"测试字幕"}]};
+        c.captionRows=[NSMutableArray arrayWithObject:[@{@"text":@"测试字幕"} mutableCopy]];
+        c.titlePayloads=@{@"1.14":[NSData data]};c.resultDate=NSDate.date;c.resultRequestID=@"clear-test";
+        c.freshDropURL=[NSURL fileURLWithPath:@"/tmp/subpop-clear-test.fcpxml"];
+        c.freshDropDate=NSDate.date;c.dropUID=@"clear-test";c.dropName=@"测试项目";c.dropDuration=CMTimeMake(10,1);
+        c.resultWasDragged=YES;c.displayState=@"sent";[c updateInterface];
+        if (c.clearResultButton.hidden || !c.clearResultButton.enabled || ![c.resultView.accessibilityLabel containsString:@"已拖出"] || ![c.statusTitle.stringValue isEqual:@"字幕已拖出"]) return 126;
+        c.historicalResult=YES;
+        NSUInteger generation=c.dropGeneration;
+        [c clearResult:nil];
+        if (c.titlePayloads || c.captionRows || c.freshDropURL || c.dropUID || c.resultWasDragged || c.historicalResult || c.dropGeneration!=generation+1 || !c.resultView.hidden || !c.clearResultButton.hidden || ![c.generateButton.title isEqual:@"生成字幕"] || ![c.dropTitle.stringValue isEqual:@"把项目拖到这里"] || c.draftSaveCount!=1) return 127;
         // FCP starts each newly installed version at half the main window height.
         // Reproduce its 450pt outer window (422pt content), including the restore row.
         for(NSNumber *width in @[@580,@756]) {
@@ -96,6 +109,7 @@ int main(int argc,const char *argv[]) {
             if (!c.captionScroll.hidden || c.resultView.hidden || c.captionTable.numberOfRows!=(NSInteger)[m[@"captions"] count]) return 3;
             if (c.exportActions.hidden || !c.srtExportButton.enabled || !c.fcpxmlExportButton.enabled ||
                 fabs(c.srtExportButton.frame.size.width-c.fcpxmlExportButton.frame.size.width)>1) return 112;
+            if (c.clearResultButton.hidden || !NSContainsRect(c.view.bounds,[c.clearResultButton convertRect:c.clearResultButton.bounds toView:c.view])) return 128;
             if (width.intValue==580) {
                 NSBitmapImageRep *image=[c.view bitmapImageRepForCachingDisplayInRect:c.view.bounds];[c.view cacheDisplayInRect:c.view.bounds toBitmapImageRep:image];
                 [[image representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:@"/tmp/subpop-ready-preview.png" atomically:YES];

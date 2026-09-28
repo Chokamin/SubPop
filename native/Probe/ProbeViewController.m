@@ -165,6 +165,8 @@ static NSDictionary *Time(CMTime t) {
 @property NSDictionary *referenceUndoPayloads;
 @property BOOL referenceUndone;
 @property BOOL historicalResult;
+@property BOOL resultWasDragged;
+@property NSButton *clearResultButton;
 @property BOOL referenceUndoWasOriginal;
 - (void)updateInterface;
 - (BOOL)canDragResult;
@@ -218,9 +220,9 @@ static NSDictionary *Time(CMTime t) {
     NSGradient *gradient=[[NSGradient alloc] initWithStartingColor:enabled ? [NSColor colorWithCalibratedRed:.43 green:.35 blue:(self.hovered ? .86 : .78) alpha:1] : base endingColor:base];[gradient drawInBezierPath:shape angle:-20];
     [[NSColor colorWithCalibratedWhite:1 alpha:self.hovered ? .32 : .16] setStroke];[shape stroke];
     [self.hostIcon drawInRect:NSMakeRect(20,35,50,50) fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:enabled ? 1 : .4];
-    NSString *title=self.controller.importInProgress ? @"正在发送到 Final Cut Pro…" : (enabled ? (importing ? @"导入字幕到 Final Cut Pro" : @"拖回字幕到 Final Cut Pro") : @"请先打开原项目时间线");
+    NSString *title=self.controller.importInProgress ? @"正在发送到 Final Cut Pro…" : (enabled ? (importing ? @"导入字幕到 Final Cut Pro" : (self.controller.resultWasDragged ? @"字幕已拖出 · 可再次拖入" : @"拖回字幕到 Final Cut Pro")) : @"请先打开原项目时间线");
     [title drawAtPoint:NSMakePoint(86,73) withAttributes:@{NSForegroundColorAttributeName:NSColor.whiteColor,NSFontAttributeName:[NSFont systemFontOfSize:17 weight:NSFontWeightSemibold]}];
-    NSString *detail=[NSString stringWithFormat:importing ? @"%lu 条字幕 · 点击导入，再从 FCP 浏览器拖回时间线" : @"%lu 条字幕已准备好 · 按住卡片拖到时间线起点上方",(unsigned long)self.controller.captionRows.count];
+    NSString *detail=[NSString stringWithFormat:importing ? @"%lu 条字幕 · 点击导入，再从 FCP 浏览器拖回时间线" : (self.controller.resultWasDragged ? @"%lu 条字幕仍保留 · 如未落轨可再次拖入" : @"%lu 条字幕已准备好 · 按住卡片拖到时间线起点上方"),(unsigned long)self.controller.captionRows.count];
     [detail drawAtPoint:NSMakePoint(86,48) withAttributes:@{NSForegroundColorAttributeName:[NSColor colorWithCalibratedWhite:1 alpha:.85],NSFontAttributeName:[NSFont systemFontOfSize:11]}];
     [(importing ? @"每次导入使用独立编号事件 · 对齐原项目起点" : @"落轨后：片段 → 将片段项分开，即可逐句编辑") drawAtPoint:NSMakePoint(86,24) withAttributes:@{NSForegroundColorAttributeName:[NSColor colorWithCalibratedWhite:1 alpha:.72],NSFontAttributeName:[NSFont systemFontOfSize:10]}];
 }
@@ -276,7 +278,7 @@ static NSDictionary *Time(CMTime t) {
 }
 - (void)saveDraft {
     if (!self.resultRequestID || !self.titlePayloads || !self.captionRows) return;
-    NSDictionary *draft=@{@"requestID":self.resultRequestID,@"snapshotSHA":self.requestSHA ?: @"",@"modelID":self.requestModelID ?: @"",@"captions":self.captionRows,@"font":self.fontPicker.titleOfSelectedItem,@"fontSize":self.sizePicker.titleOfSelectedItem,@"tap5aStyle":SubPopNormalizeTap5aStyle(self.tap5aStyle),@"referenceUndoCaptions":self.referenceUndoRows ?: @[],@"referenceUndoWasOriginal":@(self.referenceUndoWasOriginal),@"referenceMessage":self.referenceMessage ?: @"",@"referenceUndone":@(self.referenceUndone),@"referenceSHA256":self.requestReferenceSHA ?: @"",@"templateID":SubPopTitleTemplateID(self.templatePicker.indexOfSelectedItem),@"titleTemplate":@(self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateTap5a)};
+    NSDictionary *draft=@{@"requestID":self.resultRequestID,@"snapshotSHA":self.requestSHA ?: @"",@"modelID":self.requestModelID ?: @"",@"captions":self.captionRows,@"font":self.fontPicker.titleOfSelectedItem,@"fontSize":self.sizePicker.titleOfSelectedItem,@"tap5aStyle":SubPopNormalizeTap5aStyle(self.tap5aStyle),@"referenceUndoCaptions":self.referenceUndoRows ?: @[],@"referenceUndoWasOriginal":@(self.referenceUndoWasOriginal),@"referenceMessage":self.referenceMessage ?: @"",@"referenceUndone":@(self.referenceUndone),@"dragged":@(self.resultWasDragged),@"referenceSHA256":self.requestReferenceSHA ?: @"",@"templateID":SubPopTitleTemplateID(self.templatePicker.indexOfSelectedItem),@"titleTemplate":@(self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateTap5a)};
     NSData *data=[NSJSONSerialization dataWithJSONObject:draft options:0 error:nil];[data writeToURL:[[self evidenceDirectory] URLByAppendingPathComponent:[@"draft-" stringByAppendingString:self.resultRequestID]] atomically:YES];
 }
 - (NSDictionary *)selectedModel {
@@ -432,7 +434,7 @@ static NSDictionary *Time(CMTime t) {
         }
         updated[version]=[doc XMLDataWithOptions:NSXMLNodePrettyPrint];
     }
-    if (![self.titlePayloads isEqual:updated]) self.importMessage=nil;
+    if (![self.titlePayloads isEqual:updated]) {self.importMessage=nil;self.resultWasDragged=NO;if ([self.displayState isEqual:@"sent"]) self.displayState=@"ready";}
     self.titlePayloads=updated;self.exportStatus.stringValue=@"";[self.captionTable reloadData];[self saveDraft];[self updateInterface];
 }
 - (BOOL)dropNeedsValidation { return self.freshDropURL && self.dropUID.length && !CMTIME_IS_NUMERIC(self.dropDuration); }
@@ -509,6 +511,8 @@ static NSDictionary *Time(CMTime t) {
     if (newlyReady || !hasRows) self.reviewExpanded=NO;
     self.captionScroll.hidden=!hasRows || !self.reviewExpanded;self.editorControls.hidden=!hasRows || !self.reviewExpanded;self.resultView.hidden=!hasRows;self.reviewHeader.hidden=!hasRows;
     self.exportActions.hidden=!hasRows;
+    self.clearResultButton.hidden=!hasRows;
+    self.clearResultButton.enabled=hasRows && !busy && !self.importInProgress && !self.exportInProgress;
     self.srtExportButton.enabled=hasRows && !self.exportInProgress;
     self.fcpxmlExportButton.enabled=hasRows && !self.exportInProgress;
     self.exportStatus.hidden=!hasRows || !self.exportStatus.stringValue.length;
@@ -531,14 +535,14 @@ static NSDictionary *Time(CMTime t) {
     }
     if (hasRows && [self.resultManifest[@"cloudCleanupPending"] unsignedIntegerValue]>0) self.statusDetail.stringValue=[self.statusDetail.stringValue stringByAppendingString:@" 旧版临时音频尚待清理，请打开云端设置查看。"];
 
-    if (hasRows && !fileImport && ready) self.statusDetail.stringValue=self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative
+    if (hasRows && !fileImport && ready && !self.resultWasDragged) self.statusDetail.stringValue=self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative
         ? @"拖到原项目起点上方。落轨后将片段项分开，可在 FCP 调整底框、圆角和动画。"
         : @"拖到原项目起点上方。落轨后将片段项分开，可在 FCP 逐句编辑文字和样式。";
     self.tap5aStyleButton.hidden=![self usesFileImport];self.tap5aStyleButton.enabled=!self.importInProgress;
     self.resultView.enabled=ready && !self.importInProgress && !busy;
     self.resultView.toolTip=fileImport ? @"点击导入到 FCP 浏览器。若出现资源库选择，请选择原项目所在资源库；在本次新建的编号事件中将字幕片段拖到原项目起点上方。每次导入都会保留旧版并新建事件。" : @"按住卡片拖到原项目时间线起点上方，落轨后将片段项分开。";
     [self.resultView setAccessibilityRole:fileImport ? NSAccessibilityButtonRole : NSAccessibilityGroupRole];
-    [self.resultView setAccessibilityLabel:ready ? (fileImport ? @"导入字幕到 Final Cut Pro" : @"拖回字幕到 Final Cut Pro") : @"请先打开原项目时间线"];
+    [self.resultView setAccessibilityLabel:ready ? (fileImport ? @"导入字幕到 Final Cut Pro" : (self.resultWasDragged ? @"字幕已拖出，可再次拖入 Final Cut Pro" : @"拖回字幕到 Final Cut Pro")) : @"请先打开原项目时间线"];
     [self updateReferenceInterface];
     [self updateViewportLayout];
     if (newlyReady) {SubPopReveal(self.resultView);[self.view layoutSubtreeIfNeeded];[self.resultView scrollRectToVisible:self.resultView.bounds];}
@@ -548,6 +552,21 @@ static NSDictionary *Time(CMTime t) {
     [self.resultView.window invalidateCursorRectsForView:self.resultView];[self.resultView setNeedsDisplay:YES];
 }
 - (void)toggleReview:(id)sender { self.reviewExpanded=!self.reviewExpanded;[self updateInterface]; }
+- (void)clearResult:(id)sender {
+    if (!self.titlePayloads || self.requestID || self.referenceRequestID || self.pendingRecognition || self.importInProgress || self.exportInProgress) return;
+    [self.view.window makeFirstResponder:nil];
+    [self saveDraft];
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];
+    self.dropGeneration++;self.validatingDrop=NO;self.historicalResult=NO;
+    self.freshDropURL=nil;self.freshDropDate=nil;self.dropUID=nil;self.dropName=nil;self.dropDuration=kCMTimeInvalid;
+    self.titlePayloads=nil;self.captionRows=nil;self.resultManifest=nil;self.resultDate=nil;self.resultRequestID=nil;self.resultWasDragged=NO;
+    self.requestID=nil;self.requestSHA=nil;self.requestModelID=nil;self.requestVocabulary=nil;self.requestReferenceSHA=nil;self.lastJobStage=nil;
+    self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceUndone=NO;self.referenceUndoWasOriginal=NO;
+    self.referenceSourceRows=nil;self.referenceSourceResultID=nil;self.referenceProcessingSHA=nil;self.referenceMessage=nil;self.referenceDraft=nil;
+    self.importMessage=nil;self.exportStatus.stringValue=@"";[self.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];
+    self.visibleError=nil;self.jobProgress=nil;self.cloudPhase=nil;self.displayState=@"idle";
+    [self.captionTable reloadData];[self updateInterface];
+}
 - (NSDictionary *)readJSON:(NSURL *)url {
     NSData *data=[NSData dataWithContentsOfURL:url];
     if (!data || data.length>32*1024*1024) return nil;
@@ -662,7 +681,7 @@ static NSDictionary *Time(CMTime t) {
     if (!ok) { [self record:@{@"reason":@"worker-submit",@"status":@"write-failed",@"error":error.localizedDescription ?: @""}]; return; }
     self.jobProgress=nil;self.visibleError=nil;self.requestGeneration=self.dropGeneration; self.requestModelID=self.selectedModelID;self.cancelButton.enabled=YES;
     self.requestID=request; self.requestSHA=sha; self.lastJobStage=nil; self.generateButton.enabled=NO;
-    self.resultLoadAttempted=YES; self.titlePayloads=nil;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;self.referenceUndone=NO;
+    self.resultLoadAttempted=YES; self.titlePayloads=nil;self.resultWasDragged=NO;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;self.referenceUndone=NO;
     [NSUserDefaults.standardUserDefaults setObject:@{@"referenceSHA256":self.requestReferenceSHA,@"vocabulary":self.requestVocabulary,@"requestID":request,@"snapshotSHA":sha,@"modelID":self.selectedModelID,@"projectUID":self.dropUID,@"projectName":self.dropName ?: @"",@"durationValue":@(self.dropDuration.value),@"durationScale":@(self.dropDuration.timescale),@"inputFile":latest.lastPathComponent} forKey:@"pendingSession"];
     [self record:@{@"reason":@"worker-submit",@"status":@"submitted",@"requestID":request,@"snapshotDate":latestDate.description ?: @"",@"source":@"received project snapshot; original capture date retained; edits after capture require another drop"}];
 }
@@ -738,8 +757,10 @@ static NSDictionary *Time(CMTime t) {
                 [self rebuildTitles];
             }
             [self rebuildTitles];
+            if (sameDraft) {self.resultWasDragged=[draft[@"dragged"] boolValue];[self saveDraft];}
             [self.captionTable reloadData]; }
         [self record:@{@"reason":@"worker-result",@"status":self.titlePayloads ? @"ready-to-drag" : @"result-rejected",@"requestID":self.requestID,@"jobID":response[@"jobID"] ?: @""}];
+        if (self.titlePayloads && self.resultWasDragged) self.displayState=@"sent";
         if (!self.titlePayloads) [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.requestID=nil; [self updateInterface];
     } else if ([response[@"status"] isEqual:@"blocked-no-audio"]) {
         self.titlePayloads=nil;
@@ -787,6 +808,7 @@ static NSDictionary *Time(CMTime t) {
 - (void)draggingSession:(NSDraggingSession *)session endedAtPoint:(NSPoint)point operation:(NSDragOperation)operation {
     // A drag operation is not proof that FCP inserted the titles. Keep the result
     // and recovery session available; project observers still invalidate stale input.
+    if (operation!=NSDragOperationNone) self.resultWasDragged=YES;
     [self saveDraft];
     [self record:@{@"reason":@"title-drag-ended",@"operation":@(operation),@"status":@"Host XML readback required; operation alone is not writeback proof"}];
 }
