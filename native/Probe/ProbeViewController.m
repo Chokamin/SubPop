@@ -467,7 +467,7 @@ static NSDictionary *Time(CMTime t) {
     NSDictionary *copy=SubPopPresentation(state); self.statusTitle.stringValue=copy[@"title"]; self.statusDetail.stringValue=copy[@"detail"];
     if ([state isEqual:@"error"] && self.visibleError.length) self.statusDetail.stringValue=self.visibleError;
     if ([state isEqual:@"recognize"] && self.jobProgress) self.statusTitle.stringValue=[NSString stringWithFormat:@"正在识别语音 · %.0f%%",100*self.jobProgress.doubleValue];
-    self.serviceLabel.stringValue=connected ? @"● 本机就绪" : ([[self readJSON:[self.bridgeURL URLByAppendingPathComponent:@"service.json"]][@"status"] isEqual:@"updating"] ? @"正在更新 SubPop" : @"本机未连接");
+    self.serviceLabel.stringValue=connected ? @"● 本机就绪" : ([[self readJSON:[self.bridgeURL URLByAppendingPathComponent:@"service.json"]][@"status"] isEqual:@"updating"] ? @"正在更新 SubPop" : (self.bridgeURL ? @"本机服务未就绪" : @"首次使用 · 点击准备本机识别"));
     self.modelDetail.stringValue=[NSString stringWithFormat:@"%@ · %@ · %@",[self selectedModel][@"description"] ?: @"",[self selectedModelAvailable] ? @"已安装" : @"模型未就绪",[[self selectedModel][@"engine"] isEqual:@"mlx-whisper"] ? @"本机 MLX" : @"本机 CPU"];
     BOOL cloud=[self selectedCloudModel];
     if (cloud) self.modelDetail.stringValue=[NSString stringWithFormat:@"豆包云端 · %@ · 按账户计费",[self selectedModelAvailable] ? @"已配置，尚需有效服务额度" : @"请先配置 API Key"];

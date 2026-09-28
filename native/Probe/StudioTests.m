@@ -54,6 +54,8 @@ int main(int argc,const char *argv[]) {
         SubPopPreviewController *c=[SubPopPreviewController new];
         c.previewCatalog=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:@(argv[1])] options:0 error:nil];
         [c loadView];NSWindow *window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,660,740) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];window.contentView=c.view;
+        [c.view layoutSubtreeIfNeeded];NSRect service=[c.serviceLabel convertRect:c.serviceLabel.bounds toView:c.view];
+        if (!NSContainsRect(c.view.bounds,service)) {NSLog(@"Service action is outside initial viewport: %@ of %@",NSStringFromRect(service),NSStringFromRect(c.view.bounds));return 115;}
         if (c.templatePicker.numberOfItems!=3 || c.templatePicker.indexOfSelectedItem!=SubPopTitleTemplateBasic || ![c.templatePicker.titleOfSelectedItem isEqual:@"普通字幕 · 无底框"]) return 111;
         NSString *initialModel=c.selectedModelID;
         c.selectedModelID=@"doubao-cloud";[c updateInterface];

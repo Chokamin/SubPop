@@ -13,6 +13,8 @@ class NativeBundleTests(unittest.TestCase):
         with (EXT/'Contents/Info.plist').open('rb') as f: info=plistlib.load(f)
         self.assertEqual(info['NSExtension']['NSExtensionPointIdentifier'],'com.apple.FinalCut.WorkflowExtension')
         self.assertEqual(info['NSExtension']['ProExtensionPrincipalViewControllerClass'],'SubPopProbeViewController')
+        self.assertEqual(info['NSExtension']['ProExtensionAttributes'],{'ContentViewMinimumWidth':580,'ContentViewMinimumHeight':740})
+        self.assertNotIn('ProExtensionAttributes',info)
         self.assertTrue((EXT/'Contents/MacOS'/info['CFBundleExecutable']).is_file())
         with (APP/'Contents/Info.plist').open('rb') as f: container=plistlib.load(f)
         self.assertTrue(info['CFBundleIdentifier'].startswith(container['CFBundleIdentifier']+'.'))
