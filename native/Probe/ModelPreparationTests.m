@@ -52,7 +52,7 @@ int main(int argc,const char *argv[]) {
         [NSFileManager.defaultManager createDirectoryAtURL:temporary withIntermediateDirectories:YES attributes:nil error:nil];
         SubPopModelPreparationTests *c=[SubPopModelPreparationTests new];c.testDirectory=temporary;c.bridgeURL=temporary;
         c.testCatalog=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:@(argv[1])] options:0 error:nil];service(c,NO);
-        [c loadView];NSWindow *window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,660,740) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];window.contentView=c.view;
+        [c loadView];NSWindow *window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,660,422) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];window.contentView=c.view;
         check([c.statusTitle.stringValue isEqual:@"准备生成字幕"],@"idle state is not a missing-model error");
         reset(c);check(c.generateButton.enabled && [c.dropTitle.stringValue isEqual:@"首次使用测试"] && [c.statusTitle.stringValue isEqual:@"项目已就绪"],@"project remains ready without model");
         check(!c.modelRequestID && !c.requestID,@"drop does not download or recognize");
@@ -60,6 +60,10 @@ int main(int argc,const char *argv[]) {
         NSAlert *first=c.modelDownloadAlert;[c startWorkerJob:nil];check(c.modelDownloadAlert==first,@"repeated clicks do not stack prompts");
         dismiss(c,NSAlertSecondButtonReturn);check(!c.modelRequestID && c.generateButton.enabled && c.freshDropURL,@"cancel confirmation keeps project and creates no download");
         begin(c);
+        [c.view layoutSubtreeIfNeeded];
+        for(NSView *control in @[c.cancelButton,c.generateButton,c.statusTitle,c.statusDetail,c.activity]) {
+            check(!control.hidden && NSContainsRect(c.view.bounds,[control convertRect:control.bounds toView:c.view]),@"download workflow fits the first-open viewport");
+        }
         NSDictionary *request=[c readJSON:[[temporary URLByAppendingPathComponent:c.modelRequestID] URLByAppendingPathComponent:@"request.json"]];
         check([request[@"kind"] isEqual:@"model"] && [request[@"operation"] isEqual:@"install"] && !request[@"projectUID"],@"model download request contains no project data");
         response(c,@"running",@"downloading",.5);[c pollWorker:nil];

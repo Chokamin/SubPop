@@ -127,6 +127,7 @@
     self.restoreResultButton.hidden=self.titlePayloads || !self.observedProjectUID.length || busy;
     self.referenceActions.hidden=self.referenceUndoButton.hidden && self.restoreResultButton.hidden;
     self.referenceInfo.stringValue=self.referenceRequestID ? @"正在参考脚本整理字幕…" : (self.referenceMessage ?: (script.length ? @"以实际语音为准 · 脚本仅在本机参考" : @"粘贴或导入脚本，辅助纠错与断句"));
+    self.referenceInfo.hidden=!script.length && !self.referenceMessage.length && !self.referenceRequestID;
     if (self.referenceRequestID) {
         self.statusTitle.stringValue=@"正在参考脚本";self.statusDetail.stringValue=@"正在比对已识别的内容，保留现场表达和字幕时间。";
         [self.activity showStage:@"generate-titles" active:YES];

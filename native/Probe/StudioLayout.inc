@@ -14,11 +14,12 @@
     NSDictionary *catalog=[self readJSON:[[NSBundle bundleForClass:self.class] URLForResource:@"models" withExtension:@"json"]];self.modelCatalog=catalog[@"models"] ?: @[];
     self.selectedModelID=[NSUserDefaults.standardUserDefaults stringForKey:@"selectedModelID"] ?: catalog[@"defaultModelID"];
     if (![self.modelCatalog filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"id == %@",self.selectedModelID]].count) self.selectedModelID=catalog[@"defaultModelID"];
-    NSScrollView *page=[[NSScrollView alloc] initWithFrame:self.view.bounds];page.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;page.hasVerticalScroller=YES;page.drawsBackground=NO;[self.view addSubview:page];
+    NSScrollView *page=[NSScrollView new];self.pageScroll=page;page.translatesAutoresizingMaskIntoConstraints=NO;page.hasVerticalScroller=YES;page.autohidesScrollers=YES;page.drawsBackground=NO;[self.view addSubview:page];
     SubPopDocumentView *document=[SubPopDocumentView new];document.translatesAutoresizingMaskIntoConstraints=NO;page.documentView=document;[document.widthAnchor constraintEqualToAnchor:page.contentView.widthAnchor].active=YES;
-    NSStackView *stack=[self column:@[] spacing:16];stack.translatesAutoresizingMaskIntoConstraints=NO;[document addSubview:stack];
+    NSStackView *stack=[self column:@[] spacing:16];self.pageStack=stack;stack.translatesAutoresizingMaskIntoConstraints=NO;[document addSubview:stack];
     NSLayoutConstraint *fluid=[stack.widthAnchor constraintEqualToAnchor:document.widthAnchor constant:-40];fluid.priority=750;fluid.active=YES;
-    [NSLayoutConstraint activateConstraints:@[[stack.centerXAnchor constraintEqualToAnchor:document.centerXAnchor],[stack.widthAnchor constraintLessThanOrEqualToConstant:800],[stack.topAnchor constraintEqualToAnchor:document.topAnchor constant:24],[document.bottomAnchor constraintEqualToAnchor:stack.bottomAnchor constant:24]]];
+    self.pageTopInset=[stack.topAnchor constraintEqualToAnchor:document.topAnchor constant:24];
+    [NSLayoutConstraint activateConstraints:@[[stack.centerXAnchor constraintEqualToAnchor:document.centerXAnchor],[stack.widthAnchor constraintLessThanOrEqualToConstant:800],self.pageTopInset,[document.bottomAnchor constraintEqualToAnchor:stack.bottomAnchor constant:16]]];
     self.signal=[[SubPopSignalView alloc] initWithFrame:NSMakeRect(0,0,38,38)];[self.signal.widthAnchor constraintEqualToConstant:38].active=YES;[self.signal.heightAnchor constraintEqualToConstant:38].active=YES;
     NSTextField *brand=[self label:@"SubPop" size:22 weight:NSFontWeightSemibold];
     NSTextField *subtitle=[self label:@"让字幕跟上你的表达" size:11 weight:NSFontWeightRegular];subtitle.textColor=NSColor.secondaryLabelColor;
@@ -43,10 +44,13 @@
     self.templateControls=[NSStackView stackViewWithViews:@[[self label:@"字幕样式" size:11 weight:NSFontWeightMedium],self.templatePicker,self.tap5aStyleButton,[NSView new],templateHint]];self.templateControls.spacing=10;self.templateControls.alignment=NSLayoutAttributeCenterY;[stack addArrangedSubview:self.templateControls];self.templateControls.hidden=YES;
     SubPopDropView *drop=[[SubPopDropView alloc] initWithFrame:NSMakeRect(0,0,600,96)];drop.controller=self;drop.wantsLayer=YES;
     [drop registerForDraggedTypes:@[@"com.apple.finalcutpro.xml.v1-14",@"com.apple.finalcutpro.xml.v1-13",@"com.apple.finalcutpro.xml.v1-12",@"com.apple.finalcutpro.xml"]];[drop setAccessibilityElement:YES];[drop setAccessibilityRole:NSAccessibilityGroupRole];[drop setAccessibilityLabel:@"导入项目拖放区"];
-    NSImageView *importIcon=[[NSImageView alloc] initWithFrame:NSMakeRect(18,29,34,34)];importIcon.image=[NSImage imageWithSystemSymbolName:@"rectangle.stack.badge.plus" accessibilityDescription:nil];importIcon.contentTintColor=SubPopAccent();[drop addSubview:importIcon];
-    self.dropTitle=[self label:@"把项目拖到这里" size:16 weight:NSFontWeightSemibold];self.dropTitle.frame=NSMakeRect(68,50,510,24);self.dropTitle.autoresizingMask=NSViewWidthSizable;[drop addSubview:self.dropTitle];
-    self.dropDetail=[self label:@"从 Final Cut Pro 浏览器拖入整个项目" size:12 weight:NSFontWeightRegular];self.dropDetail.textColor=NSColor.secondaryLabelColor;self.dropDetail.frame=NSMakeRect(68,22,510,22);self.dropDetail.autoresizingMask=NSViewWidthSizable;[drop addSubview:self.dropDetail];
-    [stack addArrangedSubview:drop];[drop.heightAnchor constraintEqualToConstant:96].active=YES;
+    NSImageView *importIcon=[NSImageView new];importIcon.translatesAutoresizingMaskIntoConstraints=NO;importIcon.image=[NSImage imageWithSystemSymbolName:@"rectangle.stack.badge.plus" accessibilityDescription:nil];importIcon.contentTintColor=SubPopAccent();[drop addSubview:importIcon];
+    self.dropTitle=[self label:@"把项目拖到这里" size:16 weight:NSFontWeightSemibold];self.dropTitle.maximumNumberOfLines=1;self.dropTitle.lineBreakMode=NSLineBreakByTruncatingTail;
+    self.dropDetail=[self label:@"从 Final Cut Pro 浏览器拖入整个项目" size:12 weight:NSFontWeightRegular];self.dropDetail.textColor=NSColor.secondaryLabelColor;
+    NSStackView *dropCopy=[self column:@[self.dropTitle,self.dropDetail] spacing:8];dropCopy.translatesAutoresizingMaskIntoConstraints=NO;[drop addSubview:dropCopy];
+    for(NSView *label in dropCopy.arrangedSubviews) [label.widthAnchor constraintEqualToAnchor:dropCopy.widthAnchor].active=YES;
+    [NSLayoutConstraint activateConstraints:@[[importIcon.leadingAnchor constraintEqualToAnchor:drop.leadingAnchor constant:18],[importIcon.centerYAnchor constraintEqualToAnchor:drop.centerYAnchor],[importIcon.widthAnchor constraintEqualToConstant:34],[importIcon.heightAnchor constraintEqualToConstant:34],[dropCopy.leadingAnchor constraintEqualToAnchor:drop.leadingAnchor constant:68],[dropCopy.trailingAnchor constraintEqualToAnchor:drop.trailingAnchor constant:-18],[dropCopy.centerYAnchor constraintEqualToAnchor:drop.centerYAnchor]]];
+    [stack addArrangedSubview:drop];self.dropHeight=[drop.heightAnchor constraintEqualToConstant:96];self.dropHeight.active=YES;
     self.modelPicker=[[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];self.modelPicker.target=self;self.modelPicker.action=@selector(modelChanged:);[self.modelPicker setAccessibilityLabel:@"识别模型"];
     for (NSDictionary *model in self.modelCatalog) {[self.modelPicker addItemWithTitle:model[@"name"]];self.modelPicker.lastItem.representedObject=model[@"id"];}
     [self.modelPicker selectItemAtIndex:[self.modelCatalog indexOfObjectPassingTest:^BOOL(NSDictionary *m,NSUInteger i,BOOL *stop){return [m[@"id"] isEqual:self.selectedModelID];}]];
@@ -61,12 +65,12 @@
     self.restoreResultButton=[self toolbarButton:@"恢复上次字幕" symbol:@"clock.arrow.circlepath" action:@selector(restoreLastResult:)];self.restoreResultButton.hidden=YES;
     self.referenceActions=[NSStackView stackViewWithViews:@[[NSView new],self.referenceUndoButton,self.restoreResultButton]];self.referenceActions.spacing=10;
     self.referenceInfo=[self label:@"粘贴或导入脚本，辅助纠错与断句" size:11 weight:NSFontWeightRegular];self.referenceInfo.textColor=NSColor.secondaryLabelColor;
-    [stack addArrangedSubview:[self surface:@[selectors,self.modelDetail,rules,self.referenceActions,self.referenceInfo]]];
+    self.settingsCard=[self surface:@[selectors,self.modelDetail,rules,self.referenceActions,self.referenceInfo]];[stack addArrangedSubview:self.settingsCard];
     self.statusTitle=[self label:@"准备生成字幕" size:14 weight:NSFontWeightSemibold];self.statusDetail=[self label:@"" size:12 weight:NSFontWeightRegular];self.statusDetail.textColor=NSColor.secondaryLabelColor;
     NSStackView *statusLine=[NSStackView stackViewWithViews:@[self.statusTitle,[NSView new]]];statusLine.alignment=NSLayoutAttributeCenterY;
     self.activity=[[SubPopActivityView alloc] initWithFrame:NSMakeRect(0,0,520,56)];[self.activity.heightAnchor constraintEqualToConstant:56].active=YES;
     self.jobBar=[[NSProgressIndicator alloc] initWithFrame:NSZeroRect];self.jobBar.indeterminate=NO;self.jobBar.minValue=0;self.jobBar.maxValue=1;self.jobBar.style=NSProgressIndicatorStyleBar;[self.jobBar.heightAnchor constraintEqualToConstant:5].active=YES;self.jobBar.hidden=YES;
-    [stack addArrangedSubview:[self surface:@[statusLine,self.statusDetail,self.activity,self.jobBar]]];
+    self.statusCard=[self surface:@[statusLine,self.statusDetail,self.activity,self.jobBar]];[stack addArrangedSubview:self.statusCard];
     self.captionCount=[self label:@"字幕预览" size:13 weight:NSFontWeightSemibold];self.reviewToggle=[self toolbarButton:@"展开预览与样式 ▾" symbol:@"text.alignleft" action:@selector(toggleReview:)];
     self.reviewHeader=[NSStackView stackViewWithViews:@[self.captionCount,[NSView new],self.reviewToggle]];[stack addArrangedSubview:self.reviewHeader];self.reviewHeader.hidden=YES;
     self.captionTable=[NSTableView new];self.captionTable.rowHeight=36;self.captionTable.intercellSpacing=NSMakeSize(10,4);self.captionTable.usesAlternatingRowBackgroundColors=NO;self.captionTable.backgroundColor=[NSColor colorWithCalibratedWhite:.09 alpha:1];self.captionTable.dataSource=self;self.captionTable.delegate=self;
@@ -79,10 +83,35 @@
 
     self.serviceLabel=[self label:@"正在连接" size:11 weight:NSFontWeightRegular];self.cancelButton=[self toolbarButton:@"取消" symbol:@"xmark" action:@selector(cancelJob:)];
     self.generateButton=[NSButton buttonWithTitle:@"生成字幕" target:self action:@selector(primaryAction:)];self.generateButton.bezelStyle=NSBezelStyleRounded;self.generateButton.controlSize=NSControlSizeLarge;self.generateButton.keyEquivalent=@"\r";self.generateButton.bezelColor=SubPopAccent();[self.generateButton.widthAnchor constraintEqualToConstant:148].active=YES;[self.generateButton.heightAnchor constraintEqualToConstant:36].active=YES;
-    NSStackView *actions=[NSStackView stackViewWithViews:@[self.serviceLabel,[NSView new],self.cancelButton,self.generateButton]];actions.alignment=NSLayoutAttributeCenterY;actions.spacing=12;[stack addArrangedSubview:actions];
-    self.scopeLabel=[self label:@"音频留在本机  ·  字幕回到你的时间线" size:10 weight:NSFontWeightRegular];self.scopeLabel.textColor=NSColor.tertiaryLabelColor;[stack addArrangedSubview:self.scopeLabel];
-    NSView *bottomSpacer=[NSView new];[stack addArrangedSubview:bottomSpacer];
-    [bottomSpacer.heightAnchor constraintGreaterThanOrEqualToConstant:0].active=YES;
+    NSStackView *actions=[NSStackView stackViewWithViews:@[self.serviceLabel,[NSView new],self.cancelButton,self.generateButton]];actions.alignment=NSLayoutAttributeCenterY;actions.spacing=12;
+    self.scopeLabel=[self label:@"音频留在本机  ·  字幕回到你的时间线" size:10 weight:NSFontWeightRegular];self.scopeLabel.textColor=NSColor.tertiaryLabelColor;
+    // The host can open a new extension version at half its main-window size.
+    // Keep the primary action outside the scrolling document at every height.
+    NSStackView *footer=[self column:@[actions,self.scopeLabel] spacing:8];footer.translatesAutoresizingMaskIntoConstraints=NO;footer.edgeInsets=NSEdgeInsetsMake(12,0,16,0);[self.view addSubview:footer];
+    for(NSView *row in footer.arrangedSubviews) [row.widthAnchor constraintEqualToAnchor:footer.widthAnchor].active=YES;
+    NSLayoutConstraint *footerWidth=[footer.widthAnchor constraintEqualToAnchor:self.view.widthAnchor constant:-40];footerWidth.priority=750;footerWidth.active=YES;
+    [NSLayoutConstraint activateConstraints:@[[footer.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],[footer.widthAnchor constraintLessThanOrEqualToConstant:800],[footer.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],[page.topAnchor constraintEqualToAnchor:self.view.topAnchor],[page.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],[page.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],[page.bottomAnchor constraintEqualToAnchor:footer.topAnchor]]];
     for (NSView *row in stack.arrangedSubviews) [row.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active=YES;
     self.output=[[NSTextView alloc] initWithFrame:NSMakeRect(0,0,520,300)];self.output.editable=NO;self.output.font=[NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightRegular];self.displayState=@"idle";[self updateInterface];
+}
+- (void)updateViewportLayout {
+    BOOL compact=self.view.bounds.size.height<600;
+    if(compact!=self.compactLayout) {
+        self.compactLayout=compact;
+        self.pageStack.spacing=compact ? 10 : 16;
+        self.pageTopInset.constant=compact ? 16 : 24;
+        self.dropHeight.constant=compact ? 72 : 96;
+        self.settingsCard.spacing=compact ? 8 : 12;
+        self.settingsCard.edgeInsets=compact ? NSEdgeInsetsMake(12,16,12,16) : NSEdgeInsetsMake(16,16,16,16);
+    }
+    BOOL busy=self.requestID || self.referenceRequestID || self.pendingRecognition;
+    NSString *state=self.lastVisualState ?: self.displayState;
+    BOOL connected=[self workerAvailable];
+    // During processing, the current phase takes priority over locked settings.
+    self.settingsCard.hidden=compact && (busy || !connected || [state isEqual:@"preparing"]);
+    self.statusCard.hidden=compact && connected && !busy && !self.titlePayloads && ([state isEqual:@"idle"] || [state isEqual:@"input"]);
+}
+- (void)viewDidLayout {
+    [super viewDidLayout];
+    if((self.view.bounds.size.height<600)!=self.compactLayout) [self updateViewportLayout];
 }

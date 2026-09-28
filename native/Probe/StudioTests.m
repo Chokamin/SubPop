@@ -62,6 +62,27 @@ int main(int argc,const char *argv[]) {
         if (![c.scopeLabel.stringValue containsString:@"上传音频"] || ![c.modelDetail.stringValue containsString:@"云端"]) return 100;
         c.selectedModelID=initialModel;[c updateInterface];
         if (![c.scopeLabel.stringValue containsString:@"留在本机"]) return 101;
+        // FCP starts each newly installed version at half the main window height.
+        // Reproduce its 450pt outer window (422pt content), including the restore row.
+        for(NSNumber *width in @[@580,@756]) {
+            c.observedProjectUID=@"viewport-test";
+            [window setContentSize:NSMakeSize(width.doubleValue,422)];[c updateInterface];[c.view layoutSubtreeIfNeeded];
+            for(NSView *control in @[c.generateButton,c.serviceLabel,c.scopeLabel,c.modelPicker,c.audioPicker,c.restoreResultButton,c.dropTitle,c.dropDetail]) {
+                NSRect rect=[control convertRect:control.bounds toView:c.view];
+                if(!NSContainsRect(c.view.bounds,rect)) {NSLog(@"Initial control clipped: %@ %@",control,NSStringFromRect(rect));return 116;}
+            }
+            NSRect settings=[c.settingsCard convertRect:c.settingsCard.bounds toView:c.pageScroll.contentView];
+            if(!NSContainsRect(c.pageScroll.contentView.bounds,settings)) {NSLog(@"Settings need scrolling: %@ %@",NSStringFromRect(settings),NSStringFromRect(c.pageScroll.contentView.bounds));return 117;}
+            c.requestID=@"viewport-job";c.displayState=@"recognize";c.jobProgress=@.42;[c updateInterface];[c.view layoutSubtreeIfNeeded];
+            for(NSView *control in @[c.cancelButton,c.generateButton,c.activity,c.jobBar]) {
+                NSRect rect=[control convertRect:control.bounds toView:c.view];
+                if(control.hidden || !NSContainsRect(c.view.bounds,rect)) {NSLog(@"Processing control clipped: %@",control);return 118;}
+            }
+            if(!c.settingsCard.hidden || c.statusCard.hidden) return 119;
+            c.requestID=nil;c.displayState=@"idle";c.jobProgress=nil;c.observedProjectUID=nil;[c updateInterface];
+        }
+        [window setContentSize:NSMakeSize(660,740)];[c updateInterface];[c.view layoutSubtreeIfNeeded];
+        if(c.compactLayout || c.settingsCard.hidden || c.statusCard.hidden) return 120;
         if (getenv("SUBPOP_ACTIVITY_PREVIEW")) {
             c.requestID=@"preview";c.displayState=@"recognize";c.jobProgress=@.42;[c updateInterface];
             window.title=@"SubPop · 识别动效预览";[window makeKeyAndOrderFront:nil];[NSApp activateIgnoringOtherApps:YES];[NSApp run];return 0;
@@ -80,8 +101,14 @@ int main(int argc,const char *argv[]) {
                 [[image representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:@"/tmp/subpop-ready-preview.png" atomically:YES];
             }
             NSRect result=[c.resultView convertRect:c.resultView.bounds toView:c.view];
-            if (NSMinY(result)<0 || NSMaxY(result)>c.view.bounds.size.height) return 7;
+            if (NSMinY(result)<0 || NSMaxY(result)>c.view.bounds.size.height) {NSLog(@"Result card clipped at width %@: %@ in %@",width,NSStringFromRect(result),NSStringFromRect(c.view.bounds));return 7;}
             [c toggleReview:nil];if (c.captionScroll.hidden || c.editorControls.hidden) return 8;
+            [c.view layoutSubtreeIfNeeded];
+            [c.editorControls scrollRectToVisible:c.editorControls.bounds];
+            for(NSView *control in @[c.generateButton,c.scopeLabel]) {
+                if(!NSContainsRect(c.view.bounds,[control convertRect:control.bounds toView:c.view])) return 121;
+            }
+            [c.pageScroll.documentView scrollPoint:NSZeroPoint];
             [c toggleReview:nil];if (!c.captionScroll.hidden || !c.editorControls.hidden) return 9;
             [c.templatePicker selectItemAtIndex:SubPopTitleTemplateTap5a];[c updateInterface];
             if (![c usesFileImport] || ![c.resultView.accessibilityRole isEqual:NSAccessibilityButtonRole] || ![c.resultView.accessibilityLabel isEqual:@"导入字幕到 Final Cut Pro"] || !c.resultView.enabled) return 13;
@@ -194,6 +221,6 @@ int main(int argc,const char *argv[]) {
         [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.1]];
         if ([c.tap5aStyle[@"roundness"] doubleValue]!=30) return 27;
         [NSUserDefaults.standardUserDefaults removeObjectForKey:@"tap5aStylePreset"];
-        puts("Studio layout: 580/800/1100 widths, 616-row editor, progress, cancellation and waveform start/stop passed.");return 0;
+        puts("Studio layout: 422pt first-open content, fixed footer, 580/756/800/1100 widths, large editor, progress, cancellation and waveform start/stop passed.");return 0;
     }
 }

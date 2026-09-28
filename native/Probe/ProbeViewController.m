@@ -55,6 +55,13 @@ static NSDictionary *Time(CMTime t) {
 @property NSString *requestSHA;
 @property NSString *lastJobStage;
 @property NSButton *generateButton;
+@property NSScrollView *pageScroll;
+@property NSStackView *pageStack;
+@property NSStackView *settingsCard;
+@property NSStackView *statusCard;
+@property NSLayoutConstraint *pageTopInset;
+@property NSLayoutConstraint *dropHeight;
+@property BOOL compactLayout;
 @property NSTextField *statusTitle;
 @property NSTextField *statusDetail;
 @property NSTextField *serviceLabel;
@@ -497,13 +504,13 @@ static NSDictionary *Time(CMTime t) {
     self.exportStatus.hidden=!hasRows || !self.exportStatus.stringValue.length;
     self.captionCount.stringValue=[NSString stringWithFormat:@"字幕预览  ·  %lu 条",(unsigned long)self.captionRows.count];
     self.reviewToggle.title=self.reviewExpanded ? @"收起预览与样式 ▴" : @"展开预览与样式 ▾";
-    if (newlyReady) {SubPopReveal(self.resultView);[self.view layoutSubtreeIfNeeded];[self.resultView scrollRectToVisible:self.resultView.bounds];}
     self.jobBar.hidden=!(busy && [state isEqual:@"recognize"] && self.jobProgress);
     if (!self.jobBar.hidden) self.jobBar.doubleValue=self.jobProgress.doubleValue;
     [self.signal setWorking:managing && !busy && !preparing];
     [self.activity showStage:state active:busy || preparing];
     if (hasRows && [self.resultManifest[@"reviewWarnings"] count]) self.statusDetail.stringValue=[NSString stringWithFormat:@"已自动整理 · %lu 段时间需校对，保留原断句 · 拖回后可逐句编辑",(unsigned long)[self.resultManifest[@"reviewWarnings"] count]];
-    if (self.lastVisualState && ![self.lastVisualState isEqual:state]) SubPopReveal(self.statusTitle);
+    BOOL stageChanged=self.lastVisualState && ![self.lastVisualState isEqual:state];
+    if (stageChanged) SubPopReveal(self.statusTitle);
     self.lastVisualState=state;
     [self updateModelPreparationInterface];
 
@@ -523,6 +530,11 @@ static NSDictionary *Time(CMTime t) {
     [self.resultView setAccessibilityRole:fileImport ? NSAccessibilityButtonRole : NSAccessibilityGroupRole];
     [self.resultView setAccessibilityLabel:ready ? (fileImport ? @"导入字幕到 Final Cut Pro" : @"拖回字幕到 Final Cut Pro") : @"请先打开原项目时间线"];
     [self updateReferenceInterface];
+    [self updateViewportLayout];
+    if (newlyReady) {SubPopReveal(self.resultView);[self.view layoutSubtreeIfNeeded];[self.resultView scrollRectToVisible:self.resultView.bounds];}
+    else if (self.compactLayout && stageChanged && !self.statusCard.hidden) {
+        [self.view layoutSubtreeIfNeeded];[self.statusCard scrollRectToVisible:self.statusCard.bounds];
+    }
     [self.resultView.window invalidateCursorRectsForView:self.resultView];[self.resultView setNeedsDisplay:YES];
 }
 - (void)toggleReview:(id)sender { self.reviewExpanded=!self.reviewExpanded;[self updateInterface]; }
