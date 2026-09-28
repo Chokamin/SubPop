@@ -5,12 +5,26 @@
 @property NSURL *testDirectory;
 @property NSDictionary *testCatalog;
 @property BOOL disconnected;
+@property NSUInteger hostReadCount;
+@property NSUInteger unavailableHostReads;
+@property NSString *hostProjectUID;
+@property BOOL switchDuringHostRead;
 @end
 @implementation SubPopModelPreparationTests
 - (NSDictionary *)readJSON:(NSURL *)url { return url ? [super readJSON:url] : self.testCatalog; }
 - (NSURL *)evidenceDirectory { return self.testDirectory; }
 - (BOOL)workerAvailable { return !self.disconnected; }
 - (void)restoreSession {}
+- (void)snapshot:(NSString *)reason {
+    self.hostReadCount++;
+    self.observed=YES;
+    if (self.unavailableHostReads) {
+        self.unavailableHostReads--;self.observedProjectUID=nil;self.observedProjectDuration=kCMTimeInvalid;
+    } else {
+        self.observedProjectUID=self.hostProjectUID ?: @"model-test";self.observedProjectDuration=CMTimeMake(8,1);
+    }
+    if (self.switchDuringHostRead) {self.switchDuringHostRead=NO;[self activeSequenceChanged];}
+}
 @end
 static void check(BOOL ok,NSString *message) { if (!ok) {NSLog(@"Model preparation regression: %@",message);exit(1);} }
 static void save(NSURL *url,NSDictionary *value) {
@@ -19,11 +33,20 @@ static void save(NSURL *url,NSDictionary *value) {
 static void service(SubPopModelPreparationTests *c,BOOL installed) {
     save([c.bridgeURL URLByAppendingPathComponent:@"service.json"],@{@"models":@[@{@"id":@"qwen3-asr-0.6b",@"installed":@(installed)}]});
 }
-static void drop(SubPopModelPreparationTests *c) {
+static void settleDrop(SubPopModelPreparationTests *c) {
+    NSDate *deadline=[NSDate dateWithTimeIntervalSinceNow:3];
+    while(c.validatingDrop && deadline.timeIntervalSinceNow>0) [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.02]];
+    check(!c.validatingDrop,@"drop validation finishes within bounded retries");
+}
+static void receiveDrop(SubPopModelPreparationTests *c) {
     NSPasteboard *board=[NSPasteboard pasteboardWithUniqueName];
     [board setString:@"<fcpxml><project uid='model-test' name='首次使用测试'><sequence><bookmark>private</bookmark></sequence></project></fcpxml>" forType:@"com.apple.finalcutpro.xml.v1-14"];
+    NSUInteger reads=c.hostReadCount;
     check([c receivePasteboard:board],@"missing model must accept a valid project");[board releaseGlobally];
+    check(c.validatingDrop && !c.generateButton.enabled && ![c isolatedProjectActive],@"received input is held until identity validation");
+    check(c.hostReadCount==reads,@"drag callback must never synchronously query FCP");
 }
+static void drop(SubPopModelPreparationTests *c) {receiveDrop(c);settleDrop(c);}
 static void response(SubPopModelPreparationTests *c,NSString *status,NSString *stage,double progress) {
     save([[c.bridgeURL URLByAppendingPathComponent:c.modelRequestID] URLByAppendingPathComponent:@"response.json"],
         @{@"requestID":c.modelRequestID,@"modelID":@"qwen3-asr-0.6b",@"operation":@"install",@"status":status,@"stage":stage,@"progress":@(progress),@"completedBytes":@(progress*1000000000),@"totalBytes":@1000000000,@"error":@"测试网络中断"});
@@ -54,6 +77,25 @@ int main(int argc,const char *argv[]) {
         c.testCatalog=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:@(argv[1])] options:0 error:nil];service(c,NO);
         [c loadView];NSWindow *window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,660,422) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];window.contentView=c.view;
         check([c.statusTitle.stringValue isEqual:@"准备生成字幕"],@"idle state is not a missing-model error");
+        // Exercise host reads separately from the drag callback. The SDK is mocked,
+        // but AppKit receives the pasteboard and runs the actual deferred callbacks.
+        c.timeline=(FCPXTimeline *)[NSObject new];c.unavailableHostReads=1;
+        reset(c);check(c.hostReadCount==2 && c.generateButton.enabled,@"transient empty host identity retries and accepts the same drop");
+        c.unavailableHostReads=3;drop(c);
+        check(c.freshDropURL && [c.displayState isEqual:@"project-unavailable"] && [c.generateButton.title isEqual:@"重新确认项目"] && c.generateButton.enabled,@"host timeout preserves the received project with an inline retry");
+        [c audioChanged:nil];
+        check([c.generateButton.title isEqual:@"重新确认项目"] && c.generateButton.enabled && [c.statusTitle.stringValue isEqual:@"项目已收到"],@"changing an option preserves identity recovery instead of hiding retry");
+        [c primaryAction:nil];settleDrop(c);check(c.generateButton.enabled && [c.displayState isEqual:@"input"] && !c.requestID,@"retry validates preserved input without another drag or automatic recognition");
+        c.hostProjectUID=@"different-project";drop(c);
+        check(!c.freshDropURL && [c.displayState isEqual:@"project-mismatch"] && !c.generateButton.enabled,@"wrong active project is still rejected");
+        c.hostProjectUID=nil;receiveDrop(c);NSUInteger oldGeneration=c.dropGeneration;receiveDrop(c);settleDrop(c);
+        check(c.dropGeneration==oldGeneration+1 && [c.displayState isEqual:@"input"],@"late validation of an older drop cannot consume the newer drop");
+        receiveDrop(c);c.switchDuringHostRead=YES;settleDrop(c);
+        check(!c.freshDropURL && !c.requestID,@"project change during host read invalidates deferred work");
+        receiveDrop(c);c.timeline=nil;[c viewWillDisappear];
+        [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.2]];
+        check(!c.freshDropURL && !c.validatingDrop,@"closing the panel cannot resurrect a pending drop");
+        c.bridgeURL=temporary;
         reset(c);check(c.generateButton.enabled && [c.dropTitle.stringValue isEqual:@"首次使用测试"] && [c.statusTitle.stringValue isEqual:@"项目已就绪"],@"project remains ready without model");
         check(!c.modelRequestID && !c.requestID,@"drop does not download or recognize");
         [c startWorkerJob:nil];check([c.modelDownloadAlert.informativeText containsString:@"3.72 GB"],@"first Qwen download includes aligner size");
@@ -98,6 +140,7 @@ int main(int argc,const char *argv[]) {
         [window orderOut:nil];
         for (NSString *key in @[@"modelRequestID",@"pendingSession"]) [NSUserDefaults.standardUserDefaults removeObjectForKey:key];
         [NSFileManager.defaultManager removeItemAtURL:temporary error:nil];
+        puts("Drop validation: deferred host reads, bounded retry, preserved input, project mismatch, newer drop, reentrant project change and closure passed.");
         puts("Model preparation: accepted drop, confirmation, progress, cancellation, retry, verified auto-start, stale input/project rejection, disconnect and closure passed.");
     }return 0;
 }

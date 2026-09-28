@@ -47,6 +47,8 @@ static NSDictionary *Time(CMTime t) {
 @property NSDate *freshDropDate;
 @property NSDate *resultDate;
 @property NSUInteger dropGeneration;
+@property BOOL validatingDrop;
+@property NSUInteger dropValidationAttempts;
 @property NSUInteger requestGeneration;
 @property NSURL *bridgeURL;
 @property BOOL bridgeScoped;
@@ -433,7 +435,12 @@ static NSDictionary *Time(CMTime t) {
     if (![self.titlePayloads isEqual:updated]) self.importMessage=nil;
     self.titlePayloads=updated;self.exportStatus.stringValue=@"";[self.captionTable reloadData];[self saveDraft];[self updateInterface];
 }
-- (void)primaryAction:(id)sender { if (![self workerAvailable]) [self connectWorker:sender]; else [self startWorkerJob:sender]; }
+- (BOOL)dropNeedsValidation { return self.freshDropURL && self.dropUID.length && !CMTIME_IS_NUMERIC(self.dropDuration); }
+- (void)primaryAction:(id)sender {
+    if (self.validatingDrop) return;
+    if ([self dropNeedsValidation]) {[self beginDropValidation];[self updateInterface];return;}
+    if (![self workerAvailable]) [self connectWorker:sender]; else [self startWorkerJob:sender];
+}
 - (void)showDiagnostics:(id)sender {
     if (!self.diagnostics) {
         self.diagnostics=[NSPopover new]; self.diagnostics.behavior=NSPopoverBehaviorTransient;
@@ -450,7 +457,7 @@ static NSDictionary *Time(CMTime t) {
 - (void)consumeUIEvent:(NSDictionary *)event {
     NSString *reason=event[@"reason"], *status=event[@"status"];
     if ([event[@"error"] isKindOfClass:NSString.class]) self.visibleError=event[@"error"];
-    if ([reason isEqual:@"drop"]) self.displayState=self.freshDropURL ? @"input" : @"invalid-input";
+    if ([reason isEqual:@"drop"]) self.displayState=self.validatingDrop ? @"validating-input" : (self.freshDropURL ? @"input" : @"invalid-input");
     else if ([reason isEqual:@"activeSequenceChanged"]) self.displayState=@"idle";
     else if ([reason isEqual:@"worker-connect"]) self.displayState=[status isEqual:@"connected"] ? (self.freshDropURL ? @"input" : @"idle") : ([status isEqual:@"wrong-directory"] ? @"wrong-directory" : @"disconnected");
     else if ([reason isEqual:@"worker-submit"]) self.displayState=[status isEqual:@"submitted"] ? @"validate" : ([status isEqual:@"fresh-project-drop-required"] ? @"expired" : @"error");
@@ -474,7 +481,9 @@ static NSDictionary *Time(CMTime t) {
     if ([state isEqual:@"preparing"] && self.engineLaunchDate && -self.engineLaunchDate.timeIntervalSinceNow>20) { self.displayState=@"setup-needed"; state=self.displayState; }
     if ([state isEqual:@"disconnected"] && connected) state=fresh ? @"input" : @"idle";
     if ([state isEqual:@"idle"] && !connected) state=@"disconnected";
-    if (fresh && !self.requestID && ![self isolatedProjectActive]) state=@"inactive";
+    BOOL awaitingProject=self.validatingDrop || [self dropNeedsValidation];
+    if (awaitingProject) state=self.validatingDrop ? @"validating-input" : @"project-unavailable";
+    if (fresh && !self.requestID && !awaitingProject && ![self isolatedProjectActive]) state=@"inactive";
     NSDictionary *copy=SubPopPresentation(state); self.statusTitle.stringValue=copy[@"title"]; self.statusDetail.stringValue=copy[@"detail"];
     if ([state isEqual:@"error"] && self.visibleError.length) self.statusDetail.stringValue=self.visibleError;
     if ([state isEqual:@"recognize"] && self.jobProgress) self.statusTitle.stringValue=[NSString stringWithFormat:@"正在识别语音 · %.0f%%",100*self.jobProgress.doubleValue];
@@ -486,11 +495,12 @@ static NSDictionary *Time(CMTime t) {
     if (cloud && self.requestID && [state isEqual:@"recognize"]) self.statusDetail.stringValue=@{@"uploading":@"正在向豆包上传音频…",@"queued":@"音频已提交，正在等待云端处理…",@"processing":@"豆包 2.0 正在识别音频，完成后在本机整理字幕。"}[self.cloudPhase ?: @""] ?: @"正在提交音频，完成后在本机整理字幕。";
     self.serviceLabel.textColor=connected ? NSColor.systemGreenColor : NSColor.secondaryLabelColor;
     self.dropTitle.stringValue=fresh ? (self.dropName ?: @"项目已导入") : @"把项目拖到这里";
-    self.dropDetail.stringValue=fresh ? [NSString stringWithFormat:@"%02ld:%02ld · 整个项目 · 修改时间线后请重新拖入",(long)(CMTimeGetSeconds(self.dropDuration)/60),(long)CMTimeGetSeconds(self.dropDuration)%60] : @"从 Final Cut Pro 浏览器拖入整个项目";
+    self.dropDetail.stringValue=!fresh ? @"从 Final Cut Pro 浏览器拖入整个项目" : (awaitingProject ? @"项目已收到 · 等待确认当前时间线" : [NSString stringWithFormat:@"%02ld:%02ld · 整个项目 · 修改时间线后请重新拖入",(long)(CMTimeGetSeconds(self.dropDuration)/60),(long)CMTimeGetSeconds(self.dropDuration)%60]);
     BOOL busy=self.requestID!=nil || self.referenceRequestID!=nil || self.pendingRecognition!=nil;BOOL managing=[self modelOperationBusy];
     BOOL preparing=[state isEqual:@"preparing"];
     self.generateButton.title=preparing ? @"正在准备…" : (busy ? @"正在处理…" : (connected ? (self.titlePayloads ? @"重新识别" : @"生成字幕") : @"准备本机识别"));
     self.generateButton.enabled=(!connected || !managing || [self selectedModelDownloadInProgress]) && !self.modelDownloadAlert && !preparing && !busy && (!connected || (fresh && [self isolatedProjectActive]));
+    if (awaitingProject) {self.generateButton.title=self.validatingDrop ? @"正在确认项目…" : @"重新确认项目";self.generateButton.enabled=!self.validatingDrop && fresh && !busy;}
     self.vocabularyButton.enabled=!busy;self.vocabularyButton.title=[NSString stringWithFormat:@"词库 · %lu",(unsigned long)[self effectiveVocabulary].count];
     self.modelPicker.enabled=!busy && !managing;self.audioPicker.enabled=!busy;self.cancelButton.hidden=!busy;
     BOOL hasRows=self.titlePayloads && self.captionRows.count;
@@ -550,6 +560,7 @@ static NSDictionary *Time(CMTime t) {
     return sha;
 }
 - (BOOL)isolatedProjectActive {
+    if (self.validatingDrop) return NO;
     CMTime duration=self.observedProjectDuration;
     return self.observed && self.dropUID.length && [self.dropUID isEqual:self.observedProjectUID] && CMTIME_IS_NUMERIC(duration) && CMTimeCompare(duration,self.dropDuration)==0;
 }
@@ -789,6 +800,7 @@ static NSDictionary *Time(CMTime t) {
     [self restoreBridge];
 }
 - (void)viewWillDisappear {
+    self.validatingDrop=NO;
     [self clearPendingRecognition];
     [self.updatesPanel close];
     [self.activity.wave setWorking:NO];
@@ -874,7 +886,7 @@ static NSDictionary *Time(CMTime t) {
     }
     [self record:result];
 }
-- (void)activeSequenceChanged { [self clearPendingRecognition];self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;self.freshDropURL=nil; self.titlePayloads=nil; self.dropGeneration++; self.observed=YES; [self snapshot:@"activeSequenceChanged"]; }
+- (void)activeSequenceChanged { self.validatingDrop=NO;[self clearPendingRecognition];self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;self.freshDropURL=nil; self.titlePayloads=nil; self.dropGeneration++; self.observed=YES; [self snapshot:@"activeSequenceChanged"]; }
 - (void)sequenceTimeRangeChanged { self.observed=YES; [self snapshot:@"sequenceTimeRangeChanged"]; }
 - (void)playheadTimeChanged {
     // Captions are anchored to the whole project, never to the playhead.
@@ -882,7 +894,6 @@ static NSDictionary *Time(CMTime t) {
     if (!self.observed) { self.observed=YES; [self snapshot:@"initialPlayheadState"]; }
 }
 - (void)validateDroppedProject {
-    if (self.timeline) [self snapshot:@"drop-state-refresh"];
     NSError *error=nil;
     NSData *data=[NSData dataWithContentsOfURL:self.freshDropURL options:0 error:&error];
     NSXMLDocument *doc=data ? [[NSXMLDocument alloc] initWithData:data options:NSXMLNodeLoadExternalEntitiesNever error:&error] : nil;
@@ -894,6 +905,39 @@ static NSDictionary *Time(CMTime t) {
     [self record:@{@"reason":@"drop-validation",@"projectCount":@(projects.count),@"inputUID":inputUID ?: @"",@"activeUID":activeUID ?: @"",@"duration":Time(duration),@"accepted":@(valid),@"error":error.localizedDescription ?: @""}];
     if (!valid) { self.freshDropURL=nil;self.freshDropDate=nil; }
     else { self.dropName=[projects[0] attributeForName:@"name"].stringValue;self.dropUID=inputUID.copy;self.dropDuration=duration; }
+}
+- (BOOL)beginDropValidation {
+    NSData *data=[NSData dataWithContentsOfURL:self.freshDropURL];
+    NSXMLDocument *doc=data ? [[NSXMLDocument alloc] initWithData:data options:NSXMLNodeLoadExternalEntitiesNever error:nil] : nil;
+    NSArray *projects=[doc nodesForXPath:@"/fcpxml/project | /fcpxml/library/event/project" error:nil];
+    NSString *uid=projects.count==1 ? [projects[0] attributeForName:@"uid"].stringValue : nil;
+    if (!uid.length) {self.validatingDrop=NO;self.freshDropURL=nil;self.freshDropDate=nil;self.displayState=@"invalid-input";return NO;}
+    self.dropName=[projects[0] attributeForName:@"name"].stringValue;self.dropUID=uid.copy;self.dropDuration=kCMTimeInvalid;
+    self.validatingDrop=YES;self.dropValidationAttempts=0;self.displayState=@"validating-input";
+    // FCP waits for performDragOperation: to return. Its synchronous SDK reads
+    // time out inside that callback, so only query it after drag tracking ends.
+    [self performSelector:@selector(finishDropValidation:) withObject:@(self.dropGeneration) afterDelay:.1 inModes:@[NSDefaultRunLoopMode]];
+    return YES;
+}
+- (void)finishDropValidation:(NSNumber *)generation {
+    if (!self.validatingDrop || generation.unsignedIntegerValue!=self.dropGeneration || !self.freshDropURL) return;
+    self.dropValidationAttempts++;
+    if (self.timeline) [self snapshot:@"drop-state-refresh"];
+    // SDK reads can deliver observer callbacks while servicing the host reply.
+    if (!self.validatingDrop || generation.unsignedIntegerValue!=self.dropGeneration || !self.freshDropURL) return;
+    if (!self.observed || !self.observedProjectUID.length || !CMTIME_IS_NUMERIC(self.observedProjectDuration)) {
+        if (self.dropValidationAttempts<3) {
+            [self performSelector:@selector(finishDropValidation:) withObject:generation afterDelay:.25*self.dropValidationAttempts inModes:@[NSDefaultRunLoopMode]];
+        } else {
+            self.validatingDrop=NO;self.displayState=@"project-unavailable";
+            [self record:@{@"reason":@"drop-validation-unavailable",@"attempts":@(self.dropValidationAttempts),@"inputPreserved":@YES}];
+        }
+        return;
+    }
+    self.validatingDrop=NO;
+    [self validateDroppedProject];
+    self.displayState=self.freshDropURL ? @"input" : @"project-mismatch";
+    [self updateInterface];
 }
 - (void)recheckLastDrop:(id)sender {
     if (self.requestID || self.titlePayloads) return;
@@ -911,9 +955,8 @@ static NSDictionary *Time(CMTime t) {
     for (NSDictionary *item in last[@"xml"]) if ([item[@"saved"] boolValue] && (!file || [item[@"type"] isEqual:@"com.apple.finalcutpro.xml.v1-14"])) file=item[@"file"];
     if (![file hasPrefix:@"drop-"] || ![file.lastPathComponent isEqual:file]) return;
     self.freshDropURL=[[self evidenceDirectory] URLByAppendingPathComponent:file];self.freshDropDate=date;self.dropGeneration++;
-    [self validateDroppedProject];
-    self.displayState=self.freshDropURL ? @"input" : @"invalid-input";
-    [self record:@{@"reason":@"recheck-real-drop",@"originalRecordedAt":lastDate,@"accepted":@(self.freshDropURL!=nil)}];
+    BOOL received=[self beginDropValidation];
+    [self record:@{@"reason":@"recheck-real-drop",@"originalRecordedAt":lastDate,@"received":@(received),@"validationPending":@(self.validatingDrop)}];
     [self.diagnostics close];[self updateInterface];
 }
 - (BOOL)receivePasteboard:(NSPasteboard *)pasteboard {
@@ -921,7 +964,7 @@ static NSDictionary *Time(CMTime t) {
     [self clearPendingRecognition];
     self.historicalResult=NO;
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];
-    self.freshDropURL=nil; self.freshDropDate=nil; self.titlePayloads=nil; self.resultDate=nil; self.dropGeneration++;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
+    self.validatingDrop=NO;self.freshDropURL=nil; self.freshDropDate=nil; self.titlePayloads=nil; self.resultDate=nil; self.dropGeneration++;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
     NSMutableArray *saved = [NSMutableArray new];
     for (NSPasteboardType type in pasteboard.types) {
         if (![type hasPrefix:@"com.apple.finalcutpro.xml"]) continue;
@@ -934,7 +977,7 @@ static NSDictionary *Time(CMTime t) {
         if (ok && (!self.freshDropURL || [type isEqual:@"com.apple.finalcutpro.xml.v1-14"])) { self.freshDropURL=url; self.freshDropDate=NSDate.date; }
         [saved addObject:@{@"type":type,@"bytes":@(data.length),@"saved":@(ok),@"file":name,@"error":error.localizedDescription ?: @""}];
     }
-    if (self.freshDropURL) [self validateDroppedProject];
+    if (self.freshDropURL) [self beginDropValidation];
     [self record:@{@"reason":@"drop",@"types":pasteboard.types ?: @[],@"xml":saved}];
     return self.freshDropURL!=nil;
 }
