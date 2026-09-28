@@ -88,8 +88,8 @@ int main(int argc,const char *argv[]) {
             window.title=@"SubPop · 识别动效预览";[window makeKeyAndOrderFront:nil];[NSApp activateIgnoringOtherApps:YES];[NSApp run];return 0;
         }
         NSDictionary *m=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:[@(argv[2]) stringByAppendingPathComponent:@"captions.json"]] options:0 error:nil];
-        for (NSNumber *width in @[@580,@800,@1100]) {
-            [window setContentSize:NSMakeSize(width.doubleValue,680)];[c.view layoutSubtreeIfNeeded];
+        for (NSNumber *width in @[@580,@840,@1100]) {
+            [window setContentSize:NSMakeSize(width.doubleValue,width.intValue==840 ? 822 : 680)];[c.view layoutSubtreeIfNeeded];
             NSRect model=[c.modelPicker convertRect:c.modelPicker.bounds toView:c.view],audio=[c.audioPicker convertRect:c.audioPicker.bounds toView:c.view];
             if (model.size.width<100 || audio.size.width<100 || NSMaxX(model)>NSMinX(audio) || NSMaxX(audio)>width.doubleValue) return 2;
             c.resultManifest=m;c.captionRows=[m[@"captions"] mutableCopy];c.titlePayloads=@{@"1.14":[NSData data]};c.displayState=@"ready";[c updateInterface];[c.captionTable reloadData];[c.view layoutSubtreeIfNeeded];
@@ -102,9 +102,33 @@ int main(int argc,const char *argv[]) {
             }
             NSRect result=[c.resultView convertRect:c.resultView.bounds toView:c.view];
             if (NSMinY(result)<0 || NSMaxY(result)>c.view.bounds.size.height) {NSLog(@"Result card clipped at width %@: %@ in %@",width,NSStringFromRect(result),NSStringFromRect(c.view.bounds));return 7;}
+            CGFloat collapsedWidth=c.pageScroll.contentView.bounds.size.width;
+            NSRect collapsedModel=[c.modelPicker convertRect:c.modelPicker.bounds toView:c.view];
+            if (c.pageScroll.hasVerticalScroller) return 123;
             [c toggleReview:nil];if (c.captionScroll.hidden || c.editorControls.hidden) return 8;
             [c.view layoutSubtreeIfNeeded];
+            if (!c.captionScroll.hasVerticalScroller || c.captionScroll.verticalScroller.alphaValue>.05) return 123;
+            if (width.intValue==840) {
+                CGFloat expandedWidth=c.pageScroll.contentView.bounds.size.width;
+                NSRect expandedModel=[c.modelPicker convertRect:c.modelPicker.bounds toView:c.view];
+                if (fabs(collapsedWidth-expandedWidth)>.5 || fabs(NSMinX(collapsedModel)-NSMinX(expandedModel))>.5) {
+                    NSLog(@"Review expansion shifted layout: viewport %.1f -> %.1f, model x %.1f -> %.1f",collapsedWidth,expandedWidth,NSMinX(collapsedModel),NSMinX(expandedModel));
+                    return 122;
+                }
+            }
+            NSRect beforeScroll=c.pageScroll.documentVisibleRect;
             [c.editorControls scrollRectToVisible:c.editorControls.bounds];
+            NSRect afterScroll=c.pageScroll.documentVisibleRect;
+            if (width.intValue==840 && fabs(NSMinY(afterScroll)-NSMinY(beforeScroll))<1) {
+                NSLog(@"Review should scroll without a visible bar: %@ -> %@",NSStringFromRect(beforeScroll),NSStringFromRect(afterScroll));return 124;
+            }
+            [c.captionTable scrollRowToVisible:0];
+            NSRect firstCaption=c.captionScroll.documentVisibleRect;
+            [c.captionTable scrollRowToVisible:c.captionTable.numberOfRows-1];
+            NSRect lastCaption=c.captionScroll.documentVisibleRect;
+            if (width.intValue==840 && fabs(NSMinY(firstCaption)-NSMinY(lastCaption))<1) {
+                NSLog(@"Caption scroll unchanged: %@ -> %@, rows %ld table %@ clip %@",NSStringFromRect(firstCaption),NSStringFromRect(lastCaption),(long)c.captionTable.numberOfRows,NSStringFromRect(c.captionTable.frame),NSStringFromRect(c.captionScroll.contentView.bounds));return 125;
+            }
             for(NSView *control in @[c.generateButton,c.scopeLabel]) {
                 if(!NSContainsRect(c.view.bounds,[control convertRect:control.bounds toView:c.view])) return 121;
             }
