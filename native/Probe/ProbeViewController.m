@@ -557,14 +557,17 @@ static NSDictionary *Time(CMTime t) {
     [self.view.window makeFirstResponder:nil];
     [self saveDraft];
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];
+    BOOL historical=self.historicalResult;
     self.dropGeneration++;self.validatingDrop=NO;self.historicalResult=NO;
-    self.freshDropURL=nil;self.freshDropDate=nil;self.dropUID=nil;self.dropName=nil;self.dropDuration=kCMTimeInvalid;
+    // A normal result can be recognized again from its original audio snapshot.
+    // A restored historical result cannot: its snapshot may no longer match FCP.
+    if (historical) {self.freshDropURL=nil;self.freshDropDate=nil;self.dropUID=nil;self.dropName=nil;self.dropDuration=kCMTimeInvalid;}
     self.titlePayloads=nil;self.captionRows=nil;self.resultManifest=nil;self.resultDate=nil;self.resultRequestID=nil;self.resultWasDragged=NO;
     self.requestID=nil;self.requestSHA=nil;self.requestModelID=nil;self.requestVocabulary=nil;self.requestReferenceSHA=nil;self.lastJobStage=nil;
     self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceUndone=NO;self.referenceUndoWasOriginal=NO;
     self.referenceSourceRows=nil;self.referenceSourceResultID=nil;self.referenceProcessingSHA=nil;self.referenceMessage=nil;self.referenceDraft=nil;
     self.importMessage=nil;self.exportStatus.stringValue=@"";[self.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];
-    self.visibleError=nil;self.jobProgress=nil;self.cloudPhase=nil;self.displayState=@"idle";
+    self.visibleError=nil;self.jobProgress=nil;self.cloudPhase=nil;self.displayState=self.freshDropURL ? @"input" : @"idle";
     [self.captionTable reloadData];[self updateInterface];
 }
 - (NSDictionary *)readJSON:(NSURL *)url {
