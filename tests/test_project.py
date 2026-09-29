@@ -120,6 +120,21 @@ class ProjectTests(unittest.TestCase):
         segment=self.inspect(root)['segments'][0]
         self.assertNotIn('source_duration',segment)
 
+    def test_fcp_exported_60fps_clip_keeps_audio_at_normal_speed(self):
+        root,p,seq,clip=basic();asset=root.find('resources/asset')
+        root.find("resources/format[@id='r1']").set('frameDuration','1001/30000s')
+        root.find("resources/format[@id='r3']").set('frameDuration','1/60s')
+        seq.set('duration','4s');clip.set('duration','4s');asset.set('duration','8s')
+        clip.set('format',asset.get('format'))
+        ET.SubElement(clip,'conform-rate',srcFrameRate='60')
+        segment=self.inspect(root)['segments'][0]
+        self.assertEqual((segment['source_start'],segment['duration']),('0','4'))
+        self.assertNotIn('source_duration',segment)
+        # FCP's audio clock is unchanged even when the clip carries effects.
+        ET.SubElement(root.find('resources'),'effect',id='effect',uid='com.apple.audio.compressor')
+        ET.SubElement(clip,'filter-audio',ref='effect',name='Compressor')
+        self.assertEqual(self.inspect(root)['segments'][0],segment)
+
     def test_rate_conform_maps_audio_nested_in_plain_clip(self):
         root,p,seq,clip=basic();asset=root.find('resources/asset')
         root.find("resources/format[@id='r1']").set('frameDuration','1001/30000s')
@@ -137,6 +152,21 @@ class ProjectTests(unittest.TestCase):
         self.assertFalse(segment['preservesPitch'])
         wrapper.find('audio-channel-source').set('enabled','0')
         with self.assertRaises(ValueError):self.inspect(root)
+
+    def test_fcp_exported_rate_conform_wrapper_keeps_nested_audio_clock(self):
+        root,p,seq,clip=basic();asset=root.find('resources/asset')
+        root.find("resources/format[@id='r1']").set('frameDuration','1001/30000s')
+        root.find("resources/format[@id='r3']").set('frameDuration','1/60s')
+        seq.set('duration','4s');asset.set('duration','8s')
+        spine=seq.find('spine');spine.remove(clip)
+        wrapper=ET.SubElement(spine,'clip',offset='3600s',start='0s',duration='4s',format=asset.get('format'))
+        ET.SubElement(wrapper,'audio-channel-source',srcCh='1',role='dialogue.dialogue-1')
+        ET.SubElement(wrapper,'conform-rate',srcFrameRate='60')
+        gap=ET.SubElement(wrapper,'gap',offset='0s',duration='8s')
+        ET.SubElement(gap,'audio',ref=asset.get('id'),lane='-1',offset='0s',start='0s',duration='8s',srcCh='1')
+        segment=self.inspect(root)['segments'][0]
+        self.assertEqual((segment['source_start'],segment['duration']),('0','4'))
+        self.assertNotIn('source_duration',segment)
 
     def test_compound_and_nested_compound_preserve_source_clock(self):
         root,p,seq,clip=basic();original=self.inspect(root)['segments']

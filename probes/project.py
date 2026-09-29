@@ -319,17 +319,22 @@ def inspect(path, audio_mode='dialogue'):
                 for audio_asset in audio_assets:
                     source_format=root.find(f"resources/format[@id='{audio_asset.get('format')}']") if audio_asset is not None else None
                     source_frames.append(seconds(source_format.get('frameDuration','0s')) if source_format is not None else None)
-                # Verified against FCP's exported PCM: 60 fps source in a
-                # 29.97 fps project plays at exactly 2x with scale enabled.
+                # FCP-exported clips explicitly retain the 60 fps source
+                # format. Their audio stays on the project clock even though
+                # conform-rate changes video sampling (verified against FCP
+                # WAV exports with and without audio effects). A bare imported
+                # clip without that format plays its audio at 2x instead.
                 if (node.tag not in ('asset-clip','clip') or media_stack or frame!=Fraction(1001,30000)
                         or c.get('srcFrameRate')!='60' or not source_frames
                         or any(rate!=Fraction(1,60) for rate in source_frames)):
                     raise ValueError('暂不支持此有声片段的速度缩放帧率适配')
-                conform_speed=Fraction(2)
+                if not node.get('format') or any(node.get('format')!=audio_asset.get('format') for audio_asset in audio_assets):
+                    conform_speed=Fraction(2)
         # A video-only reverse or smooth retime does not change independently
         # scheduled dialogue. Its visual timing need not be reconstructed.
         has_time_map=node.find('timeMap') is not None
-        if conform_speed!=1 and has_time_map:raise ValueError('暂不支持同时使用帧率适配与音频变速')
+        if conform and conform[0].get('scaleEnabled','1')=='1' and has_time_map and audible:
+            raise ValueError('暂不支持同时使用帧率适配与音频变速')
         unsupported_retime=None
         try:
             retime=linear_time_map(node,length) if has_time_map and audible else None
