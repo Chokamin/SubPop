@@ -177,6 +177,9 @@ def serve():
                         if previous.get('status') in ('running','queued'):
                             save(response,{'requestID':candidate.name,'status':'failed','stage':'worker-restarted','error':'上次任务已中断，请重试'})
                         continue
+                    if (candidate/'cancel.json').is_file():
+                        save(response,{'requestID':candidate.name,'status':'cancelled','stage':'worker','error':'已取消识别'})
+                        continue
                     # Claim the job atomically against the application updater.
                     if not update_lease.acquire():break
                     try:

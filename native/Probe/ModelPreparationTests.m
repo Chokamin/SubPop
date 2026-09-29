@@ -144,10 +144,22 @@ int main(int argc,const char *argv[]) {
         reset(c);NSString *existing=[c submitModelOperation:@"install" model:c.selectedModelID];begin(c);
         check([c.modelRequestID isEqual:existing],@"existing selected download can be joined without duplication");[c cancelJob:nil];
         reset(c);begin(c);[c viewWillDisappear];check(!c.pendingRecognition && !c.requestID,@"closing extension disarms auto-recognition");
+        c.bridgeURL=temporary;c.timeline=(FCPXTimeline *)[NSObject new];reset(c);service(c,YES);[c submitWorkerJob];
+        NSString *activeRequest=c.requestID;check(activeRequest.length>0,@"recognition request starts before project switch");
+        NSPasteboard *invalid=[NSPasteboard pasteboardWithUniqueName];[invalid setString:@"not a project" forType:@"public.utf8-plain-text"];
+        check(![c receivePasteboard:invalid] && [c.requestID isEqual:activeRequest],@"unrelated drag does not cancel active recognition");[invalid releaseGlobally];
+        NSPasteboard *next=[NSPasteboard pasteboardWithUniqueName];[next setString:@"<fcpxml><project uid='next-project' name='第二条时间线'><sequence/></project></fcpxml>" forType:@"com.apple.finalcutpro.xml.v1-14"];
+        c.hostProjectUID=@"next-project";
+        check([c receivePasteboard:next] && !c.requestID && [NSFileManager.defaultManager fileExistsAtPath:[[[temporary URLByAppendingPathComponent:activeRequest] URLByAppendingPathComponent:@"cancel.json"] path]],@"valid second project cancels old recognition and accepts new drop");
+        [next releaseGlobally];settleDrop(c);
+        check([c.dropUID isEqual:@"next-project"] && c.generateButton.enabled,@"second project becomes ready after deferred validation");
+        [c submitWorkerJob];NSString *secondRequest=c.requestID;check(secondRequest.length>0,@"second project can start recognition");
+        c.hostProjectUID=@"third-project";[c activeSequenceChanged];
+        check(!c.requestID && !c.freshDropURL && [c.statusTitle.stringValue isEqual:@"已取消上一个项目的识别"] && [NSFileManager.defaultManager fileExistsAtPath:[[[temporary URLByAppendingPathComponent:secondRequest] URLByAppendingPathComponent:@"cancel.json"] path]],@"opening another timeline cancels the detached recognition");
         [window orderOut:nil];
         for (NSString *key in @[@"modelRequestID",@"pendingSession"]) [NSUserDefaults.standardUserDefaults removeObjectForKey:key];
         [NSFileManager.defaultManager removeItemAtURL:temporary error:nil];
         puts("Drop validation: deferred host reads, bounded retry, preserved input, project mismatch, newer drop, reentrant project change and closure passed.");
-        puts("Model preparation: accepted drop, confirmation, progress, cancellation, retry, verified auto-start, stale input/project rejection, disconnect and closure passed.");
+        puts("Model preparation: accepted drop, confirmation, progress, cancellation, retry, verified auto-start, stale input/project rejection, disconnect, closure and in-progress project switch passed.");
     }return 0;
 }

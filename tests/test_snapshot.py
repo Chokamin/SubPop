@@ -65,7 +65,44 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(len(ET.fromstring(normalized).findall('.//title')),0)
         self.assertEqual(len(ET.fromstring(original).findall('.//title')),3)
         ET.SubElement(first,'audio')
-        with self.assertRaisesRegex(ValueError,'Title audio'):
+        with self.assertRaisesRegex(ValueError,'标题包含可能有声音'):
+            prepare(ET.tostring(root),generic=True)
+
+    def test_tap5a_visual_title_is_counted_and_removed_from_audio_copy(self):
+        root=ET.parse(ROOT/'tests/fixtures/fcp-12.3-title-split.fcpxml').getroot()
+        root.find('.//effect').set('uid','custom-third-party-title-template')
+        title=root.find('.//title')
+        ET.SubElement(title,'param',name='Top',key='9999/10658/100/10661/2/100',value='0.1')
+        text_style=title.find('text-style-def/text-style')
+        ET.SubElement(text_style,'param',name='MotionSimpleValues',key='tracking',value='4')
+        visual=ET.SubElement(title,'filter-video',ref='r4')
+        ET.SubElement(visual,'param',name='Animation',key='nested/motion',value='1')
+        original=ET.tostring(root)
+        normalized,existing=prepare(original,generic=True)
+        self.assertEqual(len(existing),3)
+        self.assertEqual(len(ET.fromstring(normalized).findall('.//title')),0)
+        self.assertEqual(len(ET.fromstring(original).findall('.//title')),3)
+        self.assertEqual(collision(existing,existing)['status'],'duplicate')
+        from tempfile import TemporaryDirectory
+        from probes.project import inspect
+        with TemporaryDirectory() as directory:
+            audio_copy=Path(directory)/'input.fcpxml'
+            audio_copy.write_bytes(normalized)
+            self.assertEqual(inspect(audio_copy)['uid'],root.find('.//project').get('uid'))
+        ET.SubElement(title,'audio',ref='r9')
+        with self.assertRaisesRegex(ValueError,'可能有声音'):
+            prepare(ET.tostring(root),generic=True)
+
+    def test_nested_visual_media_is_allowed_but_audio_media_is_not_discarded(self):
+        root=ET.parse(ROOT/'tests/fixtures/fcp-12.3-title-split.fcpxml').getroot()
+        title=root.find('.//title')
+        silent=ET.SubElement(root.find('resources'),'asset',id='r9',hasAudio='0')
+        visual=ET.SubElement(title,'video',ref=silent.get('id'))
+        ET.SubElement(visual,'filter-video').append(ET.Element('param',name='Blur',value='10'))
+        normalized,_=prepare(ET.tostring(root),generic=True)
+        self.assertFalse(ET.fromstring(normalized).findall('.//title'))
+        ET.SubElement(title,'asset-clip',ref='r2')
+        with self.assertRaisesRegex(ValueError,'可能有声音'):
             prepare(ET.tostring(root),generic=True)
 
     def test_fresh_host_drop_matches_actual_duplicate_decision(self):
@@ -86,10 +123,12 @@ class SnapshotTests(unittest.TestCase):
         parent=root.find('.//spine/gap/clip')
         title=deepcopy(source.find('.//title'));title.set('ref',effect.get('id'))
         title.set('offset','140s');title.set('duration','1s');parent.append(title)
+        visual=ET.SubElement(title,'filter-video',ref=effect.get('id'))
+        ET.SubElement(visual,'param',name='Nested visual effect',value='1')
         raw=ET.tostring(root);normalized,existing=prepare(raw,generic=True)
         self.assertEqual(len(existing),1)
         self.assertEqual((existing[0]['start_frame'],existing[0]['end_frame']),(100,125))
         self.assertFalse(ET.fromstring(normalized).findall('.//title'))
         self.assertEqual(len(ET.fromstring(raw).findall('.//title')),1)
-        ET.SubElement(title,'audio')
-        with self.assertRaises(ValueError):prepare(ET.tostring(root),generic=True)
+        ET.SubElement(visual,'audio')
+        with self.assertRaisesRegex(ValueError,'可能有声音'):prepare(ET.tostring(root),generic=True)

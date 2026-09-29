@@ -1,7 +1,7 @@
-"""Timeline plan: plain cuts, component clips and connected audio/video.
+"""Timeline audio plan from FCPXML, including compound clips and linear retimes.
 
-Dialogue mode intentionally excludes music/effects roles. Never interpret live
-FCP solo monitoring, retimes, compounds or audio effects as supported mixing.
+Dialogue mode intentionally excludes music/effects roles. The XML-defined mix
+does not include FCP's live solo monitoring or unmodelled audio effects.
 """
 from array import array
 from copy import deepcopy
@@ -23,8 +23,32 @@ RATE=16000
 def sample(value):
     return (value*RATE + Fraction(1,2)).__floor__()
 
-STORY_TAGS={'asset-clip','gap','clip','audio','video'}
+STORY_TAGS={'asset-clip','gap','clip','audio','video','ref-clip'}
 CLIP_ATTRS={'ref','offset','name','start','duration','enabled','tcFormat','audioRole','videoRole','srcEnable','format','tcStart','modDate','lane'}
+
+
+def linear_time_map(node, length):
+    """Return (output start/end, source start/end) in the clip's local clock.
+
+    Smooth interpolation and reverse/freeze require a different renderer, so
+    accepting them as linear would make the transcript's clock unreliable.
+    """
+    maps=node.findall('timeMap')
+    if not maps:return None
+    if len(maps)!=1:raise ValueError('变速结构无效')
+    mapping=maps[0]
+    if set(mapping.attrib)-{'preservesPitch','frameSampling'} or mapping.get('preservesPitch','1') not in ('0','1'):
+        raise ValueError('暂不支持此变速设置')
+    points=[]
+    for point in mapping:
+        if point.tag!='timept' or len(point) or set(point.attrib)-{'time','value','interp'} or point.get('interp','smooth2')!='linear':
+            raise ValueError('暂不支持平滑变速或倒放；当前无法准确重建这段音频')
+        points.append((seconds(point.get('time','')),seconds(point.get('value',''))))
+    if len(points)<2 or points[0][0]!=0 or points[-1][0]!=length:
+        raise ValueError('变速时间范围不完整')
+    if any(end[0]<=begin[0] or end[1]<=begin[1] for begin,end in zip(points,points[1:])):
+        raise ValueError('暂不支持停帧或倒放；当前无法准确重建这段音频')
+    return [(a[0],b[0],a[1],b[1]) for a,b in zip(points,points[1:])],mapping.get('preservesPitch','1')=='1'
 
 
 def excluded_role(role, audio_mode):
@@ -77,27 +101,44 @@ def inspect(path, audio_mode='dialogue'):
     if frame not in [Fraction(1,n) for n in (24,25,30,50,60)]+[Fraction(1001,n) for n in (24000,30000,60000)]:raise ValueError('暂不支持此帧率')
     spine=seq.find('spine')
     if spine is None or len(seq.findall('spine'))!=1 or any(n.tag not in ('spine','note','metadata') for n in seq) or spine.attrib:raise ValueError('暂不支持此时间线结构')
-    assets={a.get('id'):a for a in root.findall('resources/asset')};segments=[];ignored=0;count=0;timeline_end=Fraction(0)
+    assets={a.get('id'):a for a in root.findall('resources/asset')}
+    medias={m.get('id'):m for m in root.findall('resources/media')}
+    segments=[];ignored=0;count=0;timeline_end=Fraction(0)
 
-    def walk(node,parent_origin,parent_start,bounds,inherited=True,parent_gain=1.0,depth=0):
+    def walk(node,parent_origin,parent_start,bounds,inherited=True,parent_gain=1.0,depth=0,media_stack=()):
         nonlocal ignored,count,timeline_end
         count+=1
         if count>5000 or depth>128:raise ValueError('项目片段过多或嵌套过深')
-        if node.tag not in STORY_TAGS:raise ValueError('暂不支持复合片段、多机位或变速；请先展开为普通片段')
+        if node.tag not in STORY_TAGS:raise ValueError('暂不支持此多机位或同步片段结构')
         asset=assets.get(node.get('ref')) if node.tag in ('asset-clip','audio') else None
-        start=seconds(node.get('start',asset.get('start','0s') if asset is not None else '0s'))
+        media=medias.get(node.get('ref')) if node.tag=='ref-clip' else None
+        media_seq=media.find('sequence') if media is not None else None
+        if node.tag=='ref-clip' and (media_seq is None or node.get('ref') in media_stack):
+            raise ValueError('复合片段引用缺失或形成循环')
+        default_start=asset.get('start','0s') if asset is not None else media_seq.get('tcStart','0s') if media_seq is not None else '0s'
+        start=seconds(node.get('start',default_start))
         origin=parent_origin+seconds(node.get('offset','0s'))-parent_start
         length=seconds(node.get('duration',asset.get('duration','0s') if asset is not None else '0s'))
         if length<=0:raise ValueError('片段时长必须大于零')
         visible=(max(bounds[0],origin),min(bounds[1],origin+length))
         if visible[1]>visible[0]:timeline_end=max(timeline_end,visible[1])
-        allowed=CLIP_ATTRS | ({'role','srcCh','srcID','outCh'} if node.tag=='audio' else {'role','srcID'} if node.tag=='video' else set())
+        allowed=CLIP_ATTRS | ({'role','srcCh','srcID','outCh'} if node.tag=='audio' else {'role','srcID'} if node.tag=='video' else {'useAudioSubroles'} if node.tag=='ref-clip' else set())
         if set(node.attrib)-allowed:raise ValueError('暂不支持分离的 J/L 音频或未知片段属性')
+        if node.tag=='ref-clip':
+            if node.get('useAudioSubroles','0') not in ('0','1'):raise ValueError('复合片段音频子角色设置无效')
+            for component in node.findall('audio-role-source'):
+                if set(component.attrib)-{'role','active','enabled'} or not component.get('role') or len(component) or not flag(component,'active') or not flag(component,'enabled'):
+                    raise ValueError('暂不支持复合片段音频组件的单独静音、裁剪或效果')
         enabled=inherited and flag(node,'enabled')
         source_enable=node.get('srcEnable','all')
         if source_enable not in ('all','audio','video'):raise ValueError('无效的音频启用状态')
         audible=enabled and source_enable!='video' and visible[1]>visible[0]
         role=node.get('audioRole',node.get('role','dialogue')).split('.')[0]
+        if media_seq is not None:
+            media_start=seconds(media_seq.get('tcStart','0s'))
+            media_duration=seconds(media_seq.get('duration','0s'))
+            if start<media_start or start+length>media_start+media_duration:
+                raise ValueError('复合片段引用范围超出内部时间线')
         if node.tag in ('asset-clip','audio'):
             if asset is None:raise ValueError('媒体资源缺失')
             audible=audible and asset.get('hasAudio')=='1'
@@ -124,28 +165,62 @@ def inspect(path, audio_mode='dialogue'):
             # Only explicit 0 preserves real-time audio across frame rates.
             if c.get('scaleEnabled')!='0':raise ValueError('暂不支持启用速度缩放的帧率适配')
             if len(c) or set(c.attrib)-{'scaleEnabled','srcFrameRate','frameSampling'}:raise ValueError('帧率适配结构无效')
+        retime=linear_time_map(node,length) if node.find('timeMap') is not None else None
+        if retime and node.tag not in ('asset-clip','audio','video'):
+            raise ValueError('暂不支持对整个复合片段或容器变速；当前无法准确重建这段音频')
         harmless={'conform-rate','caption','adjust-volume','audio-channel-source','adjust-transform','adjust-crop','adjust-conform','adjust-blend','filter-video','filter-video-mask','metadata','marker','chapter-marker','keyword','rating','note'}
+        if node.tag=='ref-clip':harmless.add('audio-role-source')
+        if retime:harmless.add('timeMap')
         if not audible:harmless.add('filter-audio')
         if node.tag=='video':harmless.update(('param','reserved'))
         children=[]
         for child in node:
             if child.tag in STORY_TAGS:children.append(child)
             elif child.tag not in harmless:raise ValueError('暂不支持音频效果、变速或嵌套模板：'+child.tag)
+        if retime and children:
+            raise ValueError('变速片段带有连接素材，暂不能准确映射时间')
         if node.tag in ('asset-clip','audio') and audible:
             reps=asset.findall("media-rep[@kind='original-media']")
             if len(reps)!=1:raise ValueError('缺少原始媒体引用')
             url=urlparse(reps[0].get('src',''))
             if url.scheme!='file' or url.netloc not in ('','localhost'):raise ValueError('需要本机原始媒体')
-            source=start-seconds(asset.get('start','0s'))+visible[0]-origin
-            length=visible[1]-visible[0]
-            if source<0 or source+length>seconds(asset.get('duration','0s')):raise ValueError('源音频范围无效')
-            segments.append(dict(assetRef=node.get('ref'),media=str(Path(unquote(url.path))),offset=str(visible[0]),duration=str(length),source_start=str(source),startSample=sample(visible[0]),sampleCount=sample(visible[1])-sample(visible[0]),gain=gain,role=role))
+            asset_start=seconds(asset.get('start','0s'))
+            asset_duration=seconds(asset.get('duration','0s'))
+            def add_segment(out_begin,out_end,source_begin,source_end,preserve_pitch=None):
+                source_begin-=asset_start;source_end-=asset_start
+                if source_begin<0 or source_end>asset_duration or source_end<=source_begin:
+                    raise ValueError('源音频范围无效')
+                segment=dict(assetRef=node.get('ref'),media=str(Path(unquote(url.path))),offset=str(out_begin),duration=str(out_end-out_begin),source_start=str(source_begin),startSample=sample(out_begin),sampleCount=sample(out_end)-sample(out_begin),gain=gain,role=role)
+                if preserve_pitch is not None:
+                    segment.update(source_duration=str(source_end-source_begin),preservesPitch=preserve_pitch)
+                segments.append(segment)
+            if retime:
+                intervals,preserve_pitch=retime
+                for local_begin,local_end,source_begin,source_end in intervals:
+                    out_begin=max(visible[0],origin+local_begin)
+                    out_end=min(visible[1],origin+local_end)
+                    if out_end<=out_begin:continue
+                    slope=(source_end-source_begin)/(local_end-local_begin)
+                    add_segment(out_begin,out_end,source_begin+(out_begin-origin-local_begin)*slope,
+                                source_begin+(out_end-origin-local_begin)*slope,preserve_pitch)
+            else:
+                source=start+visible[0]-origin
+                add_segment(visible[0],visible[1],source,source+visible[1]-visible[0])
         for child in children:
             # Contained media is trimmed/muted by its container. Connected items
             # share its enclosing timeline and can outlast or precede the anchor.
             contained=child.get('lane','0')=='0'
             walk(child,origin,start,visible if contained else bounds,
-                 enabled if contained else inherited,gain if contained else parent_gain,depth+1)
+                 enabled and source_enable!='video' if contained else inherited,
+                 gain if contained else parent_gain,depth+1,media_stack)
+        if media_seq is not None:
+            media_spine=media_seq.find('spine')
+            if media_spine is None or len(media_seq.findall('spine'))!=1:
+                raise ValueError('复合片段缺少完整内部时间线')
+            next_stack=(*media_stack,node.get('ref'))
+            for child in media_spine:
+                walk(child,origin,start,visible,enabled and source_enable!='video' and not excluded_role(role,audio_mode),
+                     gain,depth+1,next_stack)
 
     cursor=Fraction(0)
     for node in spine:
@@ -162,33 +237,61 @@ def render(xml,directory,binary,expected_uid,audio_mode='dialogue'):
     plan=inspect(xml,audio_mode)
     if plan['uid']!=expected_uid:raise ValueError('项目身份不匹配')
     root=ET.fromstring(xml.read_bytes());pcm=array('f',[0])*plan['sampleCount'];reports=[]
+    assets={asset.get('id'):asset for asset in root.findall('resources/asset')}
+    def decode(segment,first,count):
+        doc=ET.Element('fcpxml',version='1.14');res=ET.SubElement(doc,'resources')
+        asset=deepcopy(assets[segment['assetRef']])
+        for p in asset.iter():
+            for c in list(p):
+                if c.tag in ('bookmark','metadata'):p.remove(c)
+        res.append(asset);pr=ET.SubElement(doc,'project',name=plan['project'],uid=expected_uid)
+        length=Fraction(count,RATE);seq=ET.SubElement(pr,'sequence',duration=str(length)+'s',tcStart='0s');spine=ET.SubElement(seq,'spine')
+        start=seconds(asset.get('start','0s'))+Fraction(first,RATE)
+        ET.SubElement(spine,'asset-clip',ref=segment['assetRef'],offset='0s',start=str(start)+'s',duration=str(length)+'s',audioRole='dialogue')
+        source_xml=directory/'decode-segment.fcpxml';source_xml.write_bytes(ET.tostring(doc,encoding='utf-8'))
+        result=subprocess.run([str(binary),str(source_xml),expected_uid,str(directory)],capture_output=True,text=True,check=True,timeout=60)
+        decoded=json.loads(result.stdout)
+        if decoded.get('status')!='decoded':raise ValueError('无法读取媒体，请检查文件是否在线及目录访问权限：'+decoded.get('stage','unknown'))
+        name=decoded.get('pcmFile','')
+        if not name or Path(name).name!=name:raise ValueError('Invalid decoder output')
+        values=array('f');values.frombytes((directory/name).read_bytes());(directory/name).unlink()
+        if sys.byteorder!='little':values.byteswap()
+        if len(values)!=count or not all(math.isfinite(v) for v in values):raise ValueError('音频解码不完整')
+        return values
+
     for i,segment in enumerate(plan['segments']):
-        remaining=segment['sampleCount'];done=0
-        while remaining:
-            count=min(remaining,30*RATE)
-            doc=ET.Element('fcpxml',version='1.14');res=ET.SubElement(doc,'resources')
-            asset=deepcopy(root.find(f"resources/asset[@id='{segment['assetRef']}']"))
-            for p in asset.iter():
-                for c in list(p):
-                    if c.tag in ('bookmark','metadata'):p.remove(c)
-            res.append(asset);pr=ET.SubElement(doc,'project',name=plan['project'],uid=expected_uid)
-            length=Fraction(count,RATE);seq=ET.SubElement(pr,'sequence',duration=str(length)+'s',tcStart='0s');spine=ET.SubElement(seq,'spine')
-            start=seconds(asset.get('start','0s'))+Fraction(sample(Fraction(segment['source_start']))+done,RATE)
-            ET.SubElement(spine,'asset-clip',ref=segment['assetRef'],offset='0s',start=str(start)+'s',duration=str(length)+'s',audioRole='dialogue')
-            source_xml=directory/'decode-segment.fcpxml';source_xml.write_bytes(ET.tostring(doc,encoding='utf-8'))
-            result=subprocess.run([str(binary),str(source_xml),expected_uid,str(directory)],capture_output=True,text=True,check=True,timeout=60)
-            decoded=json.loads(result.stdout)
-            if decoded.get('status')!='decoded':raise ValueError('无法读取媒体，请检查文件是否在线及目录访问权限：'+decoded.get('stage','unknown'))
-            name=decoded.get('pcmFile','')
-            if not name or Path(name).name!=name:raise ValueError('Invalid decoder output')
-            values=array('f');values.frombytes((directory/name).read_bytes());(directory/name).unlink()
-            if sys.byteorder!='little':values.byteswap()
-            if len(values)!=count or not all(math.isfinite(v) for v in values):raise ValueError('音频解码不完整')
+        output_total=segment['sampleCount'];source_first=sample(Fraction(segment['source_start']))
+        source_total=(sample(Fraction(segment['source_start'])+Fraction(segment['source_duration']))-source_first
+                      if 'source_duration' in segment else output_total)
+        if not source_total or not output_total or not Fraction(1,4)<=Fraction(source_total,output_total)<=4:
+            raise ValueError('音频变速超出可准确重建的范围')
+        done=0
+        while done<output_total:
+            count=min(output_total-done,30*RATE,max(1,30*RATE*output_total//source_total))
+            source_begin=(done*source_total+output_total//2)//output_total
+            source_end=((done+count)*source_total+output_total//2)//output_total
+            while source_end-source_begin>30*RATE:
+                count-=1
+                source_end=((done+count)*source_total+output_total//2)//output_total
+            if count<=0 or source_end<=source_begin:raise ValueError('音频变速片段过短')
+            values=decode(segment,source_first+source_begin,source_end-source_begin)
+            if len(values)!=count:
+                import numpy as np
+                source=np.asarray(values,dtype=np.float32)
+                if segment.get('preservesPitch',True):
+                    import librosa
+                    stretched=librosa.effects.time_stretch(source,rate=len(source)/count)
+                else:
+                    from scipy.signal import resample
+                    stretched=resample(source,count)
+                if abs(len(stretched)-count)>16:raise ValueError('音频变速长度不完整')
+                values=array('f',stretched[:count])
+                if len(values)<count:values.extend([0.0]*(count-len(values)))
             base=segment['startSample']+done;gain=segment['gain']
             # Sum overlapping dialogue, preserving the original project clock.
             pcm[base:base+count]=array('f',(pcm[base+k]+v*gain for k,v in enumerate(values)))
-            done+=count;remaining-=count
-        reports.append(dict(index=i,sampleCount=segment['sampleCount'],gain=segment['gain']))
+            done+=count
+        reports.append(dict(index=i,sampleCount=output_total,gain=segment['gain']))
     energy=sum(float(v)*v for v in pcm)
     if sys.byteorder!='little':pcm.byteswap()
     data=pcm.tobytes();(directory/'timeline.f32le').write_bytes(data)

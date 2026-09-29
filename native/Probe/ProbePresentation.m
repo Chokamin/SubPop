@@ -3,8 +3,10 @@ NSDictionary<NSString *, NSString *> *SubPopPresentation(NSString *state) {
     NSDictionary *states=@{
         @"idle":@[@"准备生成字幕",@"先拖入项目，再选择模型和音频范围。"],
         @"cancelled":@[@"已取消识别",@"可以调整模型或重新开始；没有改动时间线。"],
+        @"switch-cancelled":@[@"已取消上一个项目的识别",@"切换时间线后，旧任务已停止。请拖入当前项目；云端已提交部分仍可能计费。"],
         @"inactive":@[@"请打开这个项目的时间线",@"请打开刚拖入的项目，或重新拖入当前项目。"],
         @"input":@[@"项目已就绪",@"点击“生成字幕”，自动完成断句和标点整理。"],
+        @"refresh-input":@[@"请重新拖入这个项目",@"上次识别使用的项目快照可能已过期。重新拖入后即可识别最新时间线，也能检查已有字幕。"],
         @"model-download":@[@"正在下载识别模型",@"下载并校验完成后，会自动开始识别当前项目。"],
         @"model-download-failed":@[@"模型下载未完成",@"项目已保留。点击“生成字幕”重试，已下载的部分会继续使用。"],
         @"model-download-cancelled":@[@"已取消本次识别",@"项目和已下载的部分已保留，可随时点击“生成字幕”继续。"],
@@ -27,7 +29,7 @@ NSDictionary<NSString *, NSString *> *SubPopPresentation(NSString *state) {
         @"preparing":@[@"正在准备本机识别",@"识别程序会自动在后台运行。首次使用请完成系统显示的文件夹授权。"],
         @"setup-needed":@[@"需要完成首次设置",@"请完成 SubPop 的文件夹授权，然后点击下方按钮重试。"],
         @"wrong-directory":@[@"尚未完成设置",@"请再次准备识别，使用默认打开的任务文件夹。"],
-        @"unsupported":@[@"这个项目包含暂不支持的音频",@"支持普通剪切、连接音频和恒定音量。请先展开复合片段，并处理变速或音频效果。"]
+        @"unsupported":@[@"这个项目包含暂不支持的音频",@"支持普通及嵌套复合片段、线性变速和恒定音量。平滑变速、倒放及部分音频效果仍需另外处理。"]
     };
     NSArray *copy=states[state] ?: states[@"idle"];
     return @{@"title":copy[0],@"detail":copy[1]};

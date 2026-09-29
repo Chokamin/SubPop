@@ -9,7 +9,7 @@
         ![NSFileManager.defaultManager fileExistsAtPath:[[[self.bridgeURL URLByAppendingPathComponent:self.modelRequestID] URLByAppendingPathComponent:@"cancel.json"] path]];
 }
 - (NSDictionary *)recognitionContext {
-    if (!self.freshDropURL || !self.freshDropDate || ![self isolatedProjectActive] || self.historicalResult) return nil;
+    if (!self.freshDropURL || !self.freshDropDate || ![self isolatedProjectActive] || self.historicalResult || self.snapshotConsumed) return nil;
     NSData *data=[NSData dataWithContentsOfURL:self.freshDropURL];
     if (!data.length || !self.selectedModelID.length) return nil;
     return @{@"modelID":self.selectedModelID,@"projectUID":self.dropUID,@"generation":@(self.dropGeneration),
@@ -17,7 +17,7 @@
         @"vocabulary":[self effectiveVocabulary],@"referenceSHA":[self referenceHash:[self effectiveReferenceScript]]};
 }
 - (BOOL)recognitionContextMatches:(NSDictionary *)context {
-    return context && !self.historicalResult && self.freshDropDate && [self isolatedProjectActive] &&
+    return context && !self.historicalResult && !self.snapshotConsumed && self.freshDropDate && [self isolatedProjectActive] &&
         [context[@"modelID"] isEqual:self.selectedModelID] && [context[@"projectUID"] isEqual:self.dropUID] &&
         [context[@"generation"] unsignedIntegerValue]==self.dropGeneration && [context[@"inputURL"] isEqual:self.freshDropURL] &&
         [context[@"audioIndex"] integerValue]==self.audioPicker.indexOfSelectedItem &&

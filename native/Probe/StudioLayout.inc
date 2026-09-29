@@ -83,7 +83,7 @@
 
     self.serviceLabel=[self label:@"正在连接" size:11 weight:NSFontWeightRegular];self.cancelButton=[self toolbarButton:@"取消" symbol:@"xmark" action:@selector(cancelJob:)];
     self.clearResultButton=[self toolbarButton:@"清空本次字幕" symbol:@"arrow.counterclockwise" action:@selector(clearResult:)];
-    self.clearResultButton.toolTip=@"清空本次字幕并保留已拖入的项目，可直接重新识别；修改时间线后请重新拖入项目。Final Cut Pro 中已有的字幕不会删除。";
+    self.clearResultButton.toolTip=@"清空本次字幕并保留项目名称和设置。重新识别前请从 FCP 浏览器重新拖入项目，以确认最新时间线和已有字幕。FCP 中的字幕不会删除。";
     self.generateButton=[NSButton buttonWithTitle:@"生成字幕" target:self action:@selector(primaryAction:)];self.generateButton.bezelStyle=NSBezelStyleRounded;self.generateButton.controlSize=NSControlSizeLarge;self.generateButton.keyEquivalent=@"\r";self.generateButton.bezelColor=SubPopAccent();[self.generateButton.widthAnchor constraintEqualToConstant:148].active=YES;[self.generateButton.heightAnchor constraintEqualToConstant:36].active=YES;
     NSStackView *actions=[NSStackView stackViewWithViews:@[self.serviceLabel,[NSView new],self.clearResultButton,self.cancelButton,self.generateButton]];actions.alignment=NSLayoutAttributeCenterY;actions.spacing=12;
     self.scopeLabel=[self label:@"音频留在本机  ·  字幕回到你的时间线" size:10 weight:NSFontWeightRegular];self.scopeLabel.textColor=NSColor.tertiaryLabelColor;

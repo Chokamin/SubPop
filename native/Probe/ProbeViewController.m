@@ -45,6 +45,7 @@ static NSDictionary *Time(CMTime t) {
 @property BOOL resultLoadAttempted;
 @property NSURL *freshDropURL;
 @property NSDate *freshDropDate;
+@property BOOL snapshotConsumed;
 @property NSDate *resultDate;
 @property NSUInteger dropGeneration;
 @property BOOL validatingDrop;
@@ -312,6 +313,27 @@ static NSDictionary *Time(CMTime t) {
     NSURL *url=[[self.bridgeURL URLByAppendingPathComponent:self.requestID] URLByAppendingPathComponent:@"cancel.json"];
     [@"{}" writeToURL:url atomically:YES encoding:NSUTF8StringEncoding error:nil];self.cancelButton.enabled=NO;self.statusTitle.stringValue=@"正在取消…";
 }
+- (BOOL)cancelCurrentWorkForProjectSwitch {
+    NSError *error=nil;
+    if (self.requestID) {
+        NSURL *url=[[self.bridgeURL URLByAppendingPathComponent:self.requestID] URLByAppendingPathComponent:@"cancel.json"];
+        if (![@"{}" writeToURL:url atomically:YES encoding:NSUTF8StringEncoding error:&error]) {
+            self.visibleError=[NSString stringWithFormat:@"无法取消正在识别的项目：%@",error.localizedDescription ?: @"请重试"];
+            self.displayState=@"error";[self updateInterface];return NO;
+        }
+        [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];
+        self.requestID=nil;self.requestSHA=nil;self.requestModelID=nil;self.jobProgress=nil;self.cloudPhase=nil;self.lastJobStage=nil;
+    }
+    if (self.referenceRequestID) {
+        NSURL *url=[[self.bridgeURL URLByAppendingPathComponent:self.referenceRequestID] URLByAppendingPathComponent:@"cancel.json"];
+        if (![@"{}" writeToURL:url atomically:YES encoding:NSUTF8StringEncoding error:&error]) {
+            self.visibleError=[NSString stringWithFormat:@"无法取消脚本整理：%@",error.localizedDescription ?: @"请重试"];
+            self.displayState=@"error";[self updateInterface];return NO;
+        }
+        self.referenceRequestID=nil;self.referenceSourceRows=nil;self.referenceStarted=nil;
+    }
+    return YES;
+}
 - (NSInteger)numberOfRowsInTableView:(NSTableView *)tableView { return self.captionRows.count; }
 - (id)tableView:(NSTableView *)tableView objectValueForTableColumn:(NSTableColumn *)column row:(NSInteger)row {
     NSDictionary *caption=self.captionRows[row];if ([column.identifier isEqual:@"text"]) return caption[@"text"];
@@ -489,6 +511,8 @@ static NSDictionary *Time(CMTime t) {
     BOOL awaitingProject=self.validatingDrop || [self dropNeedsValidation];
     if (awaitingProject) state=self.validatingDrop ? @"validating-input" : @"project-unavailable";
     if (fresh && !self.requestID && !awaitingProject && ![self isolatedProjectActive]) state=@"inactive";
+    BOOL busy=self.requestID!=nil || self.referenceRequestID!=nil || self.pendingRecognition!=nil;
+    if (fresh && self.snapshotConsumed && !self.titlePayloads && !busy && !awaitingProject && [self isolatedProjectActive]) state=@"refresh-input";
     NSDictionary *copy=SubPopPresentation(state); self.statusTitle.stringValue=copy[@"title"]; self.statusDetail.stringValue=copy[@"detail"];
     if ([state isEqual:@"error"] && self.visibleError.length) self.statusDetail.stringValue=self.visibleError;
     if ([state isEqual:@"recognize"] && self.jobProgress) self.statusTitle.stringValue=[NSString stringWithFormat:@"正在识别语音 · %.0f%%",100*self.jobProgress.doubleValue];
@@ -500,11 +524,11 @@ static NSDictionary *Time(CMTime t) {
     if (cloud && self.requestID && [state isEqual:@"recognize"]) self.statusDetail.stringValue=@{@"uploading":@"正在向豆包上传音频…",@"queued":@"音频已提交，正在等待云端处理…",@"processing":@"豆包 2.0 正在识别音频，完成后在本机整理字幕。"}[self.cloudPhase ?: @""] ?: @"正在提交音频，完成后在本机整理字幕。";
     self.serviceLabel.textColor=connected ? NSColor.systemGreenColor : NSColor.secondaryLabelColor;
     self.dropTitle.stringValue=fresh ? (self.dropName ?: @"项目已导入") : @"把项目拖到这里";
-    self.dropDetail.stringValue=!fresh ? @"从 Final Cut Pro 浏览器拖入整个项目" : (awaitingProject ? @"项目已收到 · 等待确认当前时间线" : [NSString stringWithFormat:@"%02ld:%02ld · 整个项目 · 修改时间线后请重新拖入",(long)(CMTimeGetSeconds(self.dropDuration)/60),(long)CMTimeGetSeconds(self.dropDuration)%60]);
-    BOOL busy=self.requestID!=nil || self.referenceRequestID!=nil || self.pendingRecognition!=nil;BOOL managing=[self modelOperationBusy];
+    self.dropDetail.stringValue=!fresh ? @"从 Final Cut Pro 浏览器拖入整个项目" : (awaitingProject ? @"项目已收到 · 等待确认当前时间线" : (self.snapshotConsumed ? @"上次识别已使用此快照 · 请重新拖入项目以确认最新时间线" : [NSString stringWithFormat:@"%02ld:%02ld · 整个项目 · 修改时间线后请重新拖入",(long)(CMTimeGetSeconds(self.dropDuration)/60),(long)CMTimeGetSeconds(self.dropDuration)%60]));
+    BOOL managing=[self modelOperationBusy];
     BOOL preparing=[state isEqual:@"preparing"];
-    self.generateButton.title=preparing ? @"正在准备…" : (busy ? @"正在处理…" : (connected ? (self.titlePayloads ? @"重新识别" : @"生成字幕") : @"准备本机识别"));
-    self.generateButton.enabled=(!connected || !managing || [self selectedModelDownloadInProgress]) && !self.modelDownloadAlert && !preparing && !busy && (!connected || (fresh && [self isolatedProjectActive]));
+    self.generateButton.title=preparing ? @"正在准备…" : (busy ? @"正在处理…" : (connected ? (self.snapshotConsumed ? @"重新拖入项目" : @"生成字幕") : @"准备本机识别"));
+    self.generateButton.enabled=(!connected || !managing || [self selectedModelDownloadInProgress]) && !self.modelDownloadAlert && !preparing && !busy && !self.snapshotConsumed && (!connected || (fresh && [self isolatedProjectActive]));
     if (awaitingProject) {self.generateButton.title=self.validatingDrop ? @"正在确认项目…" : @"重新确认项目";self.generateButton.enabled=!self.validatingDrop && fresh && !busy;}
     self.vocabularyButton.enabled=!busy;self.vocabularyButton.title=[NSString stringWithFormat:@"词库 · %lu",(unsigned long)[self effectiveVocabulary].count];
     self.modelPicker.enabled=!busy && !managing;self.audioPicker.enabled=!busy;self.cancelButton.hidden=!busy;
@@ -543,7 +567,7 @@ static NSDictionary *Time(CMTime t) {
         : @"拖到原项目起点上方。落轨后将片段项分开，可在 FCP 逐句编辑文字和样式。";
     NSDictionary *existingCollision=self.resultManifest[@"existingTitleCollision"];
     if (hasRows && [existingCollision[@"overlappingRows"] unsignedIntegerValue]>0)
-        self.statusDetail.stringValue=[NSString stringWithFormat:@"当前项目已有 %lu 条字幕。拖回新字幕前，请在 FCP 移除旧字幕层，避免叠加；原字幕不会自动删除。",(unsigned long)[existingCollision[@"existingTitles"] unsignedIntegerValue]];
+        self.statusDetail.stringValue=[NSString stringWithFormat:@"项目中的文字标题与 %lu 条新字幕时段重叠，请在 FCP 检查画面是否叠加；原标题不会自动删除。",(unsigned long)[existingCollision[@"overlappingRows"] unsignedIntegerValue]];
     self.tap5aStyleButton.hidden=![self usesFileImport];self.tap5aStyleButton.enabled=!self.importInProgress;
     self.resultView.enabled=ready && !self.importInProgress && !busy;
     self.resultView.toolTip=fileImport ? @"点击导入到 FCP 浏览器。若出现资源库选择，请选择原项目所在资源库；在本次新建的编号事件中将字幕片段拖到原项目起点上方。每次导入都会保留旧版并新建事件。" : @"按住卡片拖到原项目时间线起点上方，落轨后将片段项分开。";
@@ -565,8 +589,10 @@ static NSDictionary *Time(CMTime t) {
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];
     BOOL historical=self.historicalResult;
     self.dropGeneration++;self.validatingDrop=NO;self.historicalResult=NO;
-    // A normal result can be recognized again from its original audio snapshot.
-    // A restored historical result cannot: its snapshot may no longer match FCP.
+    // Keep the project context, but require a fresh FCP drag before another ASR
+    // job. UID and duration alone cannot detect same-length timeline edits or
+    // titles inserted after this snapshot was captured.
+    self.snapshotConsumed=!historical;
     if (historical) {self.freshDropURL=nil;self.freshDropDate=nil;self.dropUID=nil;self.dropName=nil;self.dropDuration=kCMTimeInvalid;}
     self.titlePayloads=nil;self.captionRows=nil;self.resultManifest=nil;self.resultDate=nil;self.resultRequestID=nil;self.resultWasDragged=NO;
     self.requestID=nil;self.requestSHA=nil;self.requestModelID=nil;self.requestVocabulary=nil;self.requestReferenceSHA=nil;self.lastJobStage=nil;
@@ -599,7 +625,7 @@ static NSDictionary *Time(CMTime t) {
 }
 - (void)showModelSettings:(id)sender {
     NSAlert *alert=[NSAlert new]; alert.messageText=@"使用帮助";
-    alert.informativeText=@"先拖入项目，再选择模型并生成字幕。所选本机模型尚未下载时，确认弹窗后会先下载，再自动开始识别；也可在“模型”中提前下载。“词库”可填写人名、品牌和专业词。\n\n默认仅识别对白角色。请在 FCP 将背景音乐设为“音乐”角色；需要保留全部声音时选择“所有音频”。\n\n视频类型不限，单次项目不设固定时长上限。长视频会分段识别，可随时取消。支持普通剪切、单声道／立体声及连接音频。暂不支持变速、多机位、复合片段、音频效果或音量关键帧。";
+    alert.informativeText=@"先拖入项目，再选择模型并生成字幕。所选本机模型尚未下载时，确认弹窗后会先下载，再自动开始识别；也可在“模型”中提前下载。“词库”可填写人名、品牌和专业词。\n\n默认仅识别对白角色。请在 FCP 将背景音乐设为“音乐”角色；需要保留全部声音时选择“所有音频”。\n\n视频类型不限，单次项目不设固定时长上限。长视频会分段识别，可随时取消。支持普通剪切、复合片段、线性变速、单声道／立体声及连接音频。暂不支持平滑变速、倒放、多机位、音频效果或音量关键帧。";
     [alert addButtonWithTitle:@"完成"]; [alert addButtonWithTitle:@"重新准备识别"];
     [alert beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse result) { if (result==NSAlertSecondButtonReturn) [self connectWorker:nil]; }];
 }
@@ -643,7 +669,7 @@ static NSDictionary *Time(CMTime t) {
     }];
 }
 - (void)startWorkerJob:(id)sender {
-    if (self.requestID || self.referenceRequestID || self.pendingRecognition || self.modelDownloadAlert || self.historicalResult || !self.freshDropURL || !self.freshDropDate || ![self isolatedProjectActive] || ![self workerAvailable]) return;
+    if (self.requestID || self.referenceRequestID || self.pendingRecognition || self.modelDownloadAlert || self.historicalResult || self.snapshotConsumed || !self.freshDropURL || !self.freshDropDate || ![self isolatedProjectActive] || ![self workerAvailable]) return;
     if (![self selectedModelAvailable]) {
         if (![self selectedCloudModel]) { [self confirmModelDownload];return; }
         NSAlert *setup=[NSAlert new];setup.messageText=@"先配置豆包云端识别";setup.informativeText=@"项目已保留。请先保存你的语音 API Key，再点击生成字幕。";
@@ -665,7 +691,7 @@ static NSDictionary *Time(CMTime t) {
     }];
 }
 - (void)submitWorkerJob {
-    if (self.requestID || self.referenceRequestID || self.pendingRecognition || self.historicalResult || [self modelOperationBusy]) return;
+    if (self.requestID || self.referenceRequestID || self.pendingRecognition || self.historicalResult || self.snapshotConsumed || [self modelOperationBusy]) return;
     if (!self.bridgeURL || ![self workerAvailable] || ![self isolatedProjectActive]) {
         [self record:@{@"reason":@"worker-submit",@"status":@"connect-service-and-open-isolated-project-first"}]; return;
     }
@@ -736,7 +762,7 @@ static NSDictionary *Time(CMTime t) {
             if (![[self sha256:data] isEqual:response[@"outputs"][name]]) {valid=NO;break;}originals[version]=data;
         }
         if (valid && self.requestReferenceSHA.length && ![response[@"manifest"][@"unreferencedCaptions"] isKindOfClass:NSArray.class]) valid=NO;
-        if (valid && payloads.count==3) { self.titlePayloads=payloads; self.resultDate=NSDate.date;self.resultManifest=response[@"manifest"];self.tap5aStyle=SubPopNormalizeTap5aStyle([NSUserDefaults.standardUserDefaults dictionaryForKey:@"tap5aStylePreset"]);NSString *presetFont=self.tap5aStyle[@"textFont"],*presetSize=[self.tap5aStyle[@"textSize"] stringValue];
+        if (valid && payloads.count==3) { self.snapshotConsumed=YES;self.titlePayloads=payloads; self.resultDate=NSDate.date;self.resultManifest=response[@"manifest"];self.tap5aStyle=SubPopNormalizeTap5aStyle([NSUserDefaults.standardUserDefaults dictionaryForKey:@"tap5aStylePreset"]);NSString *presetFont=self.tap5aStyle[@"textFont"],*presetSize=[self.tap5aStyle[@"textSize"] stringValue];
             if (![self.fontPicker itemWithTitle:presetFont]) [self.fontPicker addItemWithTitle:presetFont];[self.fontPicker selectItemWithTitle:presetFont];
             if (![self.sizePicker itemWithTitle:presetSize]) [self.sizePicker addItemWithTitle:presetSize];[self.sizePicker selectItemWithTitle:presetSize];[self.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];self.resultRequestID=self.requestID;self.captionRows=[NSMutableArray new];for (NSDictionary *row in response[@"manifest"][@"captions"]) [self.captionRows addObject:row.mutableCopy];
             self.referenceUndone=NO;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
@@ -863,7 +889,7 @@ static NSDictionary *Time(CMTime t) {
     if (self.tap5aScoped) [self.tap5aURL stopAccessingSecurityScopedResource];self.tap5aScoped=NO;self.tap5aURL=nil;
     [self.bridgeTimer invalidate]; self.bridgeTimer=nil;
     if (self.bridgeScoped) [self.bridgeURL stopAccessingSecurityScopedResource];
-    self.freshDropURL=nil; self.freshDropDate=nil; self.titlePayloads=nil; self.resultDate=nil; self.dropGeneration++;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
+    self.freshDropURL=nil; self.freshDropDate=nil;self.snapshotConsumed=NO; self.titlePayloads=nil; self.resultDate=nil; self.dropGeneration++;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
     self.bridgeScoped=NO; self.bridgeURL=nil; self.requestID=nil; [self updateInterface];
     if (self.observingTimeline) [self.timeline removeTimelineObserver:self];self.observingTimeline=NO;
     self.timeline = nil; self.host = nil; self.observed = NO; self.observedProjectUID=nil;self.observedProjectDuration=kCMTimeInvalid;
@@ -944,7 +970,14 @@ static NSDictionary *Time(CMTime t) {
     }
     [self record:result];
 }
-- (void)activeSequenceChanged { self.validatingDrop=NO;[self clearPendingRecognition];self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;self.freshDropURL=nil; self.titlePayloads=nil; self.dropGeneration++; self.observed=YES; [self snapshot:@"activeSequenceChanged"]; }
+- (void)activeSequenceChanged {
+    BOOL wasRunning=self.requestID!=nil || self.referenceRequestID!=nil;
+    BOOL cancelled=[self cancelCurrentWorkForProjectSwitch];
+    self.validatingDrop=NO;[self clearPendingRecognition];self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
+    self.freshDropURL=nil;self.snapshotConsumed=NO;self.titlePayloads=nil;self.dropGeneration++;self.observed=YES;
+    [self snapshot:@"activeSequenceChanged"];
+    if (wasRunning) {self.displayState=cancelled ? @"switch-cancelled" : @"error";[self updateInterface];}
+}
 - (void)sequenceTimeRangeChanged { self.observed=YES; [self snapshot:@"sequenceTimeRangeChanged"]; }
 - (void)playheadTimeChanged {
     // Captions are anchored to the whole project, never to the playhead.
@@ -1000,15 +1033,16 @@ static NSDictionary *Time(CMTime t) {
 - (void)recheckLastDrop:(id)sender {
     if (self.requestID || self.titlePayloads) return;
     // Explicit recovery of a real drag record, never a fabricated new input.
-    NSDictionary *last=nil;NSString *lastDate=@"",*lastConsumedDate=@"";
+    NSDictionary *last=nil;NSString *lastDate=@"",*lastConsumedDate=@"",*lastRecognizedDate=@"";
     for (NSURL *url in [[NSFileManager defaultManager] contentsOfDirectoryAtURL:[self evidenceDirectory] includingPropertiesForKeys:nil options:0 error:nil]) {
         if (![url.pathExtension isEqual:@"json"]) continue;
         NSDictionary *record=[self readJSON:url];NSString *date=record[@"recordedAt"];
         if ([record[@"reason"] isEqual:@"title-drag-ended"] && [record[@"operation"] unsignedIntegerValue]!=NSDragOperationNone && [date isKindOfClass:NSString.class] && [date compare:lastConsumedDate]==NSOrderedDescending) lastConsumedDate=date;
+        if ([record[@"reason"] isEqual:@"worker-result"] && [record[@"status"] isEqual:@"ready-to-drag"] && [date isKindOfClass:NSString.class] && [date compare:lastRecognizedDate]==NSOrderedDescending) lastRecognizedDate=date;
         if ([record[@"reason"] isEqual:@"drop"] && [date isKindOfClass:NSString.class] && [date compare:lastDate]==NSOrderedDescending) { last=record;lastDate=date; }
     }
     NSDate *date=[[NSISO8601DateFormatter new] dateFromString:lastDate];
-    if (!date || date.timeIntervalSinceNow>0 || -date.timeIntervalSinceNow>3600 || [lastConsumedDate compare:lastDate]!=NSOrderedAscending) return;
+    if (!date || date.timeIntervalSinceNow>0 || -date.timeIntervalSinceNow>3600 || [lastConsumedDate compare:lastDate]!=NSOrderedAscending || [lastRecognizedDate compare:lastDate]!=NSOrderedAscending) return;
     NSString *file=nil;
     for (NSDictionary *item in last[@"xml"]) if ([item[@"saved"] boolValue] && (!file || [item[@"type"] isEqual:@"com.apple.finalcutpro.xml.v1-14"])) file=item[@"file"];
     if (![file hasPrefix:@"drop-"] || ![file.lastPathComponent isEqual:file]) return;
@@ -1018,26 +1052,38 @@ static NSDictionary *Time(CMTime t) {
     [self.diagnostics close];[self updateInterface];
 }
 - (BOOL)receivePasteboard:(NSPasteboard *)pasteboard {
-    if (self.requestID || self.referenceRequestID) return NO;
-    [self clearPendingRecognition];
-    self.historicalResult=NO;
-    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];
-    self.validatingDrop=NO;self.freshDropURL=nil; self.freshDropDate=nil; self.titlePayloads=nil; self.resultDate=nil; self.dropGeneration++;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
-    NSMutableArray *saved = [NSMutableArray new];
+    // Reject unrelated or malformed drags before abandoning the running job.
+    NSMutableArray<NSDictionary *> *items=[NSMutableArray new];
     for (NSPasteboardType type in pasteboard.types) {
         if (![type hasPrefix:@"com.apple.finalcutpro.xml"]) continue;
-        NSData *data = [pasteboard dataForType:type];
-        if (!data) continue;
+        NSData *data=[pasteboard dataForType:type];if (!data.length) continue;
+        NSXMLDocument *doc=[[NSXMLDocument alloc] initWithData:data options:NSXMLNodeLoadExternalEntitiesNever error:nil];
+        NSArray *projects=[doc nodesForXPath:@"/fcpxml/project | /fcpxml/library/event/project" error:nil];
+        if (projects.count!=1 || ![[projects[0] attributeForName:@"uid"].stringValue length]) continue;
+        [items addObject:@{@"type":type,@"data":data}];
+    }
+    if (!items.count) return NO;
+    NSMutableArray *saved = [NSMutableArray new];
+    NSURL *newDropURL=nil;
+    for (NSDictionary *item in items) {
+        NSPasteboardType type=item[@"type"];
+        NSData *data=item[@"data"];
         NSString *name = [NSString stringWithFormat:@"drop-%@.fcpxml",NSUUID.UUID.UUIDString];
         NSURL *url = [[self evidenceDirectory] URLByAppendingPathComponent:name];
         NSError *error = nil;
         BOOL ok = [data writeToURL:url options:NSDataWritingAtomic error:&error];
-        if (ok && (!self.freshDropURL || [type isEqual:@"com.apple.finalcutpro.xml.v1-14"])) { self.freshDropURL=url; self.freshDropDate=NSDate.date; }
+        if (ok && (!newDropURL || [type isEqual:@"com.apple.finalcutpro.xml.v1-14"])) newDropURL=url;
         [saved addObject:@{@"type":type,@"bytes":@(data.length),@"saved":@(ok),@"file":name,@"error":error.localizedDescription ?: @""}];
     }
-    if (self.freshDropURL) [self beginDropValidation];
+    if (!newDropURL || ![self cancelCurrentWorkForProjectSwitch]) return NO;
+    [self clearPendingRecognition];
+    self.historicalResult=NO;
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];
+    self.validatingDrop=NO;self.freshDropURL=newDropURL;self.freshDropDate=NSDate.date;self.snapshotConsumed=NO;
+    self.titlePayloads=nil;self.resultDate=nil;self.dropGeneration++;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
+    BOOL received=[self beginDropValidation];
     [self record:@{@"reason":@"drop",@"types":pasteboard.types ?: @[],@"xml":saved}];
-    return self.freshDropURL!=nil;
+    return received;
 }
 #include "Preferences.inc"
 #include "ModelPreparation.inc"

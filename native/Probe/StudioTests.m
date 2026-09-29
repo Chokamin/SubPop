@@ -73,10 +73,11 @@ int main(int argc,const char *argv[]) {
         if (c.clearResultButton.hidden || !c.clearResultButton.enabled || ![c.resultView.accessibilityLabel containsString:@"已拖出"] || ![c.statusTitle.stringValue isEqual:@"字幕已拖出"]) return 126;
         NSUInteger generation=c.dropGeneration;
         [c clearResult:nil];
-        if (c.titlePayloads || c.captionRows || !c.freshDropURL || ![c.dropUID isEqual:@"clear-test"] || c.resultWasDragged || c.dropGeneration!=generation+1 || !c.resultView.hidden || !c.clearResultButton.hidden || ![c.generateButton.title isEqual:@"生成字幕"] || !c.generateButton.enabled || ![c.dropTitle.stringValue isEqual:@"测试项目"] || ![c.statusTitle.stringValue isEqual:@"项目已就绪"] || c.draftSaveCount!=1) return 127;
+        if (c.titlePayloads || c.captionRows || !c.freshDropURL || ![c.dropUID isEqual:@"clear-test"] || !c.snapshotConsumed || c.resultWasDragged || c.dropGeneration!=generation+1 || !c.resultView.hidden || !c.clearResultButton.hidden || ![c.generateButton.title isEqual:@"重新拖入项目"] || c.generateButton.enabled || ![c.dropTitle.stringValue isEqual:@"测试项目"] || ![c.statusTitle.stringValue isEqual:@"请重新拖入这个项目"] || c.draftSaveCount!=1) return 127;
+        [c startWorkerJob:nil];if (c.requestID || c.modelDownloadAlert) return 130;
         c.captionRows=[NSMutableArray arrayWithObject:[@{@"text":@"历史字幕"} mutableCopy]];c.titlePayloads=@{@"1.14":[NSData data]};c.resultRequestID=@"historical-clear-test";c.historicalResult=YES;
         [c clearResult:nil];
-        if (c.historicalResult || c.freshDropURL || c.dropUID || c.titlePayloads || ![c.dropTitle.stringValue isEqual:@"把项目拖到这里"] || c.draftSaveCount!=2) return 129;
+        if (c.historicalResult || c.freshDropURL || c.snapshotConsumed || c.dropUID || c.titlePayloads || ![c.dropTitle.stringValue isEqual:@"把项目拖到这里"] || c.draftSaveCount!=2) return 129;
         // FCP starts each newly installed version at half the main window height.
         // Reproduce its 450pt outer window (422pt content), including the restore row.
         for(NSNumber *width in @[@580,@756]) {
@@ -125,7 +126,7 @@ int main(int argc,const char *argv[]) {
                 withCollision[@"existingTitleCollision"]=@{@"status":@"conflict",@"existingTitles":@2,@"overlappingRows":@1};
                 c.resultManifest=withCollision;
                 [c updateInterface];
-                if ([c.statusDetail.stringValue rangeOfString:@"已有 2 条字幕"].location==NSNotFound) return 129;
+                if (![c.statusDetail.stringValue containsString:@"文字标题与 1 条新字幕时段重叠"]) return 132;
                 c.resultManifest=m;[c updateInterface];
             }
             if (width.intValue==580) {
