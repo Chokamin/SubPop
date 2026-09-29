@@ -19,6 +19,11 @@ if __name__=='__main__':
     identity=signing_identity()
     subprocess.run([sys.executable,str(ROOT/'scripts/build_probe.py')],check=True,cwd=ROOT,
                    env={**os.environ,'SUBPOP_SIGNING_IDENTITY':identity})
+    # Exercise the exact executable used by the development worker. The venv's
+    # ordinary python symlink can import NumPy even when this signed launcher
+    # cannot load third-party extension modules.
+    subprocess.run([str(ROOT/'.venv/bin/subpop-python3.12'),'-c','import numpy, scipy, librosa'],
+                   check=True,cwd=ROOT)
     from sign_release import sign
     sign(ROOT/'.subloom/build/SubPop Probe.app',identity,ROOT/'.subloom/build/probe.entitlements')
     subprocess.run(['ditto',str(ROOT/'.subloom/build/SubPop Probe.app'),'/Applications/SubPop.app'],check=True)

@@ -10,12 +10,31 @@ ROOT=Path(__file__).resolve().parents[1]
 SDK=ROOT/'.subloom/sdk-expanded/WorkflowExtensionsSDK.pkg/Payload/Library/Developer/SDKs/WorkflowExtensionSDK.sdk'
 APP=ROOT/'.subloom/build/SubPop Probe.app'
 EXT=APP/'Contents/PlugIns/SubPopProbe.appex'
+TEAM_ID='925BTJVFFZ'
+MACHO={bytes.fromhex(value) for value in ('feedface','feedfacf','cefaedfe','cffaedfe','cafebabe','bebafeca','cafebabf','bfbafeca')}
 
 def plist(path,value):
     path.parent.mkdir(parents=True,exist_ok=True)
     path.write_bytes(plistlib.dumps(value))
 
 def run(*args):subprocess.run([str(a) for a in args],check=True)
+
+def sign_development_runtime(runtime,launcher,identity):
+    """Keep the private worker hardened while allowing its native wheels to load."""
+    if identity=='-':return
+    signed=0
+    for path in runtime.rglob('*'):
+        if path==launcher or path.is_symlink() or not path.is_file():continue
+        with path.open('rb') as stream:
+            if stream.read(4) not in MACHO:continue
+        details=subprocess.run(['codesign','-d','--verbose=2',str(path)],capture_output=True,text=True)
+        same_team=details.returncode==0 and f'TeamIdentifier={TEAM_ID}' in details.stderr
+        if same_team and subprocess.run(['codesign','--verify','--strict',str(path)],capture_output=True).returncode==0:
+            continue
+        result=subprocess.run(['codesign','--force','--sign',identity,'--timestamp','--options','runtime',str(path)],capture_output=True,text=True)
+        if result.returncode:raise RuntimeError(f'Cannot sign development runtime dependency: {path}')
+        signed+=1
+    print(f'Signed {signed} development runtime dependencies')
 
 def build():
     if not (SDK/'usr/lib/libProExtension.a').exists():raise SystemExit(f'Extract the official Apple Workflow Extension SDK first; expected SDK: {SDK}')
@@ -31,6 +50,7 @@ def build():
     plist(launcher_entitlements,{'com.apple.security.application-groups':['925BTJVFFZ.com.chokamin.SubPop'],'com.apple.security.cs.allow-jit':True,'com.apple.security.cs.allow-unsigned-executable-memory':True})
     identity=os.environ.get('SUBPOP_SIGNING_IDENTITY','-')
     signing_options=['--timestamp','--options','runtime'] if identity!='-' else []
+    sign_development_runtime(ROOT/'.venv',launcher,identity)
     run('codesign','--force','--sign',identity,*signing_options,ROOT/'.venv/lib/libpython3.12.dylib')
     run('codesign','--force','--sign',identity,*signing_options,'--entitlements',launcher_entitlements,launcher)
     sparkle=prepare()
@@ -40,7 +60,7 @@ def build():
     if destination.exists():shutil.rmtree(destination)
     shutil.copytree(sparkle/'Sparkle.framework',destination,symlinks=True)
     for bundle in (APP,EXT):(bundle/'Contents/MacOS').mkdir(parents=True,exist_ok=True)
-    base=dict(CFBundleVersion='111',CFBundleShortVersionString='1.3.2',LSMinimumSystemVersion='13.0',SubPopUpdateRepository='Chokamin/SubPop')
+    base=dict(CFBundleVersion='113',CFBundleShortVersionString='1.3.3',LSMinimumSystemVersion='13.0',SubPopUpdateRepository='Chokamin/SubPop')
     plist(APP/'Contents/Info.plist',dict(base,CFBundleDevelopmentRegion='zh_CN',CFBundleLocalizations=['zh_CN'],SUFeedURL=FEED,SUPublicEDKey=PUBLIC_KEY,SUEnableAutomaticChecks=False,SUAllowsAutomaticUpdates=False,SUVerifyUpdateBeforeExtraction=True,SURequireSignedFeed=True,SUSignedFeedFailureExpirationInterval=0,SUShowReleaseNotes=False,SUEnableSystemProfiling=False,LSUIElement=True,CFBundleURLTypes=[dict(CFBundleURLName='com.chokamin.SubPopProbe.start',CFBundleURLSchemes=['subpop-probe'])],SubPopWorkspace=str(ROOT),CFBundleIdentifier='com.chokamin.SubPopProbe',CFBundleName='SubPop',CFBundleIconFile='SubPop',CFBundleIconName='SubPop',CFBundleExecutable='SubPopProbe',CFBundlePackageType='APPL',NSPrincipalClass='NSApplication',NSAppleEventsUsageDescription='SubPop 需要读取 Final Cut Pro 的当前项目和时间线信息。'))
     plist(EXT/'Contents/Info.plist',dict(base,SubPopWorkspace=str(ROOT),CFBundleIdentifier='com.chokamin.SubPopProbe.Extension',CFBundleName='SubPop',CFBundleIconFile='SubPop',CFBundleIconName='SubPop',CFBundleDisplayName='SubPop',CFBundleExecutable='SubPopProbeExtension',CFBundlePackageType='XPC!',NSAppleEventsUsageDescription='SubPop 需要读取 Final Cut Pro 的当前项目和时间线信息。',NSExtension=dict(NSExtensionPointIdentifier='com.apple.FinalCut.WorkflowExtension',ProExtensionPrincipalViewControllerClass='SubPopProbeViewController',ProExtensionAttributes=dict(ContentViewMinimumWidth=580,ContentViewMinimumHeight=450))))
     mac_sdk=subprocess.check_output(['xcrun','--sdk','macosx','--show-sdk-path'],text=True).strip()
