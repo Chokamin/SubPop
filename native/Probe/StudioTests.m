@@ -56,8 +56,7 @@ int main(int argc,const char *argv[]) {
         SubPopPreviewController *c=[SubPopPreviewController new];
         c.previewCatalog=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:@(argv[1])] options:0 error:nil];
         [c loadView];NSWindow *window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,660,740) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];window.contentView=c.view;
-        [c.view layoutSubtreeIfNeeded];NSRect service=[c.serviceLabel convertRect:c.serviceLabel.bounds toView:c.view];
-        if (!NSContainsRect(c.view.bounds,service)) {NSLog(@"Service action is outside initial viewport: %@ of %@",NSStringFromRect(service),NSStringFromRect(c.view.bounds));return 115;}
+        [c.view layoutSubtreeIfNeeded];
         if (c.templatePicker.numberOfItems!=3 || c.templatePicker.indexOfSelectedItem!=SubPopTitleTemplateBasic || ![c.templatePicker.titleOfSelectedItem isEqual:@"普通字幕 · 无底框"]) return 111;
         NSString *initialModel=c.selectedModelID;
         c.selectedModelID=@"doubao-cloud";[c updateInterface];
@@ -91,7 +90,7 @@ int main(int argc,const char *argv[]) {
         for(NSNumber *width in @[@580,@756]) {
             c.observedProjectUID=@"viewport-test";
             [window setContentSize:NSMakeSize(width.doubleValue,422)];[c updateInterface];[c.view layoutSubtreeIfNeeded];
-            for(NSView *control in @[c.generateButton,c.serviceLabel,c.scopeLabel,c.modelPicker,c.audioPicker,c.restoreResultButton,c.dropTitle,c.dropDetail]) {
+            for(NSView *control in @[c.generateButton,c.scopeLabel,c.modelPicker,c.audioPicker,c.restoreResultButton,c.dropTitle,c.dropDetail]) {
                 NSRect rect=[control convertRect:control.bounds toView:c.view];
                 if(!NSContainsRect(c.view.bounds,rect)) {NSLog(@"Initial control clipped: %@ %@",control,NSStringFromRect(rect));return 116;}
             }

@@ -85,7 +85,6 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 @property BOOL compactLayout;
 @property NSTextField *statusTitle;
 @property NSTextField *statusDetail;
-@property NSTextField *serviceLabel;
 @property NSTextField *dropTitle;
 @property NSTextField *dropDetail;
 @property NSTextField *steps;
@@ -540,13 +539,11 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     NSDictionary *copy=SubPopPresentation(state); self.statusTitle.stringValue=copy[@"title"]; self.statusDetail.stringValue=copy[@"detail"];
     if (([state isEqual:@"error"] || [state isEqual:@"silent"]) && self.visibleError.length) self.statusDetail.stringValue=self.visibleError;
     if ([state isEqual:@"recognize"] && self.jobProgress) self.statusTitle.stringValue=[NSString stringWithFormat:@"正在识别语音 · %.0f%%",100*self.jobProgress.doubleValue];
-    self.serviceLabel.stringValue=connected ? @"● 本机就绪" : ([[self readJSON:[self.bridgeURL URLByAppendingPathComponent:@"service.json"]][@"status"] isEqual:@"updating"] ? @"正在更新 SubPop" : (self.bridgeURL ? @"正在连接本机服务" : @"本机服务未连接"));
     self.modelDetail.stringValue=[NSString stringWithFormat:@"%@ · %@ · %@",[self selectedModel][@"description"] ?: @"",[self selectedModelAvailable] ? @"已安装" : @"首次识别时下载",[[self selectedModel][@"engine"] isEqual:@"mlx-whisper"] ? @"本机 MLX" : @"本机 CPU"];
     BOOL cloud=[self selectedCloudModel];
     if (cloud) self.modelDetail.stringValue=[NSString stringWithFormat:@"豆包云端 · %@ · 按账户计费",!connected ? @"连接后确认配置" : ([self selectedModelAvailable] ? @"已配置，尚需有效服务额度" : @"请先配置 API Key")];
     self.scopeLabel.stringValue=cloud ? @"云端识别会上传音频至火山引擎 · 按账户计费" : @"音频留在本机  ·  字幕回到你的时间线";
     if (cloud && self.requestID && [state isEqual:@"recognize"]) self.statusDetail.stringValue=@{@"uploading":@"正在向豆包上传音频…",@"queued":@"音频已提交，正在等待云端处理…",@"processing":@"豆包 2.0 正在识别音频，完成后在本机整理字幕。"}[self.cloudPhase ?: @""] ?: @"正在提交音频，完成后在本机整理字幕。";
-    self.serviceLabel.textColor=connected ? NSColor.systemGreenColor : NSColor.secondaryLabelColor;
     self.dropTitle.stringValue=fresh ? (self.dropName ?: @"项目已导入") : @"把项目拖到这里";
     if (!fresh) self.dropDetail.stringValue=@"从 Final Cut Pro 浏览器拖入整个项目";
     else if (awaitingProject) self.dropDetail.stringValue=@"项目已收到 · 等待确认当前时间线";
@@ -949,9 +946,18 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 - (void)windowWillMiniaturize:(NSNotification *)notification { self.windowMiniaturizing=YES; }
 - (void)windowDidDeminiaturize:(NSNotification *)notification { self.windowMiniaturizing=NO;[self updateInterface]; }
 - (void)viewWillDisappear {
-    // FCP's hosted window sends this callback while miniaturizing. The view is
-    // still the same session and will be shown again without viewDidAppear.
-    if (self.windowMiniaturizing || self.view.window.isMiniaturized) { [super viewWillDisappear];return; }
+    [super viewWillDisappear];
+    // FCP can send viewWillDisappear before NSWindowWillMiniaturize. Defer the
+    // close decision until AppKit has finished changing the window state.
+    NSWindow *window=self.view.window ?: self.lifecycleWindow;
+    if (self.windowMiniaturizing || window.isMiniaturized) return;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(.5*NSEC_PER_SEC)),dispatch_get_main_queue(), ^{
+        if (window!=self.lifecycleWindow || self.windowMiniaturizing || window.isMiniaturized) return;
+        if (window.isVisible && self.view.window==window) return;
+        [self tearDownSession];
+    });
+}
+- (void)tearDownSession {
     [NSNotificationCenter.defaultCenter removeObserver:self name:NSWindowWillMiniaturizeNotification object:self.lifecycleWindow];
     [NSNotificationCenter.defaultCenter removeObserver:self name:NSWindowDidDeminiaturizeNotification object:self.lifecycleWindow];
     self.lifecycleWindow=nil;self.windowMiniaturizing=NO;
@@ -967,7 +973,6 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     self.bridgeScoped=NO; self.bridgeURL=nil; self.requestID=nil; [self updateInterface];
     if (self.observingTimeline) [self.timeline removeTimelineObserver:self];self.observingTimeline=NO;
     self.timeline = nil; self.host = nil; self.observed = NO; self.observedProjectUID=nil;self.observedProjectDuration=kCMTimeInvalid;
-    [super viewWillDisappear];
 }
 - (void)dealloc { [NSNotificationCenter.defaultCenter removeObserver:self]; }
 - (void)refresh:(id)sender { [self snapshot:@"manual"]; }

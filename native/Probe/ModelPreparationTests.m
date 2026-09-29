@@ -75,7 +75,7 @@ int main(int argc,const char *argv[]) {
         [NSFileManager.defaultManager createDirectoryAtURL:temporary withIntermediateDirectories:YES attributes:nil error:nil];
         SubPopModelPreparationTests *c=[SubPopModelPreparationTests new];c.testDirectory=temporary;c.bridgeURL=temporary;
         c.testCatalog=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:@(argv[1])] options:0 error:nil];service(c,NO);
-        [c loadView];NSWindow *window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,660,422) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];window.contentView=c.view;
+        [c loadView];NSWindow *window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,660,422) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];window.contentView=c.view;c.lifecycleWindow=window;
         c.selectedModelID=@"doubao-cloud";c.disconnected=YES;[c updateInterface];
         check([c.modelDetail.stringValue containsString:@"连接后确认配置"] && ![c.modelDetail.stringValue containsString:@"请先配置 API Key"],@"disconnected cloud state does not falsely report a missing API key");
         c.selectedModelID=@"qwen3-asr-0.6b";c.disconnected=NO;[c updateInterface];
@@ -102,9 +102,15 @@ int main(int argc,const char *argv[]) {
         check([c.freshDropURL isEqual:minimizedDrop] && c.bridgeURL && !c.titlePayloads && c.validatingDrop,
               @"minimizing keeps the active project and service connection");
         [c windowDidDeminiaturize:[NSNotification notificationWithName:NSWindowDidDeminiaturizeNotification object:window]];
+        [c viewWillDisappear];
+        [c windowWillMiniaturize:[NSNotification notificationWithName:NSWindowWillMiniaturizeNotification object:window]];
+        [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.6]];
+        check([c.freshDropURL isEqual:minimizedDrop] && c.bridgeURL,
+              @"late miniaturize notification cannot clear the project or connection");
+        [c windowDidDeminiaturize:[NSNotification notificationWithName:NSWindowDidDeminiaturizeNotification object:window]];
         c.timeline=nil;[c viewWillDisappear];
-        [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.2]];
-        check(!c.freshDropURL && !c.validatingDrop,@"closing the panel cannot resurrect a pending drop");
+        [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.6]];
+        check(!c.freshDropURL && !c.validatingDrop && !c.bridgeURL,@"closing the panel releases its session and cannot resurrect a pending drop");
         c.bridgeURL=temporary;
         reset(c);check(c.generateButton.enabled && [c.dropTitle.stringValue isEqual:@"首次使用测试"] && [c.statusTitle.stringValue isEqual:@"项目已就绪"],@"project remains ready without model");
         check(!c.modelRequestID && !c.requestID,@"drop does not download or recognize");
@@ -146,7 +152,9 @@ int main(int argc,const char *argv[]) {
         reset(c);begin(c);c.disconnected=YES;[c pollWorker:nil];check(!c.pendingRecognition && !c.requestID && [c.displayState isEqual:@"model-download-failed"],@"worker disconnect never auto-runs later");
         reset(c);NSString *existing=[c submitModelOperation:@"install" model:c.selectedModelID];begin(c);
         check([c.modelRequestID isEqual:existing],@"existing selected download can be joined without duplication");[c cancelJob:nil];
-        reset(c);begin(c);[c viewWillDisappear];check(!c.pendingRecognition && !c.requestID,@"closing extension disarms auto-recognition");
+        reset(c);begin(c);c.lifecycleWindow=window;[window orderOut:nil];[c viewWillDisappear];
+        [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.6]];
+        check(!c.pendingRecognition && !c.requestID,@"closing extension disarms auto-recognition");
         c.bridgeURL=temporary;c.timeline=(FCPXTimeline *)[NSObject new];reset(c);service(c,YES);[c submitWorkerJob];
         NSString *activeRequest=c.requestID;check(activeRequest.length>0,@"recognition request starts before project switch");
         NSPasteboard *invalid=[NSPasteboard pasteboardWithUniqueName];[invalid setString:@"not a project" forType:@"public.utf8-plain-text"];
