@@ -45,11 +45,26 @@ def linear_time_map(node, length):
             raise ValueError('暂不支持平滑插值变速；当前无法准确重建这段音频')
         points.append((seconds(point.get('time','')),seconds(point.get('value',''))))
         if len(points)>5000:raise ValueError('变速关键点过多')
-    if len(points)<2 or points[0][0]!=0 or points[-1][0]!=length:
+    # FCP's own speed-ramp XML may end a few audio samples beyond the clip's
+    # visible duration. Trim its final affine segment to the actual endpoint.
+    if len(points)<2 or points[0][0]!=0 or points[-1][0]<length:
         raise ValueError('变速时间范围不完整')
-    if any(end[0]<=begin[0] or end[1]<=begin[1] for begin,end in zip(points,points[1:])):
-        raise ValueError('暂不支持停帧或倒放；当前无法准确重建这段音频')
-    return [(a[0],b[0],a[1],b[1]) for a,b in zip(points,points[1:])],mapping.get('preservesPitch','1')=='1'
+    intervals=[]
+    for begin,end in zip(points,points[1:]):
+        if end[0]<=begin[0] or end[1]<begin[1]:
+            raise ValueError('暂不支持停帧或倒放；当前无法准确重建这段音频')
+        if begin[0]>=length:break
+        output_end=min(end[0],length)
+        if end[1]==begin[1]:
+            # FCP's speed-ramp preset may insert a two-sample stationary lead.
+            # A material freeze is still unsupported; this tiny lead is silent.
+            if output_end-begin[0]>Fraction(1,1000):
+                raise ValueError('暂不支持停帧或倒放；当前无法准确重建这段音频')
+            continue
+        source_end=begin[1]+(end[1]-begin[1])*(output_end-begin[0])/(end[0]-begin[0])
+        intervals.append((begin[0],output_end,begin[1],source_end))
+    if not intervals:raise ValueError('变速时间范围不完整')
+    return intervals,mapping.get('preservesPitch','1')=='1'
 
 
 def inverse_retime_segment(segment, intervals, preserve_pitch, origin, visible):
@@ -341,7 +356,7 @@ def render(xml,directory,binary,expected_uid,audio_mode='dialogue'):
         output_total=segment['sampleCount'];source_first=sample(Fraction(segment['source_start']))
         source_total=(sample(Fraction(segment['source_start'])+Fraction(segment['source_duration']))-source_first
                       if 'source_duration' in segment else output_total)
-        if not source_total or not output_total or not Fraction(1,4)<=Fraction(source_total,output_total)<=4:
+        if not source_total or not output_total or not Fraction(1,20)<=Fraction(source_total,output_total)<=20:
             raise ValueError('音频变速超出可准确重建的范围')
         done=0
         while done<output_total:

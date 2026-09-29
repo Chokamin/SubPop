@@ -145,7 +145,7 @@ class ProjectTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'平滑插值变速'):self.inspect(root)
         mapping[1].set('interp','linear');mapping[-1].set('value','1s')
         with self.assertRaisesRegex(ValueError,'倒放'):self.inspect(root)
-        mapping[-1].set('value','8s');mapping[-1].set('time','5s')
+        mapping[-1].set('value','8s');mapping[-1].set('time','3s')
         with self.assertRaisesRegex(ValueError,'范围不完整'):self.inspect(root)
         mapping[-1].set('time','4s')
         media,ref=compound(root,seq,clip)
@@ -154,6 +154,35 @@ class ProjectTests(unittest.TestCase):
         ET.SubElement(outer_map,'timept',time='4s',value='4s',interp='linear')
         self.assertEqual([(s['startSample'],s['source_start']) for s in self.inspect(root)['segments']],
                          [(0,'0'),(32000,'2')])
+
+    def test_fcp_speed_ramp_trims_time_map_tail_and_tiny_stationary_lead(self):
+        # These points came from FCP 12.3's own "从 0%" speed-ramp XML export.
+        root,p,seq,clip=basic()
+        duration=Fraction(510720,48000)
+        seq.set('duration',f'{duration}s');clip.set('duration',f'{duration}s')
+        root.find('resources/asset').set('duration','8s')
+        mapping=ET.SubElement(clip,'timeMap',preservesPitch='0')
+        for output,source in (
+            ('0s','0s'),('2/48000s','0s'),('128002/48000s','5/10s'),
+            ('256000/48000s','2s'),('8s','45/10s'),('7680030/720000s','8s')):
+            ET.SubElement(mapping,'timept',time=output,value=source,interp='linear')
+        plan=self.inspect(root)
+        self.assertEqual(len(plan['segments']),4)
+        self.assertEqual(plan['segments'][0]['startSample'],1)
+        self.assertEqual(sum(s['sampleCount'] for s in plan['segments']),plan['sampleCount']-1)
+        self.assertLess(Fraction(plan['segments'][-1]['source_start'])+Fraction(plan['segments'][-1]['source_duration']),8)
+        # A real freeze cannot be silently dropped as the FCP preset lead is.
+        mapping[1].set('time','1/10s')
+        with self.assertRaisesRegex(ValueError,'停帧'):self.inspect(root)
+        mapping[1].set('time','2/48000s')
+        clip.remove(mapping);clip.set('duration','8s')
+        media,ref=compound(root,seq,clip)
+        ref.set('duration',f'{duration}s');ref.append(mapping)
+        compound_plan=self.inspect(root)
+        self.assertEqual([(s['offset'],s['duration'],s['source_start'],s['source_duration'])
+                          for s in compound_plan['segments']],
+                         [(s['offset'],s['duration'],s['source_start'],s['source_duration'])
+                          for s in plan['segments']])
         for extra in ('duplicate','child','timeMap'):
             root,p,seq,clip=basic();c=ET.SubElement(clip,'conform-rate',scaleEnabled='0')
             if extra=='duplicate':ET.SubElement(clip,'conform-rate',scaleEnabled='0')
