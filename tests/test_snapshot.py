@@ -45,6 +45,24 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(collision(old,edited)['status'],'conflict')
         self.assertEqual(collision(old,[])['status'],'clear')
 
+    def test_source_frame_title_does_not_block_project_audio(self):
+        # FCP can place a title on a source clip's frame grid even when its
+        # visible edges fall between project frames (e.g. 60 fps in 29.97).
+        root=ET.parse(ROOT/'tests/fixtures/fcp-12.3-title-split.fcpxml').getroot()
+        root.find('resources/format').set('frameDuration','1001/30000s')
+        ET.SubElement(root.find('resources'),'format',id='source60',frameDuration='1/60s')
+        root.find('.//spine/asset-clip').set('format','source60')
+        first=root.find('.//title')
+        first.set('offset','1/60s')
+        normalized,existing=prepare(ET.tostring(root),generic=True)
+        self.assertFalse(ET.fromstring(normalized).findall('.//title'))
+        self.assertEqual((existing[0]['start_frame'],existing[0]['end_frame']),(0,97))
+        self.assertFalse(existing[0]['exactTiming'])
+        # Conservative rounding may overlap a new subtitle, but must never
+        # declare an exact duplicate when the original edges are fractional.
+        new=[{k:existing[0][k] for k in ('text','start_frame','end_frame')}]
+        self.assertEqual(collision(new,existing)['status'],'conflict')
+
     def test_unknown_template_or_nested_audio_refused(self):
         raw=(ROOT/'tests/fixtures/fcp-12.3-title-split.fcpxml').read_bytes()
         for mode in ('template','audio','filter'):

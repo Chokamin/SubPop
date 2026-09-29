@@ -179,14 +179,16 @@ def prepare(data, generic=False):
         if seconds(title.get('duration','0s'))<=0:raise ValueError('Invalid title timing')
         visible_start,visible_end=visible
         if visible_end>visible_start:
-            if not 0<=visible_start<visible_end<=duration or (not retimed and ((visible_start*fps).denominator!=1 or (visible_end*fps).denominator!=1)):
+            if not 0<=visible_start<visible_end<=duration:
                 raise ValueError('Invalid title timing')
-            # FCP quantizes retimed titles to project frames. Widen the warning
-            # interval by at most one frame; this never changes the original.
-            first=(visible_start*fps).__floor__() if retimed else int(visible_start*fps)
-            last=(visible_end*fps).__ceil__() if retimed else int(visible_end*fps)
+            # Titles inside clips can be aligned to the source format rather
+            # than the project's frame grid. Cover their visible interval for
+            # collision warnings without changing the original FCP timeline.
+            start_frame,end_frame=visible_start*fps,visible_end*fps
+            exact_timing=start_frame.denominator==1 and end_frame.denominator==1
             existing.append({'text':''.join(''.join(t.itertext()) for t in title.findall('text')).strip(),
-                             'start_frame':first,'end_frame':last,'enabled':title.get('enabled','1')!='0'})
+                             'start_frame':start_frame.__floor__(),'end_frame':end_frame.__ceil__(),
+                             'enabled':title.get('enabled','1')!='0','exactTiming':exact_timing})
         stripped[id(title)]=(parent,title)
     for parent,title in stripped.values():
         if parent.tag=='spine':
@@ -198,7 +200,7 @@ def prepare(data, generic=False):
 
 
 def collision(rows,existing):
-    exact=sum(any(e['enabled'] and all(e[k]==row[k] for k in ('text','start_frame','end_frame')) for e in existing) for row in rows)
+    exact=sum(any(e['enabled'] and e.get('exactTiming',True) and all(e[k]==row[k] for k in ('text','start_frame','end_frame')) for e in existing) for row in rows)
     overlaps=sum(any(e['start_frame']<row['end_frame'] and row['start_frame']<e['end_frame'] for e in existing) for row in rows)
     # Never overwrite proofreading, duplicate an existing title, or infer ownership.
     return {'status':'duplicate' if rows and exact==len(rows) else ('conflict' if overlaps else 'clear'),
