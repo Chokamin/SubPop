@@ -18,8 +18,34 @@
 @property BOOL showingCloudSettings;
 @end
 @implementation SubPopAppDelegate
+- (BOOL)prepareBridge {
+    NSString *bridge=SubPopBridgePath(NSBundle.mainBundle);
+    NSError *error=nil;
+    if (![NSFileManager.defaultManager createDirectoryAtPath:bridge withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0700} error:&error]) {
+        NSLog(@"SubPop bridge directory: %@",error);return NO;
+    }
+    // Preserve recoverable requests when moving from the old bookmark bridge.
+    if (!SubPopSharedBridgeURL()) return YES;
+    NSString *old=[SubPopWorkspace(NSBundle.mainBundle) stringByAppendingPathComponent:@".subloom/verification/bridge"];
+    for (NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:old error:nil]) {
+        if (![[NSUUID alloc] initWithUUIDString:name]) continue;
+        NSString *source=[old stringByAppendingPathComponent:name],*target=[bridge stringByAppendingPathComponent:name];
+        BOOL directory=NO;
+        if (![NSFileManager.defaultManager fileExistsAtPath:source isDirectory:&directory] || !directory || [NSFileManager.defaultManager fileExistsAtPath:target]) continue;
+        NSDictionary *attributes=[NSFileManager.defaultManager attributesOfItemAtPath:source error:nil];
+        if ([attributes[NSFileType] isEqual:NSFileTypeSymbolicLink]) continue;
+        if (![NSFileManager.defaultManager copyItemAtPath:source toPath:target error:&error]) { NSLog(@"SubPop bridge migration: %@",error);continue; }
+        NSString *response=[target stringByAppendingPathComponent:@"response.json"];
+        if (![NSFileManager.defaultManager fileExistsAtPath:response]) {
+            // An interrupted cloud request must never be submitted a second time.
+            NSDictionary *stopped=@{@"requestID":name,@"status":@"failed",@"stage":@"worker-restarted",@"error":@"升级前任务已中断，请重新拖入项目后重试"};
+            [[NSJSONSerialization dataWithJSONObject:stopped options:0 error:nil] writeToFile:response atomically:YES];
+        }
+    }
+    return YES;
+}
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
-    [NSFileManager.defaultManager removeItemAtPath:[SubPopWorkspace(NSBundle.mainBundle) stringByAppendingPathComponent:@".subloom/verification/bridge/update-installing.json"] error:nil];
+    [NSFileManager.defaultManager removeItemAtPath:[SubPopBridgePath(NSBundle.mainBundle) stringByAppendingPathComponent:@"update-installing.json"] error:nil];
     SubPopWriteCloudStatus();[self startEngine];
 }
 - (void)application:(NSApplication *)application openURLs:(NSArray<NSURL *> *)urls {
@@ -30,7 +56,7 @@
         self.onlineUpdate=[SubPopOnlineUpdate new];
         __weak typeof(self) weakSelf=self;
         self.onlineUpdate.prepareInstallation=^{
-            NSString *path=[SubPopWorkspace(NSBundle.mainBundle) stringByAppendingPathComponent:@".subloom/verification/bridge/update-installing.json"];
+            NSString *path=[SubPopBridgePath(NSBundle.mainBundle) stringByAppendingPathComponent:@"update-installing.json"];
             NSDictionary *state=@{@"timestamp":@(NSDate.date.timeIntervalSince1970),@"pid":@(NSProcessInfo.processInfo.processIdentifier)};
             [[NSJSONSerialization dataWithJSONObject:state options:0 error:nil] writeToFile:path atomically:YES];
             [weakSelf.previewWindow close];
@@ -98,37 +124,15 @@
 }
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)flag { [self startEngine]; return NO; }
 - (void)startEngine {
-    if (self.worker.running || self.choosingFolder) return;
+    if (self.worker.running) return;
     NSString *root=SubPopWorkspace(NSBundle.mainBundle);
-    if ([[NSBundle.mainBundle objectForInfoDictionaryKey:@"SubPopPackagedRuntime"] boolValue]) {
-        NSError *error=nil;
-        NSString *bridge=[root stringByAppendingPathComponent:@".subloom/verification/bridge"];
-        if (![NSFileManager.defaultManager createDirectoryAtPath:bridge withIntermediateDirectories:YES attributes:nil error:&error]) { NSLog(@"SubPop data directory: %@",error);return; }
-        [self launchAtURL:[NSURL fileURLWithPath:root]];return;
-    }
-    NSData *bookmark=[NSUserDefaults.standardUserDefaults dataForKey:@"workspaceBookmark"];
-    if (bookmark) {
-        BOOL stale=NO;
-        NSURL *url=[NSURL URLByResolvingBookmarkData:bookmark options:NSURLBookmarkResolutionWithSecurityScope|NSURLBookmarkResolutionWithoutUI relativeToURL:nil bookmarkDataIsStale:&stale error:nil];
-        if (url && !stale && [url.path.stringByStandardizingPath isEqual:root]) { [self launchAtURL:url]; return; }
-    }
-    self.choosingFolder=YES;
-    NSOpenPanel *panel=[NSOpenPanel openPanel]; panel.canChooseFiles=NO; panel.canChooseDirectories=YES; panel.allowsMultipleSelection=NO;
-    panel.directoryURL=[NSURL fileURLWithPath:root]; panel.prompt=@"允许并继续";
-    panel.message=@"首次使用：允许 SubPop 读取本机识别模型。请选择默认打开的 SubPop 文件夹；之后会自动在后台准备。";
-    [panel beginWithCompletionHandler:^(NSModalResponse result) {
-        self.choosingFolder=NO;
-        if (result!=NSModalResponseOK) return;
-        if (![panel.URL.path.stringByStandardizingPath isEqual:root]) return;
-        NSData *data=[panel.URL bookmarkDataWithOptions:NSURLBookmarkCreationWithSecurityScope includingResourceValuesForKeys:nil relativeToURL:nil error:nil];
-        if (data) [NSUserDefaults.standardUserDefaults setObject:data forKey:@"workspaceBookmark"];
-        [self launchAtURL:panel.URL];
-    }];
+    if (![self prepareBridge]) return;
+    [self launchAtURL:[NSURL fileURLWithPath:root isDirectory:YES]];
 }
 - (void)launchAtURL:(NSURL *)url {
     if (self.worker.running) return;
     self.workspace=url; [url startAccessingSecurityScopedResource];
-    self.worker=[NSTask new]; self.worker.executableURL=[url URLByAppendingPathComponent:@".venv/bin/python"];
+    self.worker=[NSTask new]; self.worker.executableURL=[url URLByAppendingPathComponent:@".venv/bin/subpop-python3.12"];
     if ([[NSBundle.mainBundle objectForInfoDictionaryKey:@"SubPopPackagedRuntime"] boolValue]) {
         NSURL *runtime=[NSBundle.mainBundle.resourceURL URLByAppendingPathComponent:@"Runtime"];
         self.worker.executableURL=[runtime URLByAppendingPathComponent:@".venv/bin/python3.12"];
@@ -138,6 +142,7 @@
         self.worker.environment=env;
     }
     NSMutableDictionary *workerEnv=(self.worker.environment ?: NSProcessInfo.processInfo.environment).mutableCopy;
+    workerEnv[@"SUBPOP_BRIDGE_ROOT"]=SubPopBridgePath(NSBundle.mainBundle);
     workerEnv[@"SUBPOP_CONTAINER_EXECUTABLE"]=NSBundle.mainBundle.executablePath;self.worker.environment=workerEnv;
     self.worker.currentDirectoryURL=url; self.worker.arguments=@[@"-B",@"-m",@"probes.worker"];
     NSString *path=[url.path stringByAppendingPathComponent:@".subloom/worker.log"];
@@ -148,7 +153,7 @@
 }
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender {
     if(self.onlineUpdate) {
-        NSData *data=[NSData dataWithContentsOfFile:[SubPopWorkspace(NSBundle.mainBundle) stringByAppendingPathComponent:@".subloom/verification/bridge/service.json"]];
+        NSData *data=[NSData dataWithContentsOfFile:[SubPopBridgePath(NSBundle.mainBundle) stringByAppendingPathComponent:@"service.json"]];
         NSDictionary *service=data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
         if([service isKindOfClass:NSDictionary.class] && [service[@"status"] isEqual:@"busy"] && fabs(NSDate.date.timeIntervalSince1970-[service[@"heartbeat"] doubleValue])<10) {
             [self.onlineUpdate showError:@"当前任务仍在进行，请等待完成后再安装并重启 SubPop。"];return NSTerminateCancel;

@@ -28,14 +28,16 @@ class SigningPolicyTests(unittest.TestCase):
                 extension.mkdir(parents=True)
                 ent = Path(temp) / 'extension.plist'
                 ent.write_bytes(plistlib.dumps({'com.apple.security.app-sandbox': True,
-                    'com.apple.security.cs.disable-library-validation': True}))
+                    'com.apple.security.cs.disable-library-validation': True,
+                    'com.apple.security.application-groups':['925BTJVFFZ.com.chokamin.SubPop']}))
 
                 def execute(command, **kwargs):
                     if '-d' in command:
                         enabled = extension_exception if command[-1] == str(extension) else host_exception
                         return subprocess.CompletedProcess(command, 0, stdout=plistlib.dumps(
                             {'com.apple.security.cs.disable-library-validation': enabled,
-                             'com.apple.security.automation.apple-events':True}))
+                             'com.apple.security.automation.apple-events':True,
+                             'com.apple.security.application-groups':['925BTJVFFZ.com.chokamin.SubPop']}))
                     return Mock(returncode=0)
 
                 with patch.object(sign_release.subprocess, 'run', side_effect=execute):
@@ -52,12 +54,14 @@ class SigningPolicyTests(unittest.TestCase):
             extension.mkdir(parents=True)
             ent = Path(temp) / 'extension.plist'
             ent.write_bytes(plistlib.dumps({'com.apple.security.app-sandbox': True,
-                'com.apple.security.cs.disable-library-validation': True}))
+                'com.apple.security.cs.disable-library-validation': True,
+                'com.apple.security.application-groups':['925BTJVFFZ.com.chokamin.SubPop']}))
 
             def execute(command, **kwargs):
                 if '-d' in command:
                     values = {'com.apple.security.cs.disable-library-validation': True,
-                              'com.apple.security.automation.apple-events': True} if command[-1] == str(extension) else {}
+                              'com.apple.security.automation.apple-events': True,
+                              'com.apple.security.application-groups':['925BTJVFFZ.com.chokamin.SubPop']} if command[-1] == str(extension) else {}
                     return subprocess.CompletedProcess(command, 0, stdout=plistlib.dumps(values))
                 return Mock(returncode=0)
 

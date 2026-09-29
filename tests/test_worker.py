@@ -1,12 +1,24 @@
 import hashlib
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 import uuid
 from probes.worker import request_input,valid_id,publish_result,UID
 
 class WorkerTests(unittest.TestCase):
+    def test_bridge_can_use_shared_directory_without_moving_models(self):
+        with tempfile.TemporaryDirectory() as temp:
+            bridge=Path(temp)/'shared-bridge'
+            env={**os.environ,'SUBPOP_BRIDGE_ROOT':str(bridge)}
+            script='from probes.worker import BRIDGE,ROOT;print(BRIDGE);print(ROOT)'
+            output=subprocess.check_output([sys.executable,'-c',script],env=env,text=True).splitlines()
+            self.assertEqual(Path(output[0]),bridge.resolve())
+            self.assertNotEqual(Path(output[1]),bridge)
+
     def test_only_canonical_request_ids(self):
         self.assertTrue(valid_id(str(uuid.uuid4())))
         for value in ('../outside','123',None,str(uuid.uuid4()).upper()):self.assertFalse(valid_id(value))

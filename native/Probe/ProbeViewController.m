@@ -529,10 +529,10 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     NSDictionary *copy=SubPopPresentation(state); self.statusTitle.stringValue=copy[@"title"]; self.statusDetail.stringValue=copy[@"detail"];
     if (([state isEqual:@"error"] || [state isEqual:@"silent"]) && self.visibleError.length) self.statusDetail.stringValue=self.visibleError;
     if ([state isEqual:@"recognize"] && self.jobProgress) self.statusTitle.stringValue=[NSString stringWithFormat:@"正在识别语音 · %.0f%%",100*self.jobProgress.doubleValue];
-    self.serviceLabel.stringValue=connected ? @"● 本机就绪" : ([[self readJSON:[self.bridgeURL URLByAppendingPathComponent:@"service.json"]][@"status"] isEqual:@"updating"] ? @"正在更新 SubPop" : (self.bridgeURL ? @"本机服务未就绪" : @"首次使用 · 点击准备本机识别"));
+    self.serviceLabel.stringValue=connected ? @"● 本机就绪" : ([[self readJSON:[self.bridgeURL URLByAppendingPathComponent:@"service.json"]][@"status"] isEqual:@"updating"] ? @"正在更新 SubPop" : (self.bridgeURL ? @"正在连接本机服务" : @"本机服务未连接"));
     self.modelDetail.stringValue=[NSString stringWithFormat:@"%@ · %@ · %@",[self selectedModel][@"description"] ?: @"",[self selectedModelAvailable] ? @"已安装" : @"首次识别时下载",[[self selectedModel][@"engine"] isEqual:@"mlx-whisper"] ? @"本机 MLX" : @"本机 CPU"];
     BOOL cloud=[self selectedCloudModel];
-    if (cloud) self.modelDetail.stringValue=[NSString stringWithFormat:@"豆包云端 · %@ · 按账户计费",[self selectedModelAvailable] ? @"已配置，尚需有效服务额度" : @"请先配置 API Key"];
+    if (cloud) self.modelDetail.stringValue=[NSString stringWithFormat:@"豆包云端 · %@ · 按账户计费",!connected ? @"连接后确认配置" : ([self selectedModelAvailable] ? @"已配置，尚需有效服务额度" : @"请先配置 API Key")];
     self.scopeLabel.stringValue=cloud ? @"云端识别会上传音频至火山引擎 · 按账户计费" : @"音频留在本机  ·  字幕回到你的时间线";
     if (cloud && self.requestID && [state isEqual:@"recognize"]) self.statusDetail.stringValue=@{@"uploading":@"正在向豆包上传音频…",@"queued":@"音频已提交，正在等待云端处理…",@"processing":@"豆包 2.0 正在识别音频，完成后在本机整理字幕。"}[self.cloudPhase ?: @""] ?: @"正在提交音频，完成后在本机整理字幕。";
     self.serviceLabel.textColor=connected ? NSColor.systemGreenColor : NSColor.secondaryLabelColor;
@@ -540,7 +540,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     self.dropDetail.stringValue=!fresh ? @"从 Final Cut Pro 浏览器拖入整个项目" : (awaitingProject ? @"项目已收到 · 等待确认当前时间线" : (self.snapshotConsumed ? @"上次识别已使用此快照 · 请重新拖入项目以确认最新时间线" : [NSString stringWithFormat:@"%02ld:%02ld · 整个项目 · 修改时间线后请重新拖入",(long)(CMTimeGetSeconds(self.dropDuration)/60),(long)CMTimeGetSeconds(self.dropDuration)%60]));
     BOOL managing=[self modelOperationBusy];
     BOOL preparing=[state isEqual:@"preparing"];
-    self.generateButton.title=preparing ? @"正在准备…" : (busy ? @"正在处理…" : (connected ? (self.snapshotConsumed ? @"重新拖入项目" : @"生成字幕") : @"准备本机识别"));
+    self.generateButton.title=preparing ? @"正在准备…" : (busy ? @"正在处理…" : (connected ? (self.snapshotConsumed ? @"重新拖入项目" : @"生成字幕") : @"重新连接本机服务"));
     self.generateButton.enabled=(!connected || !managing || [self selectedModelDownloadInProgress]) && !self.modelDownloadAlert && !preparing && !busy && !self.snapshotConsumed && (!connected || (fresh && [self isolatedProjectActive]));
     if (awaitingProject) {self.generateButton.title=self.validatingDrop ? @"正在确认项目…" : @"重新确认项目";self.generateButton.enabled=!self.validatingDrop && fresh && !busy;}
     self.vocabularyButton.enabled=!busy;self.vocabularyButton.title=[NSString stringWithFormat:@"词库 · %lu",(unsigned long)[self effectiveVocabulary].count];
@@ -643,7 +643,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 }
 - (void)showModelSettings:(id)sender {
     NSAlert *alert=[NSAlert new]; alert.messageText=@"使用帮助";
-    alert.informativeText=@"先拖入项目，再选择模型并生成字幕。所选本机模型尚未下载时，确认弹窗后会先下载，再自动开始识别；也可在“模型”中提前下载。“词库”可填写人名、品牌和专业词。\n\n默认仅识别对白角色。请在 FCP 将背景音乐设为“音乐”角色；需要保留全部声音时选择“所有音频”。\n\n视频类型不限，单次项目不设固定时长上限。长视频会分段识别，可随时取消。支持普通剪切、复合片段整体线性变速、单声道／立体声及连接音频。画面倒放但对白正常播放可识别；暂不支持对白倒放、平滑插值变速、多机位、音频效果或音量关键帧。";
+    alert.informativeText=@"先拖入项目，再选择模型并生成字幕。所选本机模型尚未下载时，确认弹窗后会先下载，再自动开始识别；也可在“模型”中提前下载。“词库”可填写人名、品牌和专业词。\n\n默认仅识别对白角色。请在 FCP 将背景音乐设为“音乐”角色；需要保留全部声音时选择“所有音频”。\n\n视频类型不限，单次项目不设固定时长上限。长视频会分段识别，可随时取消。支持普通剪切、复合片段整体线性变速、单声道／立体声及连接音频。画面倒放但对白正常播放可识别；降噪和压缩等效果不会阻止识别，但识别使用处理前原声；对白倒放、平滑插值变速、多机位和音量关键帧仍有限制。";
     [alert addButtonWithTitle:@"完成"]; [alert addButtonWithTitle:@"重新准备识别"];
     [alert beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse result) { if (result==NSAlertSecondButtonReturn) [self connectWorker:nil]; }];
 }
@@ -662,6 +662,10 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     else [self launchEngine];
 }
 - (BOOL)restoreBridge {
+    NSURL *shared=SubPopSharedBridgeURL();
+    if (shared && [NSFileManager.defaultManager createDirectoryAtURL:shared withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0700} error:nil]) {
+        [self attachBridge:shared];return YES;
+    }
     NSData *data=[NSUserDefaults.standardUserDefaults dataForKey:@"taskDirectoryBookmark"];
     if (!data) return NO;
     BOOL stale=NO; NSURL *url=[NSURL URLByResolvingBookmarkData:data options:NSURLBookmarkResolutionWithSecurityScope|NSURLBookmarkResolutionWithoutUI relativeToURL:nil bookmarkDataIsStale:&stale error:nil];
@@ -886,12 +890,12 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     }
     self.windowMiniaturizing=NO;
     if (self.observingTimeline && self.bridgeURL) { [self updateInterface];return; }
+    if (!self.bridgeURL) [self restoreBridge];
     id candidate = ProExtensionHostSingleton();
     if (![candidate conformsToProtocol:@protocol(FCPXHost)]) { [self record:@{@"status":@"host unavailable"}]; return; }
     self.host = candidate; self.timeline = self.host.timeline;
     [self record:@{@"status":@"waiting for timeline observer", @"host":self.host.name ?: @"", @"version":self.host.versionString ?: @"", @"bundle":self.host.bundleIdentifier ?: @""}];
     if (!self.observingTimeline) { [self.timeline addTimelineObserver:self];self.observingTimeline=YES; }
-    if (!self.bridgeURL) [self restoreBridge];
 }
 - (void)windowWillMiniaturize:(NSNotification *)notification { self.windowMiniaturizing=YES; }
 - (void)windowDidDeminiaturize:(NSNotification *)notification { self.windowMiniaturizing=NO;[self updateInterface]; }

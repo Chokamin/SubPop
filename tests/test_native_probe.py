@@ -53,12 +53,14 @@ class NativeBundleTests(unittest.TestCase):
         self.assertIs(ent['com.apple.security.app-sandbox'],True)
         self.assertEqual(ent['com.apple.security.scripting-targets'],{'com.apple.FinalCut':['com.apple.FinalCut.library.inspection'],'com.apple.FinalCutApp':['com.apple.FinalCut.library.inspection']})
         self.assertIs(ent['com.apple.security.automation.apple-events'],True)
+        self.assertEqual(ent['com.apple.security.application-groups'],['925BTJVFFZ.com.chokamin.SubPop'])
         # FCP loads its differently signed ProViewServiceSupport in this process.
         self.assertIs(ent['com.apple.security.cs.disable-library-validation'],True)
         host_data=subprocess.check_output(['codesign','-d','--entitlements',':-',str(APP)],stderr=subprocess.DEVNULL)
         host=plistlib.loads(host_data) if host_data.strip() else {}
         self.assertNotIn('com.apple.security.cs.disable-library-validation',host)
-        self.assertEqual(host,{'com.apple.security.automation.apple-events':True})
+        self.assertEqual(host,{'com.apple.security.automation.apple-events':True,
+                               'com.apple.security.application-groups':['925BTJVFFZ.com.chokamin.SubPop']})
         self.assertIs(ent['com.apple.security.files.user-selected.read-write'],True)
         self.assertNotIn('com.apple.security.network.server',ent)
         self.assertTrue(ent['com.apple.security.network.client'])  # Explicit GitHub update checks.

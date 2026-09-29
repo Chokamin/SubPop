@@ -13,14 +13,18 @@ def run(*args):
 def sign(app, identity, extension_entitlements):
     app = Path(app).resolve()
     entitlements = plistlib.loads(Path(extension_entitlements).read_bytes())
+    group=['925BTJVFFZ.com.chokamin.SubPop']
     if entitlements.get('com.apple.security.cs.disable-library-validation') is not True or entitlements.get('com.apple.security.app-sandbox') is not True:
         raise ValueError('FCP extension requires its sandbox and the host-framework library-validation exception')
+    if entitlements.get('com.apple.security.application-groups')!=group:
+        raise ValueError('FCP extension requires the shared SubPop app group')
     runtime = app/'Contents/Resources/Runtime'
     python_entitlements = app.parent/'python-signing.plist'
     # Numba/LLVM generate machine code in the Python process. Scope exceptions to Python only.
     python_entitlements.write_bytes(plistlib.dumps({
         'com.apple.security.cs.allow-jit': True,
         'com.apple.security.cs.allow-unsigned-executable-memory': True,
+        'com.apple.security.application-groups': ['925BTJVFFZ.com.chokamin.SubPop'],
     }))
     targets = []
     for path in app.rglob('*'):
@@ -55,6 +59,8 @@ def sign(app, identity, extension_entitlements):
             raise ValueError('Library-validation exception must be scoped to the FCP extension')
         if values.get('com.apple.security.automation.apple-events') is not True:
             raise ValueError('Both app and extension must declare Apple Events for TCC attribution')
+        if values.get('com.apple.security.application-groups')!=group:
+            raise ValueError('Both app and extension must declare the shared SubPop app group')
     python_entitlements.unlink()
     print(f'Signed {len(targets)} Mach-O files and app/extension bundles',flush=True)
 

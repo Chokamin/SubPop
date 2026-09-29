@@ -18,7 +18,7 @@ from .vocabulary import validate as validate_vocabulary
 from .reference_script import validate as validate_reference, digest as reference_digest
 from .models import DEFAULT_MODEL_ID, model_spec, resolve_model, availability
 
-BRIDGE=ROOT/'.subloom/verification/bridge'
+BRIDGE=Path(os.environ.get('SUBPOP_BRIDGE_ROOT',str(ROOT/'.subloom/verification/bridge'))).expanduser().resolve()
 MAX_XML=16*1024*1024
 MAX_REQUEST=4*1024*1024
 
@@ -110,7 +110,9 @@ def model_request(directory):
 
 
 def serve():
-    BRIDGE.mkdir(parents=True,exist_ok=True);os.chmod(BRIDGE,0o700)
+    # The container creates the private App Group bridge with mode 0700.
+    # A child process can use it, but macOS may deny changing its metadata.
+    BRIDGE.mkdir(parents=True,exist_ok=True)
     lock=(BRIDGE/'worker.lock').open('w')
     fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
     update_lease=TaskLease(BRIDGE/'update.lock')

@@ -1,6 +1,7 @@
 """Build the native integration probe against a locally extracted Apple SDK."""
 from pathlib import Path
 import plistlib
+import os
 import shutil
 import subprocess
 from sparkle_dependency import prepare, PUBLIC_KEY, FEED
@@ -18,6 +19,20 @@ def run(*args):subprocess.run([str(a) for a in args],check=True)
 
 def build():
     if not (SDK/'usr/lib/libProExtension.a').exists():raise SystemExit(f'Extract the official Apple Workflow Extension SDK first; expected SDK: {SDK}')
+    # The development venv links to an interpreter outside the project. Copy
+    # and entitle a private launcher so the child can write the App Group bridge.
+    python=(ROOT/'.venv/bin/python').resolve()
+    launcher=ROOT/'.venv/bin/subpop-python3.12'
+    shutil.copy2(python,launcher)
+    dylib=python.parent.parent/'lib/libpython3.12.dylib'
+    shutil.copy2(dylib,ROOT/'.venv/lib/libpython3.12.dylib')
+    launcher_entitlements=ROOT/'.subloom/build/dev-python-entitlements.plist'
+    launcher_entitlements.parent.mkdir(parents=True,exist_ok=True)
+    plist(launcher_entitlements,{'com.apple.security.application-groups':['925BTJVFFZ.com.chokamin.SubPop'],'com.apple.security.cs.allow-jit':True,'com.apple.security.cs.allow-unsigned-executable-memory':True})
+    identity=os.environ.get('SUBPOP_SIGNING_IDENTITY','-')
+    signing_options=['--timestamp','--options','runtime'] if identity!='-' else []
+    run('codesign','--force','--sign',identity,*signing_options,ROOT/'.venv/lib/libpython3.12.dylib')
+    run('codesign','--force','--sign',identity,*signing_options,'--entitlements',launcher_entitlements,launcher)
     sparkle=prepare()
     frameworks=APP/'Contents/Frameworks'
     frameworks.mkdir(parents=True,exist_ok=True)
@@ -25,7 +40,7 @@ def build():
     if destination.exists():shutil.rmtree(destination)
     shutil.copytree(sparkle/'Sparkle.framework',destination,symlinks=True)
     for bundle in (APP,EXT):(bundle/'Contents/MacOS').mkdir(parents=True,exist_ok=True)
-    base=dict(CFBundleVersion='106',CFBundleShortVersionString='1.3.0',LSMinimumSystemVersion='13.0',SubPopUpdateRepository='Chokamin/SubPop')
+    base=dict(CFBundleVersion='109',CFBundleShortVersionString='1.3.0',LSMinimumSystemVersion='13.0',SubPopUpdateRepository='Chokamin/SubPop')
     plist(APP/'Contents/Info.plist',dict(base,CFBundleDevelopmentRegion='zh_CN',CFBundleLocalizations=['zh_CN'],SUFeedURL=FEED,SUPublicEDKey=PUBLIC_KEY,SUEnableAutomaticChecks=False,SUAllowsAutomaticUpdates=False,SUVerifyUpdateBeforeExtraction=True,SURequireSignedFeed=True,SUSignedFeedFailureExpirationInterval=0,SUShowReleaseNotes=False,SUEnableSystemProfiling=False,LSUIElement=True,CFBundleURLTypes=[dict(CFBundleURLName='com.chokamin.SubPopProbe.start',CFBundleURLSchemes=['subpop-probe'])],SubPopWorkspace=str(ROOT),CFBundleIdentifier='com.chokamin.SubPopProbe',CFBundleName='SubPop',CFBundleIconFile='SubPop',CFBundleIconName='SubPop',CFBundleExecutable='SubPopProbe',CFBundlePackageType='APPL',NSPrincipalClass='NSApplication',NSAppleEventsUsageDescription='SubPop 需要读取 Final Cut Pro 的当前项目和时间线信息。'))
     plist(EXT/'Contents/Info.plist',dict(base,SubPopWorkspace=str(ROOT),CFBundleIdentifier='com.chokamin.SubPopProbe.Extension',CFBundleName='SubPop',CFBundleIconFile='SubPop',CFBundleIconName='SubPop',CFBundleDisplayName='SubPop',CFBundleExecutable='SubPopProbeExtension',CFBundlePackageType='XPC!',NSAppleEventsUsageDescription='SubPop 需要读取 Final Cut Pro 的当前项目和时间线信息。',NSExtension=dict(NSExtensionPointIdentifier='com.apple.FinalCut.WorkflowExtension',ProExtensionPrincipalViewControllerClass='SubPopProbeViewController',ProExtensionAttributes=dict(ContentViewMinimumWidth=580,ContentViewMinimumHeight=450))))
     mac_sdk=subprocess.check_output(['xcrun','--sdk','macosx','--show-sdk-path'],text=True).strip()
@@ -60,7 +75,7 @@ def build():
     # FCP injects its ProViewServiceSupport framework into the extension process.
     # Its signing team differs from ours. Scope this runtime exception to the
     # extension only; retain its sandbox and the container's library validation.
-    plist(ent,{'com.apple.security.cs.disable-library-validation':True, 'com.apple.security.app-sandbox':True, 'com.apple.security.network.client':True, 'com.apple.security.files.user-selected.read-write':True, 'com.apple.security.automation.apple-events':True, 'com.apple.security.scripting-targets':{'com.apple.FinalCut':['com.apple.FinalCut.library.inspection'],'com.apple.FinalCutApp':['com.apple.FinalCut.library.inspection']}})
+    plist(ent,{'com.apple.security.cs.disable-library-validation':True, 'com.apple.security.app-sandbox':True, 'com.apple.security.network.client':True, 'com.apple.security.application-groups':['925BTJVFFZ.com.chokamin.SubPop'], 'com.apple.security.files.user-selected.read-write':True, 'com.apple.security.automation.apple-events':True, 'com.apple.security.scripting-targets':{'com.apple.FinalCut':['com.apple.FinalCut.library.inspection'],'com.apple.FinalCutApp':['com.apple.FinalCut.library.inspection']}})
     run('codesign','--force','--sign','-','--entitlements',ent,EXT)
     run('codesign','--force','--sign','-','--entitlements',ROOT/'native/Probe/Container.entitlements',APP)
     run('codesign','--verify','--deep','--strict',APP)

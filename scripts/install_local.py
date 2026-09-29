@@ -1,11 +1,26 @@
 """Rebuild and install this machine's SubPop extension; preserves its data."""
 from pathlib import Path
+import os
+import re
 import subprocess
 import sys
 ROOT=Path(__file__).resolve().parents[1]
+TEAM_ID='925BTJVFFZ'
+
+def signing_identity():
+    available=subprocess.check_output(['security','find-identity','-p','codesigning','-v'],text=True)
+    for line in available.splitlines():
+        match=re.search(r'\b([0-9A-F]{40})\s+"Developer ID Application: [^"]+\('+TEAM_ID+r'\)"',line)
+        if match:return match.group(1)
+    raise SystemExit('本机安装需要同团队的 Developer ID Application 证书，否则 Python 子进程无法访问共享任务目录。')
+
 if __name__=='__main__':
     if not (ROOT/'.venv/bin/python').exists():raise SystemExit('Missing independent SubPop runtime; see README.md')
-    subprocess.run([sys.executable,str(ROOT/'scripts/build_probe.py')],check=True,cwd=ROOT)
+    identity=signing_identity()
+    subprocess.run([sys.executable,str(ROOT/'scripts/build_probe.py')],check=True,cwd=ROOT,
+                   env={**os.environ,'SUBPOP_SIGNING_IDENTITY':identity})
+    from sign_release import sign
+    sign(ROOT/'.subloom/build/SubPop Probe.app',identity,ROOT/'.subloom/build/probe.entitlements')
     subprocess.run(['ditto',str(ROOT/'.subloom/build/SubPop Probe.app'),'/Applications/SubPop.app'],check=True)
     Path('/Applications/SubPop.app').touch()  # Invalidate Finder's cached icon after replacement.
     subprocess.run(['codesign','--verify','--deep','--strict','/Applications/SubPop.app'],check=True)

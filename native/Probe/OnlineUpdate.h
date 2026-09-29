@@ -30,7 +30,7 @@
     self.mirror=SubPopUpdateMirror(options[@"mirror"]) ?: SubPopDefaultUpdateMirror;
     self.mode=[@[@"0",@"1",@"2"] containsObject:options[@"mode"]] ? [options[@"mode"] integerValue] : 0;
     self.sources=SubPopUpdateSources([NSURL URLWithString:[NSBundle.mainBundle objectForInfoDictionaryKey:@"SUFeedURL"]],self.mirror,self.mode);self.sourceIndex=0;
-    NSString *bridge=[SubPopWorkspace(NSBundle.mainBundle) stringByAppendingPathComponent:@".subloom/verification/bridge"];
+    NSString *bridge=SubPopBridgePath(NSBundle.mainBundle);
     [NSFileManager.defaultManager createDirectoryAtPath:bridge withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0700} error:nil];
     NSData *serviceData=[NSData dataWithContentsOfFile:[bridge stringByAppendingPathComponent:@"service.json"]];
     NSDictionary *service=serviceData ? [NSJSONSerialization JSONObjectWithData:serviceData options:0 error:nil] : nil;

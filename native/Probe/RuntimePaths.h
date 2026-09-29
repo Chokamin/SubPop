@@ -2,6 +2,11 @@
 #import <Cocoa/Cocoa.h>
 #include <pwd.h>
 #include <unistd.h>
+static NSString *const SubPopApplicationGroup = @"925BTJVFFZ.com.chokamin.SubPop";
+static inline NSURL *SubPopSharedBridgeURL(void) {
+    NSURL *group=[[NSFileManager defaultManager] containerURLForSecurityApplicationGroupIdentifier:SubPopApplicationGroup];
+    return group ? [group URLByAppendingPathComponent:@"Bridge" isDirectory:YES] : nil;
+}
 static NSString *SubPopWorkspace(NSBundle *bundle) {
     // Remember an explicitly configured development data root in each process's
     // existing preferences. Later packaged updates then retain the same models,
@@ -16,4 +21,8 @@ static NSString *SubPopWorkspace(NSBundle *bundle) {
     struct passwd *entry=getpwuid(getuid());
     NSString *home=entry ? [NSString stringWithUTF8String:entry->pw_dir] : NSHomeDirectory();
     return [home stringByAppendingPathComponent:@"Library/Application Support/SubPop"];
+}
+static inline NSString *SubPopBridgePath(NSBundle *bundle) {
+    NSURL *shared=SubPopSharedBridgeURL();
+    return shared ? shared.path : [SubPopWorkspace(bundle) stringByAppendingPathComponent:@".subloom/verification/bridge"];
 }

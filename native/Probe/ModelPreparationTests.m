@@ -76,6 +76,9 @@ int main(int argc,const char *argv[]) {
         SubPopModelPreparationTests *c=[SubPopModelPreparationTests new];c.testDirectory=temporary;c.bridgeURL=temporary;
         c.testCatalog=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:@(argv[1])] options:0 error:nil];service(c,NO);
         [c loadView];NSWindow *window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,660,422) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];window.contentView=c.view;
+        c.selectedModelID=@"doubao-cloud";c.disconnected=YES;[c updateInterface];
+        check([c.modelDetail.stringValue containsString:@"连接后确认配置"] && ![c.modelDetail.stringValue containsString:@"请先配置 API Key"],@"disconnected cloud state does not falsely report a missing API key");
+        c.selectedModelID=@"qwen3-asr-0.6b";c.disconnected=NO;[c updateInterface];
         check([c.statusTitle.stringValue isEqual:@"准备生成字幕"],@"idle state is not a missing-model error");
         // Exercise host reads separately from the drag callback. The SDK is mocked,
         // but AppKit receives the pasteboard and runs the actual deferred callbacks.
