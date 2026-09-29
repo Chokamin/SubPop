@@ -5,7 +5,7 @@ import subprocess
 import unittest
 import xml.etree.ElementTree as ET
 from probes import project
-from probes.snapshot import prepare
+from probes.snapshot import prepare,bypassed_audio_transitions
 from probes.title_fixture import payload
 from probes.caption_fixture import captions,srt,quantize
 
@@ -42,6 +42,32 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(len(plan['segments']),1)
         mixed=self.inspect(root,'all');self.assertEqual(len(mixed['segments']),2)
         self.assertEqual(mixed['segments'][0]['startSample'],mixed['segments'][1]['startSample'])
+
+    def test_short_fcp_audio_crossfade_keeps_direct_audio_as_hard_cut(self):
+        root,_,seq,first=basic()
+        first.set('duration','4s')
+        second=ET.fromstring(ET.tostring(first))
+        second.set('offset','3604s');second.set('start','4s');second.set('duration','117/25s')
+        spine=seq.find('spine')
+        transition=ET.SubElement(spine,'transition',offset='18019/5s',duration='2/5s',name='Visual transition')
+        effect=ET.SubElement(root.find('resources'),'effect',id='crossfade',uid='FFAudioTransition')
+        ET.SubElement(transition,'filter-audio',ref=effect.get('id'),name='音频交叉淡入淡出')
+        ET.SubElement(transition,'filter-video',ref='custom-visual')
+        spine.append(second)
+        original=ET.tostring(root)
+        normalized,_=prepare(original,generic=True)
+        self.assertEqual(len(ET.fromstring(normalized).findall('.//spine/transition')),0)
+        self.assertEqual(bypassed_audio_transitions(original),[{'offset':'19/5','duration':'2/5'}])
+        with tempfile.TemporaryDirectory() as temp:
+            xml=Path(temp)/'input.fcpxml';xml.write_bytes(normalized)
+            plan=project.inspect(xml)
+        self.assertEqual([(s['offset'],s['duration']) for s in plan['segments']],[('0','4'),('4','117/25')])
+        effect.set('uid','unknown-audio-effect')
+        with self.assertRaisesRegex(ValueError,'转场音频无法安全处理'):
+            prepare(ET.tostring(root),generic=True)
+        effect.set('uid','FFAudioTransition');transition.set('duration','3s')
+        with self.assertRaisesRegex(ValueError,'转场结构无法安全处理'):
+            prepare(ET.tostring(root),generic=True)
 
     def test_music_fade_is_ignored_only_in_dialogue_mode(self):
         root,p,seq,clip=basic();asset=root.find('resources/asset')

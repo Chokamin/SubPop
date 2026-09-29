@@ -14,7 +14,7 @@ from fractions import Fraction
 from .caption_fixture import captions, srt
 from .editorial import optimized_captions, RULES_VERSION
 from .title_fixture import payload, UID
-from .snapshot import prepare, collision
+from .snapshot import prepare, collision, bypassed_audio_transitions
 from .models import DEFAULT_MODEL_ID, model_spec, resolve_model
 from .vocabulary import validate as validate_vocabulary
 from .reference_script import validate as validate_reference, digest as reference_digest
@@ -133,6 +133,7 @@ def run(xml,asr,aligner,model_id=DEFAULT_MODEL_ID,audio_mode='dialogue',vocabula
             normalized,existing=prepare(frozen.read_bytes(),generic=True)
             audioXML=directory/'audio-input.fcpxml';audioXML.write_bytes(normalized)
             snapshot=preflight(audioXML,asr,aligner,audio_mode)
+            snapshot['bypassedAudioTransitions']=bypassed_audio_transitions(original) if b'<transition' in original else []
         state['projectUID']=snapshot['uid']
         recovered=None if audio_file is not None else cached_recognition(state,snapshot)
         if recovered:
@@ -158,7 +159,7 @@ def run(xml,asr,aligner,model_id=DEFAULT_MODEL_ID,audio_mode='dialogue',vocabula
             result=recognize(pcm,snapshot,consent=allow_cloud)
         else:
             from .recognize_fixture import run as recognize
-            result=recognize(audioXML,asr,aligner,directory/'asr.json',pcm,device='cpu',verbose=False,audio_mode=audio_mode,vocabulary=vocabulary,engine=model_spec(model_id).get("engine"),snapshot_override=snapshot if audio_file is not None else None)
+            result=recognize(audioXML,asr,aligner,directory/'asr.json',pcm,device='cpu',verbose=False,audio_mode=audio_mode,vocabulary=vocabulary,engine=model_spec(model_id).get("engine"),snapshot_override=snapshot)
         result['modelID']=model_id;save(directory/'asr.json',result)
         progress('generate-titles')
         return finalize(directory,state,result,existing)

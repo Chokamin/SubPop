@@ -7,6 +7,31 @@ from unittest.mock import patch
 from probes import run_job
 
 class JobTests(unittest.TestCase):
+    def test_direct_job_reports_crossfade_hard_cut_without_blocking_recognition(self):
+        root=ET.parse(Path(__file__).parent/'fixtures/fcp-12.3-native-drop.fcpxml').getroot()
+        seq=root.find('.//project/sequence');first=seq.find('spine/asset-clip')
+        first.set('duration','4s')
+        second=ET.fromstring(ET.tostring(first))
+        second.set('offset','3604s');second.set('start','4s');second.set('duration','117/25s')
+        spine=seq.find('spine')
+        transition=ET.SubElement(spine,'transition',offset='18019/5s',duration='2/5s')
+        ET.SubElement(root.find('resources'),'effect',id='crossfade',uid='FFAudioTransition')
+        ET.SubElement(transition,'filter-audio',ref='crossfade')
+        spine.append(second)
+        with tempfile.TemporaryDirectory() as temp:
+            directory=Path(temp);xml=directory/'input.fcpxml';xml.write_bytes(ET.tostring(root))
+            def decoded(_,job,*args):
+                (job/'timeline.f32le').write_bytes(b'\0\0\0\0')
+                return {'silent':False,'pcmFile':'timeline.f32le','pcmSHA256':'pcm'}
+            def recognized(*args,**kwargs):
+                return {'snapshot':kwargs['snapshot_override'],'pcm_sha256':'pcm','device':'test','results':[]}
+            with patch.object(run_job,'WORK',directory/'jobs'),patch.object(run_job,'render',side_effect=decoded),\
+                 patch('probes.recognize_fixture.run',side_effect=recognized),\
+                 patch.object(run_job,'finalize',side_effect=lambda job,state,result,existing:result['snapshot']):
+                snapshot=run_job.run(xml,None,None)
+        self.assertEqual(snapshot['bypassedAudioTransitions'],[{'offset':'19/5','duration':'2/5'}])
+        self.assertEqual(len(snapshot['segments']),2)
+
     def test_preflight_uses_selected_audio_mode_for_component_roles(self):
         root=ET.parse(Path(__file__).parent/'fixtures/component-clips.fcpxml').getroot()
         root.findall('.//audio-channel-source')[1].set('role','music.music-1')

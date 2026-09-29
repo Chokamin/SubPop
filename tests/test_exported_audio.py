@@ -36,9 +36,9 @@ def wav(path,seconds):
 
 
 class ExportedAudioTests(unittest.TestCase):
-    def test_audio_transition_reports_actual_limit_and_allows_export_fallback(self):
+    def test_unverified_audio_transition_uses_export_fallback(self):
         raw=project_xml(node='transition')
-        with self.assertRaisesRegex(ValueError,'时间线含转场.*整条时间线音频'):
+        with self.assertRaisesRegex(ValueError,'转场结构无法安全处理.*整条时间线音频'):
             prepare(raw,generic=True)
         with tempfile.TemporaryDirectory() as temp:
             xml=Path(temp)/'input.fcpxml';xml.write_bytes(raw)

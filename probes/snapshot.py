@@ -9,6 +9,16 @@ NATIVE_SUBTITLE_EFFECT='.../Titles.localized/Subtitles.localized/Subtitle.locali
 SILENT_TITLE_EFFECTS={EFFECT,NATIVE_SUBTITLE_EFFECT}
 
 
+def bypassed_audio_transitions(data):
+    """Report audio crossfades omitted from a validated direct-audio copy."""
+    root=ET.fromstring(data)
+    project=root.find('.//project');seq=project.find('sequence')
+    tc=seconds(seq.get('tcStart','0s'))
+    return [{'offset':str(seconds(node.get('offset'))-tc),
+             'duration':str(seconds(node.get('duration')))}
+            for node in seq.find('spine') if node.tag=='transition' and node.find('filter-audio') is not None]
+
+
 def title_has_audio(title, resources):
     """Inspect timeline content, not a title plug-in's visual parameter shape.
 
@@ -46,17 +56,45 @@ def prepare(data, generic=False):
     root_tags=(*story_tags,'title') if generic else story_tags
     if spine is None or not 1<=len(spine)<=(5000 if generic else 64):
         raise ValueError('暂不支持此时间线结构' if generic else 'Consecutive clips/gaps required')
+    resource_root=root.find('resources')
+    resources={e.get('id'):e for e in resource_root if e.get('id')} if resource_root is not None else {}
+    if generic:
+        # A short FCP transition straddles the cut between otherwise contiguous
+        # clips. The audio copy uses their original sources as a hard cut; it
+        # never pretends to reproduce FCP's crossfade or the visual template.
+        for index,node in reversed(list(enumerate(spine))):
+            if node.tag!='transition':continue
+            left=spine[index-1] if index else None
+            right=spine[index+1] if index+1<len(spine) else None
+            try:
+                begin=seconds(node.get('offset',''))
+                length=seconds(node.get('duration',''))
+                cut=seconds(left.get('offset',''))+seconds(left.get('duration',''))
+                right_begin=seconds(right.get('offset',''))
+            except (ValueError,TypeError,AttributeError):
+                raise ValueError('转场结构无法安全处理；请导入整条时间线音频') from None
+            filters=node.findall('filter-audio')
+            if (left.tag not in story_tags or right.tag not in story_tags or cut!=right_begin
+                    or not begin<=cut<=begin+length or not 0<length<=2
+                    or set(node.attrib)-{'name','offset','duration','enabled'} or len(filters)>1
+                    or any(child.tag not in ('filter-video','filter-audio') for child in node)):
+                raise ValueError('转场结构无法安全处理；请导入整条时间线音频')
+            if filters:
+                audio=filters[0];effect=resources.get(audio.get('ref'))
+                if (effect is None or effect.tag!='effect' or effect.get('uid')!='FFAudioTransition'
+                        or set(audio.attrib)-{'name','ref','enabled'} or len(audio)):
+                    raise ValueError('转场音频无法安全处理；请导入整条时间线音频')
+            if any('audio' in descendant.tag.lower() for visual in node.findall('filter-video')
+                   for descendant in visual.iter() if descendant is not visual):
+                raise ValueError('转场模板含其他音频；请导入整条时间线音频')
+            spine.remove(node)
     unsupported={c.tag for c in spine if c.tag not in root_tags}
     if unsupported:
         if not generic:raise ValueError('Consecutive clips/gaps required')
-        if 'transition' in unsupported:
-            raise ValueError('时间线含转场，暂无法准确重建其音频；请导入从项目起点导出的整条时间线音频')
         if unsupported & {'mc-clip','sync-clip','audition'}:
             raise ValueError('暂不支持多机位或同步片段；可导入整条时间线音频继续识别')
         raise ValueError('暂不支持此时间线结构；可导入整条时间线音频继续识别')
     effects={e.get('id'):e.get('uid') for e in root.findall('resources/effect')}
-    resource_root=root.find('resources')
-    resources={e.get('id'):e for e in resource_root if e.get('id')} if resource_root is not None else {}
     duration=seconds(seq.get('duration','0s'));existing=[]
     fmt=root.find(f"resources/format[@id='{seq.get('format')}']")
     fps=1/seconds(fmt.get('frameDuration','1/25s')) if generic and fmt is not None else Fraction(25)
