@@ -44,7 +44,16 @@ def prepare(data, generic=False):
     seq=projects[0].find('sequence');spine=seq.find('spine') if seq is not None else None
     story_tags=('asset-clip','gap','clip','audio','video','ref-clip') if generic else ('asset-clip','gap')
     root_tags=(*story_tags,'title') if generic else story_tags
-    if spine is None or not 1<=len(spine)<=(5000 if generic else 64) or any(c.tag not in root_tags for c in spine):raise ValueError('暂不支持此时间线结构；请展开多机位后重试' if generic else 'Consecutive clips/gaps required')
+    if spine is None or not 1<=len(spine)<=(5000 if generic else 64):
+        raise ValueError('暂不支持此时间线结构' if generic else 'Consecutive clips/gaps required')
+    unsupported={c.tag for c in spine if c.tag not in root_tags}
+    if unsupported:
+        if not generic:raise ValueError('Consecutive clips/gaps required')
+        if 'transition' in unsupported:
+            raise ValueError('时间线含转场，暂无法准确重建其音频；请导入从项目起点导出的整条时间线音频')
+        if unsupported & {'mc-clip','sync-clip','audition'}:
+            raise ValueError('暂不支持多机位或同步片段；可导入整条时间线音频继续识别')
+        raise ValueError('暂不支持此时间线结构；可导入整条时间线音频继续识别')
     effects={e.get('id'):e.get('uid') for e in root.findall('resources/effect')}
     resource_root=root.find('resources')
     resources={e.get('id'):e for e in resource_root if e.get('id')} if resource_root is not None else {}

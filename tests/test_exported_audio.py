@@ -12,18 +12,20 @@ from unittest.mock import patch
 
 from probes import exported_audio
 from probes import run_job
+from probes.snapshot import prepare
 from probes.paths import AUDIO_BINARY
 from probes.worker import request_input, job_command
 
 
-def project_xml(duration='2s'):
+def project_xml(duration='2s', node='unhandled-compound'):
     root=ET.Element('fcpxml',version='1.14')
     resources=ET.SubElement(root,'resources')
     ET.SubElement(resources,'format',id='r1',frameDuration='1/25s',width='1920',height='1080')
     project=ET.SubElement(root,'project',uid='FALLBACK-PROJECT',name='完整时间线')
     sequence=ET.SubElement(project,'sequence',format='r1',duration=duration,tcStart='3600s')
     spine=ET.SubElement(sequence,'spine')
-    ET.SubElement(spine,'unhandled-compound',offset='3600s',duration=duration)
+    child=ET.SubElement(spine,node,offset='3600s',duration=duration)
+    if node=='transition':ET.SubElement(child,'filter-audio')
     return ET.tostring(root)
 
 
@@ -34,6 +36,16 @@ def wav(path,seconds):
 
 
 class ExportedAudioTests(unittest.TestCase):
+    def test_audio_transition_reports_actual_limit_and_allows_export_fallback(self):
+        raw=project_xml(node='transition')
+        with self.assertRaisesRegex(ValueError,'时间线含转场.*整条时间线音频'):
+            prepare(raw,generic=True)
+        with tempfile.TemporaryDirectory() as temp:
+            xml=Path(temp)/'input.fcpxml';xml.write_bytes(raw)
+            snapshot=exported_audio.project_context(xml)
+            self.assertEqual(snapshot['sampleCount'],32000)
+            self.assertEqual(snapshot['audioMode'],'exported')
+
     def test_external_source_keeps_original_project_clock_despite_unsupported_clip(self):
         with tempfile.TemporaryDirectory() as temp:
             directory=Path(temp);xml=directory/'input.fcpxml';xml.write_bytes(project_xml())
@@ -80,7 +92,7 @@ class ExportedAudioTests(unittest.TestCase):
     @unittest.skipUnless(AUDIO_BINARY.is_file(),'native audio decoder not built')
     def test_job_can_generate_timed_titles_from_export_when_xml_audio_is_unsupported(self):
         with tempfile.TemporaryDirectory() as temp:
-            directory=Path(temp);xml=directory/'input.fcpxml';xml.write_bytes(project_xml())
+            directory=Path(temp);xml=directory/'input.fcpxml';xml.write_bytes(project_xml(node='transition'))
             audio=directory/'complete.wav';wav(audio,2)
             jobs=directory/'jobs';jobs.mkdir()
             def recognized(input_xml,asr,aligner,output,pcm_path,**kwargs):
