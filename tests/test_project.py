@@ -81,6 +81,37 @@ class ProjectTests(unittest.TestCase):
             root,p,seq,clip=basic();ET.SubElement(clip,'conform-rate',**attrs)
             with self.assertRaises(ValueError):self.inspect(root)
 
+    def test_fcp_verified_60_to_2997_rate_conform_maps_audio_at_double_speed(self):
+        root,p,seq,clip=basic();asset=root.find('resources/asset')
+        root.find("resources/format[@id='r1']").set('frameDuration','1001/30000s')
+        root.find("resources/format[@id='r3']").set('frameDuration','1/60s')
+        seq.set('duration','4s');clip.set('duration','4s');asset.set('duration','8s')
+        ET.SubElement(clip,'conform-rate',srcFrameRate='60') # DTD defaults scaleEnabled to 1.
+        segment=self.inspect(root)['segments'][0]
+        self.assertEqual((segment['source_start'],segment['source_duration'],segment['duration']),('0','8','4'))
+        self.assertFalse(segment['preservesPitch'])
+        clip.find('conform-rate').set('scaleEnabled','0')
+        segment=self.inspect(root)['segments'][0]
+        self.assertNotIn('source_duration',segment)
+
+    def test_rate_conform_maps_audio_nested_in_plain_clip(self):
+        root,p,seq,clip=basic();asset=root.find('resources/asset')
+        root.find("resources/format[@id='r1']").set('frameDuration','1001/30000s')
+        root.find("resources/format[@id='r3']").set('frameDuration','1/60s')
+        seq.set('duration','4s');asset.set('duration','8s');asset.set('audioChannels','2')
+        spine=seq.find('spine');spine.remove(clip)
+        wrapper=ET.SubElement(spine,'clip',offset='3600s',start='0s',duration='4s')
+        ET.SubElement(wrapper,'audio-channel-source',srcCh='1',role='dialogue.dialogue-1')
+        ET.SubElement(wrapper,'audio-channel-source',srcCh='2',role='dialogue.dialogue-2')
+        ET.SubElement(wrapper,'conform-rate',srcFrameRate='60')
+        gap=ET.SubElement(wrapper,'gap',offset='0s',duration='8s')
+        ET.SubElement(gap,'audio',ref=asset.get('id'),lane='-1',offset='0s',start='0s',duration='8s',srcCh='1, 2')
+        segment=self.inspect(root)['segments'][0]
+        self.assertEqual((segment['source_start'],segment['source_duration'],segment['duration']),('0','8','4'))
+        self.assertFalse(segment['preservesPitch'])
+        wrapper.find('audio-channel-source').set('enabled','0')
+        with self.assertRaises(ValueError):self.inspect(root)
+
     def test_compound_and_nested_compound_preserve_source_clock(self):
         root,p,seq,clip=basic();original=self.inspect(root)['segments']
         media,ref=compound(root,seq,clip)

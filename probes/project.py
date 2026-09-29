@@ -272,7 +272,19 @@ def inspect(path, audio_mode='dialogue'):
                 audible=selected
             if audible and (node.get('srcID','1')!='1' or 'outCh' in node.attrib):raise ValueError('暂不支持音频通道重映射')
         elif node.tag in ('video','gap'):audible=False
-        elif node.findall('audio-channel-source'):raise ValueError('暂不支持容器片段的音频通道重映射')
+        elif node.tag=='clip' and not any(child.tag in ('asset-clip','audio','ref-clip') for child in node.iter()):
+            # FCP also wraps visual-only material in a plain clip. Its own
+            # conform/timeMap must not retime unrelated dialogue below it.
+            audible=False
+        elif node.findall('audio-channel-source'):
+            # A plain FCP clip can wrap one audio source in a gap. Accept its
+            # normal complete mono/stereo component layout, but no remapping.
+            refs={child.get('ref') for child in node.iter() if child.tag in ('asset-clip','audio')}
+            if node.tag!='clip' or len(refs)!=1 or next(iter(refs)) not in assets:
+                raise ValueError('暂不支持容器片段的音频通道重映射')
+            selected,_,component_effects,component_gain=audio_selection(node,assets[next(iter(refs))],audio_mode,effects)
+            if not selected:raise ValueError('暂不支持容器片段的部分音频通道')
+            effect_count+=component_effects
         if media_seq is not None and audible and not possible_media_audio(media_seq,(node.get('ref'),)):
             audible=False
         if media_seq is not None and excluded_role(role,audio_mode):audible=False
@@ -295,14 +307,29 @@ def inspect(path, audio_mode='dialogue'):
             gain*=volume_gain(volumes[0])
         conform=node.findall('conform-rate')
         if len(conform)>1:raise ValueError('帧率适配结构无效')
+        conform_speed=Fraction(1)
         if conform:
             c=conform[0]
-            # Only explicit 0 preserves real-time audio across frame rates.
-            if c.get('scaleEnabled')!='0':raise ValueError('暂不支持启用速度缩放的帧率适配')
             if len(c) or set(c.attrib)-{'scaleEnabled','srcFrameRate','frameSampling'}:raise ValueError('帧率适配结构无效')
+            scale=c.get('scaleEnabled','1') # FCPXML DTD default.
+            if scale not in ('0','1'):raise ValueError('帧率适配结构无效')
+            if scale=='1' and audible:
+                audio_assets=[asset] if asset is not None else [assets.get(child.get('ref')) for child in node.iter() if child.tag in ('asset-clip','audio')]
+                source_frames=[]
+                for audio_asset in audio_assets:
+                    source_format=root.find(f"resources/format[@id='{audio_asset.get('format')}']") if audio_asset is not None else None
+                    source_frames.append(seconds(source_format.get('frameDuration','0s')) if source_format is not None else None)
+                # Verified against FCP's exported PCM: 60 fps source in a
+                # 29.97 fps project plays at exactly 2x with scale enabled.
+                if (node.tag not in ('asset-clip','clip') or media_stack or frame!=Fraction(1001,30000)
+                        or c.get('srcFrameRate')!='60' or not source_frames
+                        or any(rate!=Fraction(1,60) for rate in source_frames)):
+                    raise ValueError('暂不支持此有声片段的速度缩放帧率适配')
+                conform_speed=Fraction(2)
         # A video-only reverse or smooth retime does not change independently
         # scheduled dialogue. Its visual timing need not be reconstructed.
         has_time_map=node.find('timeMap') is not None
+        if conform_speed!=1 and has_time_map:raise ValueError('暂不支持同时使用帧率适配与音频变速')
         unsupported_retime=None
         try:
             retime=linear_time_map(node,length) if has_time_map and audible else None
@@ -326,7 +353,7 @@ def inspect(path, audio_mode='dialogue'):
         for child in node:
             if child.tag in STORY_TAGS:children.append(child)
             elif child.tag not in harmless:raise ValueError('暂不支持音频效果、变速或嵌套模板：'+child.tag)
-        if has_time_map and children:
+        if has_time_map and any(any(desc.tag in ('asset-clip','audio','ref-clip') for desc in child.iter()) for child in children):
             raise ValueError('变速片段带有连接素材，暂不能准确映射时间')
         if unsupported_retime:
             # This clip's audible output cannot be aligned. Keep the original
@@ -361,15 +388,37 @@ def inspect(path, audio_mode='dialogue'):
                     add_segment(out_begin,out_end,source_begin+(out_begin-origin-local_begin)*slope,
                                 source_begin+(out_end-origin-local_begin)*slope,preserve_pitch)
             else:
-                source=start+visible[0]-origin
-                add_segment(visible[0],visible[1],source,source+visible[1]-visible[0])
-        for child in children:
-            # Contained media is trimmed/muted by its container. Connected items
-            # share its enclosing timeline and can outlast or precede the anchor.
-            contained=child.get('lane','0')=='0'
-            walk(child,origin,start,visible if contained else bounds,
-                 enabled and source_enable!='video' if contained else inherited,
-                 gain if contained else parent_gain,depth+1,media_stack)
+                source=start+(visible[0]-origin)*conform_speed
+                source_end=source+(visible[1]-visible[0])*conform_speed
+                add_segment(visible[0],visible[1],source,source_end,
+                            False if conform_speed!=1 else None)
+        if conform_speed!=1 and node.tag=='clip':
+            # A rate-conformed plain clip can wrap source audio in a gap. Plan
+            # its children in source time, then invert the verified 2x map.
+            intervals=[(Fraction(0),length,start,start+length*conform_speed)]
+            source_bounds=(start,start+length*conform_speed)
+            outer_segments,outer_skipped,outer_end=segments,skipped,timeline_end
+            segments=[];skipped=[]
+            try:
+                for child in children:
+                    walk(child,Fraction(0),Fraction(0),source_bounds,
+                         enabled and source_enable!='video',gain,depth+1,media_stack)
+                inner_segments,inner_skipped=segments,skipped
+            finally:
+                segments=outer_segments;skipped=outer_skipped;timeline_end=outer_end
+            for segment in inner_segments:
+                segments.extend(inverse_retime_segment(segment,intervals,False,origin,visible))
+            for begin,end,reason in inner_skipped:
+                for _,_,out_begin,out_end in inverse_retime_ranges(begin,end,intervals,origin,visible):
+                    skipped.append((out_begin,out_end,reason))
+        else:
+            for child in children:
+                # Contained media is trimmed/muted by its container. Connected
+                # items share its timeline and may outlast the anchor.
+                contained=child.get('lane','0')=='0'
+                walk(child,origin,start,visible if contained else bounds,
+                     enabled and source_enable!='video' if contained else inherited,
+                     gain if contained else parent_gain,depth+1,media_stack)
         if media_seq is not None:
             media_spine=media_seq.find('spine')
             if media_spine is None or len(media_seq.findall('spine'))!=1:
