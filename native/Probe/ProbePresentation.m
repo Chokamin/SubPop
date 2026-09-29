@@ -29,7 +29,7 @@ NSDictionary<NSString *, NSString *> *SubPopPresentation(NSString *state) {
         @"preparing":@[@"正在准备本机识别",@"识别程序会自动在后台运行。首次使用请完成系统显示的文件夹授权。"],
         @"setup-needed":@[@"需要完成首次设置",@"请完成 SubPop 的文件夹授权，然后点击下方按钮重试。"],
         @"wrong-directory":@[@"尚未完成设置",@"请再次准备识别，使用默认打开的任务文件夹。"],
-        @"unsupported":@[@"这个项目包含暂不支持的音频",@"支持普通及嵌套复合片段、整体线性变速和未开启速度转场的速度斜坡。对白本身倒放、平滑插值变速及部分音频效果仍需另外处理。"]
+        @"unsupported":@[@"这个项目包含暂不支持的音频",@"支持复合片段和线性变速；倒放、平滑变速对白会跳过并提示时间段，其他不支持的音频结构仍需调整。"]
     };
     NSArray *copy=states[state] ?: states[@"idle"];
     return @{@"title":copy[0],@"detail":copy[1]};

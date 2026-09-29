@@ -3,7 +3,7 @@ from fractions import Fraction
 import xml.etree.ElementTree as ET
 from .title_fixture import EFFECT
 from .readback import seconds
-from .project import inverse_retime_ranges,linear_time_map
+from .project import UnsupportedAudioRetime,inverse_retime_ranges,linear_time_map
 
 NATIVE_SUBTITLE_EFFECT='.../Titles.localized/Subtitles.localized/Subtitle.localized/Subtitle.moti'
 SILENT_TITLE_EFFECTS={EFFECT,NATIVE_SUBTITLE_EFFECT}
@@ -51,7 +51,7 @@ def prepare(data, generic=False):
     duration=seconds(seq.get('duration','0s'));existing=[]
     fmt=root.find(f"resources/format[@id='{seq.get('format')}']")
     fps=1/seconds(fmt.get('frameDuration','1/25s')) if generic and fmt is not None else Fraction(25)
-    def titles(nodes,origin,parent_start,parent,bounds,media_stack=(),warps=()):
+    def titles(nodes,origin,parent_start,parent,bounds,media_stack=(),warps=(),unmapped=False):
         for clip in nodes:
             if clip.tag=='title':
                 begin=origin+seconds(clip.get('offset','0s'))-parent_start
@@ -61,7 +61,7 @@ def prepare(data, generic=False):
                     intervals=[(out_begin,out_end) for left,right in intervals if right>left
                                for _,_,out_begin,out_end in inverse_retime_ranges(
                                    left,right,mapping,mapped_origin,mapped_bounds)]
-                visible=(min((a for a,b in intervals),default=begin),max((b for a,b in intervals),default=begin))
+                visible=(Fraction(0),Fraction(0)) if unmapped else (min((a for a,b in intervals),default=begin),max((b for a,b in intervals),default=begin))
                 yield clip,visible,parent,bool(warps)
                 continue
             if clip.tag not in story_tags:continue
@@ -78,16 +78,22 @@ def prepare(data, generic=False):
             # must not be rejected while stripping unrelated title layers.
             has_nested_titles=any(node.tag=='title' for node in clip.iter()) or (
                 media_seq is not None and media_seq.find('.//title') is not None)
-            retime=linear_time_map(clip,length) if clip.find('timeMap') is not None and has_nested_titles else None
+            unsupported=False
+            try:
+                retime=linear_time_map(clip,length) if clip.find('timeMap') is not None and has_nested_titles and not unmapped else None
+            except UnsupportedAudioRetime:
+                # Strip silent titles as usual, but do not invent their output
+                # clock or report an inaccurate collision interval.
+                retime=None;unsupported=True
             children=list(clip) if generic else [c for c in clip if c.tag=='title']
             if retime:
                 mapping,_=retime
                 local_bounds=(mapping[0][2],mapping[-1][3])
                 output_bounds=(max(bounds[0],position),min(bounds[1],position+length))
                 yield from titles(children,Fraction(0),Fraction(0),clip,local_bounds,media_stack,
-                                  ((mapping,position,output_bounds),*warps))
+                                  ((mapping,position,output_bounds),*warps),unmapped)
             else:
-                yield from titles(children,position,start,clip,bounds,media_stack,warps)
+                yield from titles(children,position,start,clip,bounds,media_stack,warps,unmapped or unsupported)
             if media_seq is not None:
                 inner_spine=media_seq.find('spine')
                 if inner_spine is None or len(media_seq.findall('spine'))!=1:
@@ -97,10 +103,10 @@ def prepare(data, generic=False):
                     mapping,_=retime
                     yield from titles(list(inner_spine),Fraction(0),Fraction(0),inner_spine,
                                       (mapping[0][2],mapping[-1][3]),(*media_stack,clip.get('ref')),
-                                      ((mapping,position,inner_bounds),*warps))
+                                      ((mapping,position,inner_bounds),*warps),unmapped)
                 else:
                     yield from titles(list(inner_spine),position,start,inner_spine,inner_bounds,
-                                      (*media_stack,clip.get('ref')),warps)
+                                      (*media_stack,clip.get('ref')),warps,unmapped or unsupported)
     stripped={}
     for title,visible,parent,retimed in titles(spine,Fraction(0),seconds(seq.get('tcStart','0s')),spine,(Fraction(0),duration)):
         effect=effects.get(title.get('ref'))

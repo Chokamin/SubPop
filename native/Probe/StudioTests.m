@@ -127,6 +127,9 @@ int main(int argc,const char *argv[]) {
                 c.resultManifest=withCollision;
                 [c updateInterface];
                 if (![c.statusDetail.stringValue containsString:@"文字标题与 1 条新字幕时段重叠"]) return 132;
+                withCollision[@"skippedAudio"]=@[@{@"startSample":@32000,@"endSample":@64000,@"reason":@"平滑变速"}];
+                [c updateInterface];
+                if (![c.statusDetail.stringValue containsString:@"00:02–00:04 平滑变速"]) return 133;
                 c.resultManifest=m;[c updateInterface];
             }
             if (width.intValue==580) {

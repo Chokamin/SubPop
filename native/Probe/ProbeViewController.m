@@ -20,6 +20,19 @@
 static NSDictionary *Time(CMTime t) {
     return @{ @"value": @(t.value), @"timescale": @(t.timescale), @"flags": @(t.flags), @"epoch": @(t.epoch) };
 }
+static NSString *SubPopSkippedAudioSummary(NSArray *items) {
+    if (![items isKindOfClass:NSArray.class] || !items.count) return nil;
+    NSMutableArray<NSString *> *ranges=[NSMutableArray array];
+    for (NSDictionary *item in [items subarrayWithRange:NSMakeRange(0,MIN(items.count,3))]) {
+        if (![item isKindOfClass:NSDictionary.class]) continue;
+        NSInteger begin=[item[@"startSample"] integerValue]/16000;
+        NSInteger end=([item[@"endSample"] integerValue]+15999)/16000;
+        NSString *reason=[item[@"reason"] isKindOfClass:NSString.class] ? item[@"reason"] : @"复杂变速";
+        [ranges addObject:[NSString stringWithFormat:@"%02ld:%02ld–%02ld:%02ld %@",(long)(begin/60),(long)(begin%60),(long)(end/60),(long)(end%60),reason]];
+    }
+    return [NSString stringWithFormat:@"跳过 %lu 段无法准确对齐的音频（%@%@）",(unsigned long)items.count,
+            [ranges componentsJoinedByString:@"、"],items.count>3 ? @"等" : @""];
+}
 @class SubPopProbeViewController;
 @interface SubPopDocumentView : NSView
 @end
@@ -514,7 +527,7 @@ static NSDictionary *Time(CMTime t) {
     BOOL busy=self.requestID!=nil || self.referenceRequestID!=nil || self.pendingRecognition!=nil;
     if (fresh && self.snapshotConsumed && !self.titlePayloads && !busy && !awaitingProject && [self isolatedProjectActive]) state=@"refresh-input";
     NSDictionary *copy=SubPopPresentation(state); self.statusTitle.stringValue=copy[@"title"]; self.statusDetail.stringValue=copy[@"detail"];
-    if ([state isEqual:@"error"] && self.visibleError.length) self.statusDetail.stringValue=self.visibleError;
+    if (([state isEqual:@"error"] || [state isEqual:@"silent"]) && self.visibleError.length) self.statusDetail.stringValue=self.visibleError;
     if ([state isEqual:@"recognize"] && self.jobProgress) self.statusTitle.stringValue=[NSString stringWithFormat:@"正在识别语音 · %.0f%%",100*self.jobProgress.doubleValue];
     self.serviceLabel.stringValue=connected ? @"● 本机就绪" : ([[self readJSON:[self.bridgeURL URLByAppendingPathComponent:@"service.json"]][@"status"] isEqual:@"updating"] ? @"正在更新 SubPop" : (self.bridgeURL ? @"本机服务未就绪" : @"首次使用 · 点击准备本机识别"));
     self.modelDetail.stringValue=[NSString stringWithFormat:@"%@ · %@ · %@",[self selectedModel][@"description"] ?: @"",[self selectedModelAvailable] ? @"已安装" : @"首次识别时下载",[[self selectedModel][@"engine"] isEqual:@"mlx-whisper"] ? @"本机 MLX" : @"本机 CPU"];
@@ -568,6 +581,8 @@ static NSDictionary *Time(CMTime t) {
     NSDictionary *existingCollision=self.resultManifest[@"existingTitleCollision"];
     if (hasRows && [existingCollision[@"overlappingRows"] unsignedIntegerValue]>0)
         self.statusDetail.stringValue=[NSString stringWithFormat:@"项目中的文字标题与 %lu 条新字幕时段重叠，请在 FCP 检查画面是否叠加；原标题不会自动删除。",(unsigned long)[existingCollision[@"overlappingRows"] unsignedIntegerValue]];
+    NSString *skipped=SubPopSkippedAudioSummary(self.resultManifest[@"skippedAudio"]);
+    if (hasRows && skipped.length) self.statusDetail.stringValue=[skipped stringByAppendingString:@"；其余对白已识别。请核对空缺处。"];
     self.tap5aStyleButton.hidden=![self usesFileImport];self.tap5aStyleButton.enabled=!self.importInProgress;
     self.resultView.enabled=ready && !self.importInProgress && !busy;
     self.resultView.toolTip=fileImport ? @"点击导入到 FCP 浏览器。若出现资源库选择，请选择原项目所在资源库；在本次新建的编号事件中将字幕片段拖到原项目起点上方。每次导入都会保留旧版并新建事件。" : @"按住卡片拖到原项目时间线起点上方，落轨后将片段项分开。";
@@ -804,6 +819,8 @@ static NSDictionary *Time(CMTime t) {
         if (!self.titlePayloads) [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.requestID=nil; [self updateInterface];
     } else if ([response[@"status"] isEqual:@"blocked-no-audio"]) {
         self.titlePayloads=nil;
+        NSString *skipped=SubPopSkippedAudioSummary(response[@"skippedAudio"]);
+        self.visibleError=skipped.length ? [skipped stringByAppendingString:@"；其余音频为静音或没有可识别对白。"] : nil;
         [self record:@{@"reason":@"worker-result",@"status":@"blocked-no-audio",@"message":@"整段音频为静音，未启动识别或生成字幕"}];
         if (!self.titlePayloads) [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.requestID=nil; [self updateInterface];
     } else if ([response[@"status"] isEqual:@"blocked-existing-titles"]) {

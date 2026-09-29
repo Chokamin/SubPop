@@ -73,7 +73,8 @@ def publish_result(directory, job):
     if reference_digest(status.get('referenceScript',''))!=reference_digest(request_data.get('referenceScript','')):raise ValueError('Result reference mismatch')
     if status['status']=='blocked-no-audio':
         save(directory/'response.json',{'requestID':directory.name,'modelID':model_id,'status':'blocked-no-audio',
-             'stage':'silent','projectUID':status['projectUID'],'jobID':job.name,'snapshotSHA256':status['snapshotSHA256']})
+             'stage':'silent','projectUID':status['projectUID'],'jobID':job.name,'snapshotSHA256':status['snapshotSHA256'],
+             'skippedAudio':status.get('skippedAudio',[])})
         return
     if status['status']=='blocked-existing-titles':
         save(directory/'response.json',{'requestID':directory.name,'modelID':model_id,'status':'blocked-existing-titles',

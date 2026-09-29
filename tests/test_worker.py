@@ -38,8 +38,10 @@ class WorkerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp).resolve();job=root/'.subloom/verification/jobs'/str(uuid.uuid4());job.mkdir(parents=True)
             request=root/str(uuid.uuid4());request.mkdir()
-            (job/'status.json').write_text(json.dumps({'projectUID':UID,'status':'blocked-no-audio','snapshotSHA256':'snapshot'}))
+            skipped=[{'startSample':0,'endSample':32000,'reason':'倒放'}]
+            (job/'status.json').write_text(json.dumps({'projectUID':UID,'status':'blocked-no-audio','snapshotSHA256':'snapshot','skippedAudio':skipped}))
             with patch.object(worker,'ROOT',root):publish_result(request,job)
             result=json.loads((request/'response.json').read_text())
             self.assertEqual(result['status'],'blocked-no-audio')
+            self.assertEqual(result['skippedAudio'],skipped)
             self.assertNotIn('payloads',result)

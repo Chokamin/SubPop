@@ -26,6 +26,12 @@ def sample(value):
 STORY_TAGS={'asset-clip','gap','clip','audio','video','ref-clip'}
 CLIP_ATTRS={'ref','offset','name','start','duration','enabled','tcFormat','audioRole','videoRole','srcEnable','format','tcStart','modDate','lane'}
 
+class UnsupportedAudioRetime(ValueError):
+    """A valid edit whose audio clock cannot be reconstructed accurately."""
+    def __init__(self, reason):
+        self.reason=reason
+        super().__init__(f'暂不支持{reason}；当前无法准确重建这段音频')
+
 
 def linear_time_map(node, length):
     """Return (output start/end, source start/end) in the clip's local clock.
@@ -41,29 +47,36 @@ def linear_time_map(node, length):
         raise ValueError('暂不支持此变速设置')
     points=[]
     for point in mapping:
-        if point.tag!='timept' or len(point) or set(point.attrib)-{'time','value','interp'} or point.get('interp','smooth2')!='linear':
-            raise ValueError('暂不支持平滑插值变速；当前无法准确重建这段音频')
+        if point.tag!='timept' or len(point) or set(point.attrib)-{'time','value','interp','inTime','outTime'}:
+            raise ValueError('变速关键点结构无效')
+        interp=point.get('interp','smooth2')
+        if interp not in ('linear','smooth','smooth2'):raise ValueError('未知变速插值类型')
+        if interp!='linear' or 'inTime' in point.attrib or 'outTime' in point.attrib:
+            raise UnsupportedAudioRetime('平滑变速')
         points.append((seconds(point.get('time','')),seconds(point.get('value',''))))
         if len(points)>5000:raise ValueError('变速关键点过多')
     # FCP's own speed-ramp XML may end a few audio samples beyond the clip's
     # visible duration. Trim its final affine segment to the actual endpoint.
     if len(points)<2 or points[0][0]!=0 or points[-1][0]<length:
         raise ValueError('变速时间范围不完整')
-    intervals=[]
+    intervals=[];stationary=False
     for begin,end in zip(points,points[1:]):
-        if end[0]<=begin[0] or end[1]<begin[1]:
-            raise ValueError('暂不支持停帧或倒放；当前无法准确重建这段音频')
+        if end[0]<=begin[0]:raise ValueError('变速关键点时间顺序无效')
+        if end[1]<begin[1]:raise UnsupportedAudioRetime('倒放')
         if begin[0]>=length:break
         output_end=min(end[0],length)
         if end[1]==begin[1]:
+            stationary=True
             # FCP's speed-ramp preset may insert a two-sample stationary lead.
             # A material freeze is still unsupported; this tiny lead is silent.
             if output_end-begin[0]>Fraction(1,1000):
-                raise ValueError('暂不支持停帧或倒放；当前无法准确重建这段音频')
+                raise UnsupportedAudioRetime('停帧')
             continue
         source_end=begin[1]+(end[1]-begin[1])*(output_end-begin[0])/(end[0]-begin[0])
         intervals.append((begin[0],output_end,begin[1],source_end))
-    if not intervals:raise ValueError('变速时间范围不完整')
+    if not intervals:
+        if stationary:raise UnsupportedAudioRetime('停帧')
+        raise ValueError('变速时间范围不完整')
     return intervals,mapping.get('preservesPitch','1')=='1'
 
 
@@ -160,7 +173,7 @@ def inspect(path, audio_mode='dialogue'):
     if spine is None or len(seq.findall('spine'))!=1 or any(n.tag not in ('spine','note','metadata') for n in seq) or spine.attrib:raise ValueError('暂不支持此时间线结构')
     assets={a.get('id'):a for a in root.findall('resources/asset')}
     medias={m.get('id'):m for m in root.findall('resources/media')}
-    segments=[];ignored=0;count=0;timeline_end=Fraction(0)
+    segments=[];skipped=[];ignored=0;count=0;timeline_end=Fraction(0)
 
     def possible_media_audio(sequence,visited=()):
         for clip in sequence.iter():
@@ -174,7 +187,7 @@ def inspect(path, audio_mode='dialogue'):
         return False
 
     def walk(node,parent_origin,parent_start,bounds,inherited=True,parent_gain=1.0,depth=0,media_stack=()):
-        nonlocal ignored,count,timeline_end,segments
+        nonlocal ignored,count,timeline_end,segments,skipped
         count+=1
         if count>5000 or depth>128:raise ValueError('项目片段过多或嵌套过深')
         if node.tag not in STORY_TAGS:raise ValueError('暂不支持此多机位或同步片段结构')
@@ -214,6 +227,7 @@ def inspect(path, audio_mode='dialogue'):
         elif node.findall('audio-channel-source'):raise ValueError('暂不支持容器片段的音频通道重映射')
         if media_seq is not None and audible and not possible_media_audio(media_seq,(node.get('ref'),)):
             audible=False
+        if media_seq is not None and excluded_role(role,audio_mode):audible=False
         gain=parent_gain
         volumes=node.findall('adjust-volume')
         if len(volumes)>1:raise ValueError('音量结构无效')
@@ -233,7 +247,11 @@ def inspect(path, audio_mode='dialogue'):
         # A video-only reverse or smooth retime does not change independently
         # scheduled dialogue. Its visual timing need not be reconstructed.
         has_time_map=node.find('timeMap') is not None
-        retime=linear_time_map(node,length) if has_time_map and audible else None
+        unsupported_retime=None
+        try:
+            retime=linear_time_map(node,length) if has_time_map and audible else None
+        except UnsupportedAudioRetime as error:
+            retime=None;unsupported_retime=error.reason
         if retime and node.tag not in ('asset-clip','audio','ref-clip'):
             raise ValueError('暂不支持此容器音频变速')
         if media_seq is not None:
@@ -241,7 +259,7 @@ def inspect(path, audio_mode='dialogue'):
             media_duration=seconds(media_seq.get('duration','0s'))
             source_min=min((part[2] for part in retime[0]),default=start) if retime else start
             source_max=max((part[3] for part in retime[0]),default=start+length) if retime else start+length
-            if not (has_time_map and not audible) and (source_min<media_start or source_max>media_start+media_duration):
+            if not (has_time_map and (not audible or unsupported_retime)) and (source_min<media_start or source_max>media_start+media_duration):
                 raise ValueError('复合片段引用范围超出内部时间线')
         harmless={'conform-rate','caption','adjust-volume','audio-channel-source','adjust-transform','adjust-crop','adjust-conform','adjust-blend','filter-video','filter-video-mask','metadata','marker','chapter-marker','keyword','rating','note'}
         if node.tag=='ref-clip':harmless.add('audio-role-source')
@@ -254,6 +272,11 @@ def inspect(path, audio_mode='dialogue'):
             elif child.tag not in harmless:raise ValueError('暂不支持音频效果、变速或嵌套模板：'+child.tag)
         if has_time_map and children:
             raise ValueError('变速片段带有连接素材，暂不能准确映射时间')
+        if unsupported_retime:
+            # This clip's audible output cannot be aligned. Keep the original
+            # project clock and let independent clips elsewhere still run.
+            skipped.append((visible[0],visible[1],unsupported_retime))
+            return
         if node.tag in ('asset-clip','audio') and audible:
             reps=asset.findall("media-rep[@kind='original-media']")
             if len(reps)!=1:raise ValueError('缺少原始媒体引用')
@@ -296,20 +319,23 @@ def inspect(path, audio_mode='dialogue'):
             if retime:
                 intervals,preserve_pitch=retime
                 source_bounds=(intervals[0][2],intervals[-1][3])
-                outer_segments,outer_end=segments,timeline_end
-                segments=[]
+                outer_segments,outer_skipped,outer_end=segments,skipped,timeline_end
+                segments=[];skipped=[]
                 try:
                     for child in media_spine:
                         walk(child,Fraction(0),Fraction(0),source_bounds,
                              enabled and source_enable!='video' and not excluded_role(role,audio_mode),
                              gain,depth+1,next_stack)
-                    inner_segments=segments
+                    inner_segments,inner_skipped=segments,skipped
                 finally:
-                    segments=outer_segments
+                    segments=outer_segments;skipped=outer_skipped
                     timeline_end=outer_end
                 for segment in inner_segments:
                     segments.extend(inverse_retime_segment(segment,intervals,preserve_pitch,origin,visible))
                     if len(segments)>10000:raise ValueError('变速音频片段过多')
+                for begin,end,reason in inner_skipped:
+                    for _,_,out_begin,out_end in inverse_retime_ranges(begin,end,intervals,origin,visible):
+                        skipped.append((out_begin,out_end,reason))
             else:
                 for child in media_spine:
                     walk(child,origin,start,visible,enabled and source_enable!='video' and not excluded_role(role,audio_mode),
@@ -324,7 +350,9 @@ def inspect(path, audio_mode='dialogue'):
     if timeline_end!=duration:raise ValueError('项目音频范围不完整')
     # FCP may finish a project at the sample boundary of connected audio, after
     # the last full video frame. PCM keeps that exact endpoint; titles use frames.
-    return dict(project=project.get('name','未命名项目'),uid=project.get('uid'),duration=str(duration),relative_start='0',frameDuration=str(frame),totalFrames=(duration/frame).__ceil__(),width=fmt.get('width','1920'),height=fmt.get('height','1080'),colorSpace=fmt.get('colorSpace','1-1-1 (Rec. 709)'),sampleCount=sample(duration),segments=segments,audioMode=audio_mode,ignoredRoleClips=ignored,audibility='XML-defined audio excluding music/effects roles' if audio_mode=='dialogue' else 'XML-defined mix; FCP live role/solo monitoring not included')
+    skipped_audio=[{'offset':str(begin),'duration':str(end-begin),'startSample':sample(begin),'endSample':sample(end),'reason':reason}
+                   for begin,end,reason in skipped if sample(end)>sample(begin)]
+    return dict(project=project.get('name','未命名项目'),uid=project.get('uid'),duration=str(duration),relative_start='0',frameDuration=str(frame),totalFrames=(duration/frame).__ceil__(),width=fmt.get('width','1920'),height=fmt.get('height','1080'),colorSpace=fmt.get('colorSpace','1-1-1 (Rec. 709)'),sampleCount=sample(duration),segments=segments,skippedAudio=skipped_audio,audioMode=audio_mode,ignoredRoleClips=ignored,audibility='XML-defined audio excluding music/effects roles' if audio_mode=='dialogue' else 'XML-defined mix; FCP live role/solo monitoring not included')
 
 def render(xml,directory,binary,expected_uid,audio_mode='dialogue'):
     plan=inspect(xml,audio_mode)

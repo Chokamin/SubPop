@@ -125,7 +125,7 @@ def run(xml,asr,aligner,model_id=DEFAULT_MODEL_ID,audio_mode='dialogue',vocabula
         binary=AUDIO_BINARY
         decoded=render(audioXML,directory,binary,snapshot['uid'],audio_mode);save(directory/'audio.json',decoded)
         if decoded['silent']:
-            state.update(status='blocked-no-audio',stage='silent',pcmSHA256=decoded['pcmSHA256'])
+            state.update(status='blocked-no-audio',stage='silent',pcmSHA256=decoded['pcmSHA256'],skippedAudio=snapshot.get('skippedAudio',[]))
             save(directory/'status.json',state)
             print(json.dumps({'ready':str(directory),'blocked':'silent'}),flush=True)
             return directory

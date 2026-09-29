@@ -133,7 +133,7 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(len(ET.fromstring(normalized).findall('.//title')),0)
         self.assertEqual(len(ET.fromstring(normalized).findall('resources/media/sequence/spine/gap')),1)
 
-    def test_linear_retime_segments_and_unsupported_curves(self):
+    def test_linear_retime_segments_and_skipped_curves(self):
         root,p,seq,clip=basic();seq.set('duration','4s');clip.set('duration','4s')
         mapping=ET.SubElement(clip,'timeMap',preservesPitch='1')
         for out,source in ((0,0),(2,2),(4,8)):
@@ -142,12 +142,20 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual([(s['startSample'],s['sampleCount'],s['source_start'],s['source_duration']) for s in plan['segments']],
                          [(0,32000,'0','2'),(32000,32000,'2','6')])
         mapping[1].set('interp','smooth2')
-        with self.assertRaisesRegex(ValueError,'平滑插值变速'):self.inspect(root)
+        skipped=self.inspect(root)
+        self.assertEqual(skipped['segments'],[])
+        self.assertEqual(skipped['skippedAudio'][0]['reason'],'平滑变速')
+        mapping[1].set('interp','linear');mapping[1].set('inTime','1/2s')
+        self.assertEqual(self.inspect(root)['skippedAudio'][0]['reason'],'平滑变速')
+        mapping[1].attrib.pop('inTime')
         mapping[1].set('interp','linear');mapping[-1].set('value','1s')
-        with self.assertRaisesRegex(ValueError,'倒放'):self.inspect(root)
+        self.assertEqual(self.inspect(root)['skippedAudio'][0]['reason'],'倒放')
         mapping[-1].set('value','8s');mapping[-1].set('time','3s')
         with self.assertRaisesRegex(ValueError,'范围不完整'):self.inspect(root)
         mapping[-1].set('time','4s')
+        mapping[0].set('value','0s');mapping[1].set('value','0s');mapping[-1].set('value','0s')
+        self.assertEqual(self.inspect(root)['skippedAudio'][0]['reason'],'停帧')
+        mapping[1].set('value','2s');mapping[-1].set('value','8s')
         media,ref=compound(root,seq,clip)
         outer_map=ET.SubElement(ref,'timeMap')
         ET.SubElement(outer_map,'timept',time='0s',value='0s',interp='linear')
@@ -171,9 +179,9 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(plan['segments'][0]['startSample'],1)
         self.assertEqual(sum(s['sampleCount'] for s in plan['segments']),plan['sampleCount']-1)
         self.assertLess(Fraction(plan['segments'][-1]['source_start'])+Fraction(plan['segments'][-1]['source_duration']),8)
-        # A real freeze cannot be silently dropped as the FCP preset lead is.
+        # A material freeze skips this clip and reports the missing interval.
         mapping[1].set('time','1/10s')
-        with self.assertRaisesRegex(ValueError,'停帧'):self.inspect(root)
+        self.assertEqual(self.inspect(root)['skippedAudio'][0]['reason'],'停帧')
         mapping[1].set('time','2/48000s')
         clip.remove(mapping);clip.set('duration','8s')
         media,ref=compound(root,seq,clip)
@@ -189,6 +197,37 @@ class ProjectTests(unittest.TestCase):
             elif extra=='child':ET.SubElement(c,'timept')
             else:ET.SubElement(clip,'timeMap')
             with self.assertRaises(ValueError):self.inspect(root)
+
+    def test_unsupported_retime_skips_only_affected_audio(self):
+        for mode in ('smooth2','reverse'):
+            with self.subTest(mode=mode):
+                root,p,seq,clip=basic();asset=root.find('resources/asset')
+                asset.set('duration','8s');seq.set('duration','8s');clip.set('duration','4s')
+                mapping=ET.SubElement(clip,'timeMap')
+                ET.SubElement(mapping,'timept',time='0s',value='4s' if mode=='reverse' else '0s',interp='linear')
+                ET.SubElement(mapping,'timept',time='4s',value='0s' if mode=='reverse' else '4s',interp='linear' if mode=='reverse' else 'smooth2')
+                ET.SubElement(seq.find('spine'),'asset-clip',ref=asset.get('id'),offset='3604s',start='4s',duration='4s',audioRole='dialogue')
+                plan=self.inspect(root)
+                self.assertEqual([(s['startSample'],s['sampleCount']) for s in plan['segments']],[(64000,64000)])
+                self.assertEqual([(s['startSample'],s['endSample']) for s in plan['skippedAudio']],[(0,64000)])
+                ET.SubElement(clip,'asset-clip',ref=asset.get('id'),lane='1',offset='0s',start='0s',duration='1s')
+                with self.assertRaisesRegex(ValueError,'连接素材'):self.inspect(root)
+
+    def test_skip_inside_linear_compound_maps_to_project_clock(self):
+        root,p,seq,clip=basic();asset=root.find('resources/asset')
+        asset.set('duration','4s');seq.set('duration','4s');clip.set('duration','2s')
+        media,ref=compound(root,seq,clip)
+        inner=media.find('sequence');inner.set('duration','4s');ref.set('duration','4s')
+        mapping=ET.SubElement(clip,'timeMap')
+        ET.SubElement(mapping,'timept',time='0s',value='0s',interp='linear')
+        ET.SubElement(mapping,'timept',time='2s',value='2s',interp='smooth2')
+        ET.SubElement(inner.find('spine'),'asset-clip',ref=asset.get('id'),offset='2s',start='2s',duration='2s',audioRole='dialogue')
+        outer=ET.SubElement(ref,'timeMap')
+        ET.SubElement(outer,'timept',time='0s',value='0s',interp='linear')
+        ET.SubElement(outer,'timept',time='4s',value='4s',interp='linear')
+        plan=self.inspect(root)
+        self.assertEqual([(s['startSample'],s['sampleCount']) for s in plan['segments']],[(32000,32000)])
+        self.assertEqual([(s['startSample'],s['endSample']) for s in plan['skippedAudio']],[(0,32000)])
 
     def test_whole_compound_retime_maps_audio_and_source_trim(self):
         root,p,seq,clip=basic();asset=root.find('resources/asset')
@@ -258,6 +297,22 @@ class ProjectTests(unittest.TestCase):
         normalized,existing=prepare(ET.tostring(root),generic=True)
         self.assertEqual([(e['start_frame'],e['end_frame']) for e in existing],[(25,38)])
         self.assertEqual(len(self.inspect(ET.fromstring(normalized))['segments']),1)
+
+    def test_title_inside_skipped_smooth_compound_is_stripped(self):
+        root,p,seq,clip=basic();asset=root.find('resources/asset')
+        asset.set('duration','4s');seq.set('duration','2s');clip.set('duration','4s')
+        media,ref=compound(root,seq,clip)
+        media.find('sequence').set('duration','4s');ref.set('duration','2s')
+        effect=ET.SubElement(root.find('resources'),'effect',id='silentTitle',uid='third-party-visual-title')
+        title=ET.SubElement(clip,'title',ref=effect.get('id'),lane='1',offset='2s',duration='1s')
+        ET.SubElement(title,'text').text='已有标题'
+        mapping=ET.SubElement(ref,'timeMap')
+        ET.SubElement(mapping,'timept',time='0s',value='0s',interp='linear')
+        ET.SubElement(mapping,'timept',time='2s',value='4s',interp='smooth2')
+        normalized,existing=prepare(ET.tostring(root),generic=True)
+        self.assertEqual(existing,[])
+        self.assertEqual(ET.fromstring(normalized).findall('.//title'),[])
+        self.assertEqual(self.inspect(ET.fromstring(normalized))['skippedAudio'][0]['reason'],'平滑变速')
 
     def test_reverse_video_only_does_not_block_separate_dialogue(self):
         root,p,seq,clip=basic();asset=root.find('resources/asset')
@@ -421,6 +476,30 @@ class ProjectTests(unittest.TestCase):
             self.assertEqual(actual,source[10*unit:12*unit]+source[18*unit:20*unit]+source[30*unit:30*unit+32240*4])
             self.assertEqual(len(actual),96240*4)
             self.assertFalse(mixed['silent'])
+
+    def test_native_render_skips_smooth_audio_but_keeps_later_dialogue(self):
+        import wave
+        from array import array
+        with tempfile.TemporaryDirectory() as temp:
+            directory=Path(temp);media=directory/'voice.wav'
+            with wave.open(str(media),'wb') as out:
+                out.setparams((1,2,16000,0,'NONE','not compressed'))
+                out.writeframes(array('h',[12000]).tobytes()*4*16000)
+            root,p,seq,clip=basic();asset=root.find('resources/asset')
+            asset.set('duration','4s');asset.find('media-rep').set('src',media.as_uri())
+            seq.set('duration','4s');clip.set('duration','2s')
+            mapping=ET.SubElement(clip,'timeMap')
+            ET.SubElement(mapping,'timept',time='0s',value='0s',interp='linear')
+            ET.SubElement(mapping,'timept',time='2s',value='2s',interp='smooth2')
+            ET.SubElement(seq.find('spine'),'asset-clip',ref=asset.get('id'),offset='3602s',start='2s',duration='2s',audioRole='dialogue')
+            xml=directory/'input.fcpxml';xml.write_bytes(ET.tostring(root))
+            binary=FIXTURE.parents[2]/'.subloom/build/SubPopAudioProbeCLI'
+            result=project.render(xml,directory,binary,'DAILY-PROJECT')
+            pcm=array('f');pcm.frombytes((directory/result['pcmFile']).read_bytes())
+            self.assertEqual(len(pcm),4*16000)
+            self.assertEqual(max(abs(value) for value in pcm[:32000]),0)
+            self.assertGreater(max(abs(value) for value in pcm[32000:]),0.1)
+            self.assertEqual(result['plan']['skippedAudio'][0]['endSample'],32000)
 
     def test_native_render_linear_retime_keeps_pitch_and_project_duration(self):
         import math
