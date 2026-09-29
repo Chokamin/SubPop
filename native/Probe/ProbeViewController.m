@@ -625,7 +625,7 @@ static NSDictionary *Time(CMTime t) {
 }
 - (void)showModelSettings:(id)sender {
     NSAlert *alert=[NSAlert new]; alert.messageText=@"使用帮助";
-    alert.informativeText=@"先拖入项目，再选择模型并生成字幕。所选本机模型尚未下载时，确认弹窗后会先下载，再自动开始识别；也可在“模型”中提前下载。“词库”可填写人名、品牌和专业词。\n\n默认仅识别对白角色。请在 FCP 将背景音乐设为“音乐”角色；需要保留全部声音时选择“所有音频”。\n\n视频类型不限，单次项目不设固定时长上限。长视频会分段识别，可随时取消。支持普通剪切、复合片段、线性变速、单声道／立体声及连接音频。暂不支持平滑变速、倒放、多机位、音频效果或音量关键帧。";
+    alert.informativeText=@"先拖入项目，再选择模型并生成字幕。所选本机模型尚未下载时，确认弹窗后会先下载，再自动开始识别；也可在“模型”中提前下载。“词库”可填写人名、品牌和专业词。\n\n默认仅识别对白角色。请在 FCP 将背景音乐设为“音乐”角色；需要保留全部声音时选择“所有音频”。\n\n视频类型不限，单次项目不设固定时长上限。长视频会分段识别，可随时取消。支持普通剪切、复合片段整体线性变速、单声道／立体声及连接音频。画面倒放但对白正常播放可识别；暂不支持对白倒放、平滑插值变速、多机位、音频效果或音量关键帧。";
     [alert addButtonWithTitle:@"完成"]; [alert addButtonWithTitle:@"重新准备识别"];
     [alert beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse result) { if (result==NSAlertSecondButtonReturn) [self connectWorker:nil]; }];
 }

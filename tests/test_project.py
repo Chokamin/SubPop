@@ -142,7 +142,7 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual([(s['startSample'],s['sampleCount'],s['source_start'],s['source_duration']) for s in plan['segments']],
                          [(0,32000,'0','2'),(32000,32000,'2','6')])
         mapping[1].set('interp','smooth2')
-        with self.assertRaisesRegex(ValueError,'平滑变速'):self.inspect(root)
+        with self.assertRaisesRegex(ValueError,'平滑插值变速'):self.inspect(root)
         mapping[1].set('interp','linear');mapping[-1].set('value','1s')
         with self.assertRaisesRegex(ValueError,'倒放'):self.inspect(root)
         mapping[-1].set('value','8s');mapping[-1].set('time','5s')
@@ -152,13 +152,121 @@ class ProjectTests(unittest.TestCase):
         outer_map=ET.SubElement(ref,'timeMap')
         ET.SubElement(outer_map,'timept',time='0s',value='0s',interp='linear')
         ET.SubElement(outer_map,'timept',time='4s',value='4s',interp='linear')
-        with self.assertRaisesRegex(ValueError,'复合片段'):self.inspect(root)
+        self.assertEqual([(s['startSample'],s['source_start']) for s in self.inspect(root)['segments']],
+                         [(0,'0'),(32000,'2')])
         for extra in ('duplicate','child','timeMap'):
             root,p,seq,clip=basic();c=ET.SubElement(clip,'conform-rate',scaleEnabled='0')
             if extra=='duplicate':ET.SubElement(clip,'conform-rate',scaleEnabled='0')
             elif extra=='child':ET.SubElement(c,'timept')
             else:ET.SubElement(clip,'timeMap')
             with self.assertRaises(ValueError):self.inspect(root)
+
+    def test_whole_compound_retime_maps_audio_and_source_trim(self):
+        root,p,seq,clip=basic();asset=root.find('resources/asset')
+        asset.set('duration','8s');seq.set('duration','4s');clip.set('duration','4s')
+        media,ref=compound(root,seq,clip)
+        media.find('sequence').set('duration','8s');clip.set('duration','8s')
+        mapping=ET.SubElement(ref,'timeMap',preservesPitch='1')
+        for output,source in ((0,0),(2,2),(4,8)):
+            ET.SubElement(mapping,'timept',time=f'{output}s',value=f'{source}s',interp='linear')
+        plan=self.inspect(root)
+        self.assertEqual([(s['startSample'],s['sampleCount'],s['source_start'],s['source_duration']) for s in plan['segments']],
+                         [(0,32000,'0','2'),(32000,32000,'2','6')])
+        mapping.remove(mapping[1])
+        mapping[0].set('value','1s');mapping[-1].set('value','5s')
+        plan=self.inspect(root)
+        self.assertEqual([(s['source_start'],s['source_duration']) for s in plan['segments']],[('1','4')])
+        mapping[0].set('value','0s');mapping[-1].set('value','8s')
+        # The same source compound used again must not inherit a prior warp.
+        seq.set('duration','8s');ref.set('duration','4s')
+        second_offset=Fraction(seq.get('tcStart','0s').removesuffix('s'))+4
+        ET.SubElement(seq.find('spine'),'ref-clip',ref=media.get('id'),offset=f'{second_offset}s',start='0s',duration='4s')
+        plan=self.inspect(root)
+        self.assertEqual([(s['startSample'],s['source_start']) for s in plan['segments']],
+                         [(0,'0'),(64000,'0')])
+
+    def test_nested_compound_and_inner_linear_retime_compose(self):
+        root,p,seq,clip=basic();asset=root.find('resources/asset')
+        asset.set('duration','8s');seq.set('duration','2s');clip.set('duration','4s')
+        media,ref=compound(root,seq,clip)
+        media.find('sequence').set('duration','4s');ref.set('duration','2s')
+        inner_map=ET.SubElement(clip,'timeMap',preservesPitch='1')
+        ET.SubElement(inner_map,'timept',time='0s',value='0s',interp='linear')
+        ET.SubElement(inner_map,'timept',time='4s',value='8s',interp='linear')
+        outer_map=ET.SubElement(ref,'timeMap',preservesPitch='1')
+        ET.SubElement(outer_map,'timept',time='0s',value='0s',interp='linear')
+        ET.SubElement(outer_map,'timept',time='2s',value='4s',interp='linear')
+        plan=self.inspect(root)
+        self.assertEqual([(s['source_start'],s['source_duration'],s['sampleCount']) for s in plan['segments']],
+                         [('0','8',32000)])
+        outer_map.set('preservesPitch','0')
+        with self.assertRaisesRegex(ValueError,'不同的保留音调'):self.inspect(root)
+
+    def test_retimed_compound_with_nonzero_media_timecode(self):
+        root,p,seq,clip=basic();asset=root.find('resources/asset')
+        asset.set('duration','4s');seq.set('duration','2s');clip.set('duration','4s')
+        media,ref=compound(root,seq,clip)
+        media_seq=media.find('sequence');media_seq.set('duration','4s');media_seq.set('tcStart','10s')
+        clip.set('offset','10s');ref.set('start','10s');ref.set('duration','2s')
+        mapping=ET.SubElement(ref,'timeMap',preservesPitch='1')
+        ET.SubElement(mapping,'timept',time='0s',value='10s',interp='linear')
+        ET.SubElement(mapping,'timept',time='2s',value='14s',interp='linear')
+        segments=self.inspect(root)['segments']
+        self.assertEqual([(s['source_start'],s['source_duration'],s['startSample'],s['sampleCount']) for s in segments],
+                         [('0','4',0,32000)])
+
+    def test_title_inside_retimed_compound_uses_output_clock(self):
+        root,p,seq,clip=basic();asset=root.find('resources/asset')
+        asset.set('duration','4s');seq.set('duration','2s');clip.set('duration','4s')
+        media,ref=compound(root,seq,clip)
+        media.find('sequence').set('duration','4s');ref.set('duration','2s')
+        effect=ET.SubElement(root.find('resources'),'effect',id='silentTitle',uid='third-party-visual-title')
+        title=ET.SubElement(clip,'title',ref=effect.get('id'),lane='1',offset='2s',duration='1s')
+        ET.SubElement(title,'text').text='已有标题'
+        mapping=ET.SubElement(ref,'timeMap',preservesPitch='1')
+        ET.SubElement(mapping,'timept',time='0s',value='0s',interp='linear')
+        ET.SubElement(mapping,'timept',time='2s',value='4s',interp='linear')
+        normalized,existing=prepare(ET.tostring(root),generic=True)
+        self.assertEqual([(e['start_frame'],e['end_frame']) for e in existing],[(25,38)])
+        self.assertEqual(len(self.inspect(ET.fromstring(normalized))['segments']),1)
+
+    def test_reverse_video_only_does_not_block_separate_dialogue(self):
+        root,p,seq,clip=basic();asset=root.find('resources/asset')
+        clip.set('srcEnable','video')
+        mapping=ET.SubElement(clip,'timeMap')
+        ET.SubElement(mapping,'timept',time='0s',value='4s',interp='linear')
+        ET.SubElement(mapping,'timept',time='4s',value='0s',interp='linear')
+        audio=ET.SubElement(clip,'asset-clip',ref=asset.get('id'),lane='-1',offset='0s',start='0s',duration='4s',audioRole='dialogue')
+        # Anchored audio on a retimed clip needs its own anchor mapping.
+        with self.assertRaisesRegex(ValueError,'连接素材'):self.inspect(root)
+        clip.remove(audio)
+        seq.find('spine').remove(clip)
+        gap=ET.SubElement(seq.find('spine'),'gap',offset=seq.get('tcStart','0s'),duration=clip.get('duration'),start='0s')
+        gap.append(clip)
+        # Independent connected audio under an unretimed parent is unaffected.
+        ET.SubElement(gap,'asset-clip',ref=asset.get('id'),lane='-1',offset='0s',start='0s',duration='4s',audioRole='dialogue')
+        plan=self.inspect(root)
+        self.assertEqual(len(plan['segments']),1)
+        self.assertEqual(plan['segments'][0]['source_start'],'0')
+        normalized,existing=prepare(ET.tostring(root),generic=True)
+        self.assertEqual(existing,[])
+        self.assertEqual(len(self.inspect(ET.fromstring(normalized))['segments']),1)
+
+    def test_reverse_visual_only_compound_does_not_block_separate_dialogue(self):
+        root,p,seq,clip=basic();asset=root.find('resources/asset')
+        seq.find('spine').remove(clip)
+        gap=ET.SubElement(seq.find('spine'),'gap',offset=seq.get('tcStart','0s'),duration=clip.get('duration'),start='0s')
+        ET.SubElement(gap,'asset-clip',ref=asset.get('id'),lane='-1',offset='0s',start='0s',duration='4s',audioRole='dialogue')
+        media=ET.SubElement(root.find('resources'),'media',id='visual')
+        inner=ET.SubElement(media,'sequence',format=seq.get('format'),duration='4s',tcStart='0s')
+        ET.SubElement(ET.SubElement(inner,'spine'),'gap',offset='0s',duration='4s',start='0s')
+        visual=ET.SubElement(gap,'ref-clip',ref='visual',lane='1',offset='0s',start='0s',duration='4s')
+        mapping=ET.SubElement(visual,'timeMap')
+        ET.SubElement(mapping,'timept',time='0s',value='4s',interp='linear')
+        ET.SubElement(mapping,'timept',time='4s',value='0s',interp='linear')
+        normalized,existing=prepare(ET.tostring(root),generic=True)
+        self.assertEqual(existing,[])
+        self.assertEqual(len(self.inspect(ET.fromstring(normalized))['segments']),1)
 
     def test_connected_dialogue_parent_source_offset_and_mute(self):
         root,p,seq,clip=basic();asset=root.find('resources/asset')
@@ -333,3 +441,30 @@ class ProjectTests(unittest.TestCase):
             xml.write_bytes(ET.tostring(root))
             trimmed=project.render(xml,directory,binary,'DAILY-PROJECT')
             self.assertEqual((directory/trimmed['pcmFile']).read_bytes(),source[16000*4:48000*4])
+
+    def test_native_render_whole_compound_retime_matches_leaf_retime(self):
+        import wave
+        from array import array
+        with tempfile.TemporaryDirectory() as temp:
+            directory=Path(temp);media_file=directory/'source.wav'
+            with wave.open(str(media_file),'wb') as out:
+                out.setparams((1,2,16000,0,'NONE','not compressed'))
+                for second in range(4):out.writeframes(array('h',[1000+second*2000]).tobytes()*16000)
+            root,p,seq,clip=basic();asset=root.find('resources/asset')
+            asset.set('duration','4s');asset.find('media-rep').set('src',media_file.as_uri())
+            seq.set('duration','2s');clip.set('duration','2s')
+            mapping=ET.SubElement(clip,'timeMap',preservesPitch='1')
+            ET.SubElement(mapping,'timept',time='0s',value='0s',interp='linear')
+            ET.SubElement(mapping,'timept',time='2s',value='4s',interp='linear')
+            xml=directory/'input.fcpxml';xml.write_bytes(ET.tostring(root))
+            binary=FIXTURE.parents[2]/'.subloom/build/SubPopAudioProbeCLI'
+            leaf=project.render(xml,directory,binary,'DAILY-PROJECT')
+            leaf_pcm=(directory/leaf['pcmFile']).read_bytes()
+            clip.remove(mapping);clip.set('duration','4s')
+            media,ref=compound(root,seq,clip);media.find('sequence').set('duration','4s')
+            ref.set('duration','2s');ref.append(mapping)
+            xml.write_bytes(ET.tostring(root))
+            dtd=Path(__file__).resolve().parents[1]/'.subloom/verification/FCPXMLv1_14.dtd'
+            subprocess.run(['xmllint','--noout','--dtdvalid',str(dtd),str(xml)],capture_output=True,check=True)
+            whole=project.render(xml,directory,binary,'DAILY-PROJECT')
+            self.assertEqual((directory/whole['pcmFile']).read_bytes(),leaf_pcm)
