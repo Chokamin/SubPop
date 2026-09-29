@@ -2,10 +2,13 @@
 #import "ProbeViewController.m"
 @interface SubPopDragObserverTests : SubPopProbeViewController
 @property NSUInteger snapshotCount;
+@property NSURL *testEvidenceURL;
 @end
 @implementation SubPopDragObserverTests
 - (void)snapshot:(NSString *)reason { self.snapshotCount++; }
 - (void)record:(NSDictionary *)value {}
+- (void)updateInterface {}
+- (NSURL *)evidenceDirectory { return self.testEvidenceURL ?: [super evidenceDirectory]; }
 @end
 int main(int argc,const char *argv[]) {
     @autoreleasepool {
@@ -30,6 +33,29 @@ int main(int argc,const char *argv[]) {
         controller.observedProjectDuration=kCMTimeZero;[controller validateDroppedProject];
         if (controller.freshDropURL) return 15;
         [[NSFileManager defaultManager] removeItemAtPath:longInput error:nil];
+        // Re-dropping the same FCP project must preserve completed captions
+        // and rebind their drag guard to the freshly observed duration.
+        SubPopDragObserverTests *reuse=[SubPopDragObserverTests new];
+        reuse.testEvidenceURL=[NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString] isDirectory:YES];
+        [NSFileManager.defaultManager createDirectoryAtURL:reuse.testEvidenceURL withIntermediateDirectories:YES attributes:nil error:nil];
+        reuse.observed=YES;reuse.dropUID=@"project-a";reuse.observedProjectUID=@"project-a";
+        reuse.dropDuration=CMTimeMake(100,1);reuse.observedProjectDuration=CMTimeMake(101,1);
+        reuse.titlePayloads=@{@"1.14":[@"existing" dataUsingEncoding:NSUTF8StringEncoding]};
+        reuse.captionRows=[NSMutableArray arrayWithObject:[@{@"text":@"existing"} mutableCopy]];
+        reuse.resultDate=NSDate.date;reuse.snapshotConsumed=YES;
+        NSURL *sameProjectURL=[reuse.testEvidenceURL URLByAppendingPathComponent:@"drop-same.fcpxml"];
+        [@"<fcpxml><project uid='project-a' name='Same project'/></fcpxml>" writeToURL:sameProjectURL atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        if ([reuse canDragResult] || ![reuse beginResultRevalidation:sameProjectURL projectUID:@"project-a"] || !reuse.titlePayloads || !reuse.validatingDrop) return 16;
+        [reuse finishDropValidation:@(reuse.dropGeneration)];
+        if (![reuse canDragResult] || !reuse.snapshotConsumed || !reuse.resultTimelineChanged || reuse.captionRows.count!=1 || ![reuse.titlePayloads[@"1.14"] isEqual:[@"existing" dataUsingEncoding:NSUTF8StringEncoding]]) return 17;
+        reuse.dropDuration=CMTimeMake(100,1);reuse.observedProjectUID=@"other-project";
+        if (![reuse beginResultRevalidation:sameProjectURL projectUID:@"project-a"] || [reuse beginResultRevalidation:sameProjectURL projectUID:@"different-project"]) return 18;
+        [reuse finishDropValidation:@(reuse.dropGeneration)];
+        if (!reuse.titlePayloads || CMTimeCompare(reuse.dropDuration,CMTimeMake(100,1))!=0 || [reuse canDragResult]) return 19;
+        reuse.observedProjectUID=@"project-a";reuse.dropDuration=reuse.observedProjectDuration;
+        [reuse activeSequenceChanged];if (!reuse.titlePayloads || ![reuse canDragResult]) return 20;
+        reuse.observedProjectUID=@"other-project";[reuse activeSequenceChanged];if (reuse.titlePayloads) return 21;
+        [NSFileManager.defaultManager removeItemAtURL:reuse.testEvidenceURL error:nil];
         NSArray *terms=[controller parseVocabulary:@" 小蚕，USB-C\n3.5%;小蚕"];
         if (![terms isEqual:@[@"小蚕",@"USB-C",@"3.5%"]]) return 12;
         if ([controller parseVocabulary:[@"x" stringByPaddingToLength:65 withString:@"x" startingAtIndex:0]]) return 13;

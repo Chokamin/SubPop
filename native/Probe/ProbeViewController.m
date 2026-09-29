@@ -66,6 +66,9 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 @property NSDate *resultDate;
 @property NSUInteger dropGeneration;
 @property BOOL validatingDrop;
+@property NSURL *resultRevalidationURL;
+@property BOOL recoveredResultNeedsRevalidation;
+@property BOOL resultTimelineChanged;
 @property NSUInteger dropValidationAttempts;
 @property NSUInteger requestGeneration;
 @property NSURL *bridgeURL;
@@ -290,7 +293,15 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     NSDictionary *saved=[NSUserDefaults.standardUserDefaults dictionaryForKey:@"pendingSession"];
     if (!saved || !self.observed || ![self.observedProjectUID isEqual:saved[@"projectUID"]] || !CMTIME_IS_NUMERIC(self.observedProjectDuration)) return;
     CMTime duration=CMTimeMake([saved[@"durationValue"] longLongValue],[saved[@"durationScale"] intValue]);
-    if (!CMTIME_IS_NUMERIC(duration) || CMTimeCompare(self.observedProjectDuration,duration)!=0) return;
+    if (!CMTIME_IS_NUMERIC(duration)) return;
+    BOOL durationChanged=CMTimeCompare(self.observedProjectDuration,duration)!=0;
+    if (durationChanged) {
+        NSString *request=saved[@"requestID"];
+        if (![[NSUUID alloc] initWithUUIDString:request]) return;
+        NSDictionary *response=[self readJSON:[[self.bridgeURL URLByAppendingPathComponent:request] URLByAppendingPathComponent:@"response.json"]];
+        if (![response[@"status"] isEqual:@"ready"] || ![response[@"projectUID"] isEqual:saved[@"projectUID"]] || ![response[@"snapshotSHA256"] isEqual:saved[@"snapshotSHA"]]) return;
+    }
+    self.recoveredResultNeedsRevalidation=durationChanged;
     self.historicalResult=[saved[@"historicalResult"] boolValue];self.restoringSession=YES;self.dropUID=saved[@"projectUID"];self.dropDuration=duration;self.dropName=saved[@"projectName"];
     NSString *file=saved[@"inputFile"];
     if ([file hasPrefix:@"drop-"] && [file.lastPathComponent isEqual:file]) { self.freshDropURL=[[self evidenceDirectory] URLByAppendingPathComponent:file];NSDate *captured=nil;[self.freshDropURL getResourceValue:&captured forKey:NSURLContentModificationDateKey error:nil];self.freshDropDate=captured; }
@@ -547,6 +558,8 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     self.dropTitle.stringValue=fresh ? (self.dropName ?: @"项目已导入") : @"把项目拖到这里";
     if (!fresh) self.dropDetail.stringValue=@"从 Final Cut Pro 浏览器拖入整个项目";
     else if (awaitingProject) self.dropDetail.stringValue=@"项目已收到 · 等待确认当前时间线";
+    else if (self.snapshotConsumed && self.titlePayloads && ![self isolatedProjectActive]) self.dropDetail.stringValue=@"字幕已保留 · 请从 FCP 浏览器重新拖入同一项目以确认时间线";
+    else if (self.snapshotConsumed && self.titlePayloads) self.dropDetail.stringValue=@"字幕已保留 · 可更换样式并再次拖入";
     else if (self.snapshotConsumed) self.dropDetail.stringValue=@"上次识别已使用此快照 · 请重新拖入项目以确认最新时间线";
     else if (self.fallbackImporting) self.dropDetail.stringValue=@"正在导入整条时间线的音频…";
     else if (self.fallbackAudioURL) self.dropDetail.stringValue=@"备用音频包含导出的全部声音 · 按原项目时间轴生成字幕";
@@ -609,6 +622,8 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
         self.statusDetail.stringValue=@"字幕按整条时间线的导出音频生成；请核对音频起点及字幕时间。";
     if (hasRows && [self.resultManifest[@"existingTitleReview"] isEqual:@"unavailable"])
         self.statusDetail.stringValue=[self.statusDetail.stringValue stringByAppendingString:@" 原项目标题未能核对，拖回前请检查是否与旧字幕重叠。"];
+    if (hasRows && self.resultTimelineChanged)
+        self.statusDetail.stringValue=[self.statusDetail.stringValue stringByAppendingString:@" 当前时间线时长与识别时不同，旧字幕可能错位；请在 FCP 核对时间。"];
     self.tap5aStyleButton.hidden=![self usesFileImport];self.tap5aStyleButton.enabled=!self.importInProgress;
     self.resultView.enabled=ready && !self.importInProgress && !busy;
     self.resultView.toolTip=fileImport ? @"点击导入到 FCP 浏览器。若出现资源库选择，请选择原项目所在资源库；在本次新建的编号事件中将字幕片段拖到原项目起点上方。每次导入都会保留旧版并新建事件。" : @"按住卡片拖到原项目时间线起点上方，落轨后将片段项分开。";
@@ -629,7 +644,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     [self saveDraft];
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];
     BOOL historical=self.historicalResult;
-    self.dropGeneration++;self.validatingDrop=NO;self.historicalResult=NO;
+    self.dropGeneration++;self.validatingDrop=NO;self.resultRevalidationURL=nil;self.resultTimelineChanged=NO;self.historicalResult=NO;
     // Keep the project context, but require a fresh FCP drag before another ASR
     // job. UID and duration alone cannot detect same-length timeline edits or
     // titles inserted after this snapshot was captured.
@@ -816,7 +831,8 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     self.jobProgress=[response[@"progress"] isKindOfClass:NSNumber.class] ? response[@"progress"] : nil;
     if ([response[@"status"] isEqual:@"ready"]) {
         NSMutableDictionary *payloads=[NSMutableDictionary new];
-        BOOL valid=[(response[@"manifest"][@"referenceSHA256"] ?: @"") isEqual:(self.requestReferenceSHA ?: @"")] && [(response[@"manifest"][@"audioSHA256"] ?: @"") isEqual:(self.requestAudioSHA ?: @"")] && [(response[@"manifest"][@"vocabulary"] ?: @[]) isEqual:(self.requestVocabulary ?: @[])] && [response[@"modelID"] isEqual:self.requestModelID] && self.requestGeneration==self.dropGeneration && [self isolatedProjectActive] && [response[@"snapshotSHA256"] isEqual:self.requestSHA] &&
+        BOOL sameProject=self.observed && self.dropUID.length && [self.dropUID isEqual:self.observedProjectUID] && CMTIME_IS_NUMERIC(self.observedProjectDuration);
+        BOOL valid=[(response[@"manifest"][@"referenceSHA256"] ?: @"") isEqual:(self.requestReferenceSHA ?: @"")] && [(response[@"manifest"][@"audioSHA256"] ?: @"") isEqual:(self.requestAudioSHA ?: @"")] && [(response[@"manifest"][@"vocabulary"] ?: @[]) isEqual:(self.requestVocabulary ?: @[])] && [response[@"modelID"] isEqual:self.requestModelID] && self.requestGeneration==self.dropGeneration && ([self isolatedProjectActive] || (self.recoveredResultNeedsRevalidation && sameProject)) && [response[@"snapshotSHA256"] isEqual:self.requestSHA] &&
             [response[@"projectUID"] isEqual:self.dropUID] &&
             [response[@"payloads"] isKindOfClass:NSDictionary.class] && [response[@"outputs"] isKindOfClass:NSDictionary.class];
         if (valid) for (NSString *version in @[@"1.12",@"1.13",@"1.14"]) {
@@ -833,7 +849,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
             if (![[self sha256:data] isEqual:response[@"outputs"][name]]) {valid=NO;break;}originals[version]=data;
         }
         if (valid && self.requestReferenceSHA.length && ![response[@"manifest"][@"unreferencedCaptions"] isKindOfClass:NSArray.class]) valid=NO;
-        if (valid && payloads.count==3) { self.snapshotConsumed=YES;self.titlePayloads=payloads; self.resultDate=NSDate.date;self.resultManifest=response[@"manifest"];self.tap5aStyle=SubPopNormalizeTap5aStyle([NSUserDefaults.standardUserDefaults dictionaryForKey:@"tap5aStylePreset"]);NSString *presetFont=self.tap5aStyle[@"textFont"],*presetSize=[self.tap5aStyle[@"textSize"] stringValue];
+        if (valid && payloads.count==3) { self.snapshotConsumed=YES;self.titlePayloads=payloads;self.resultTimelineChanged=NO; self.resultDate=NSDate.date;self.resultManifest=response[@"manifest"];self.tap5aStyle=SubPopNormalizeTap5aStyle([NSUserDefaults.standardUserDefaults dictionaryForKey:@"tap5aStylePreset"]);NSString *presetFont=self.tap5aStyle[@"textFont"],*presetSize=[self.tap5aStyle[@"textSize"] stringValue];
             if (![self.fontPicker itemWithTitle:presetFont]) [self.fontPicker addItemWithTitle:presetFont];[self.fontPicker selectItemWithTitle:presetFont];
             if (![self.sizePicker itemWithTitle:presetSize]) [self.sizePicker addItemWithTitle:presetSize];[self.sizePicker selectItemWithTitle:presetSize];[self.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];self.resultRequestID=self.requestID;self.captionRows=[NSMutableArray new];for (NSDictionary *row in response[@"manifest"][@"captions"]) [self.captionRows addObject:row.mutableCopy];
             self.referenceUndone=NO;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
@@ -870,6 +886,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
             [self rebuildTitles];
             if (sameDraft) {self.resultWasDragged=[draft[@"dragged"] boolValue];[self saveDraft];}
             [self.captionTable reloadData];[self clearFallbackAudio]; }
+        self.recoveredResultNeedsRevalidation=NO;
         [self record:@{@"reason":@"worker-result",@"status":self.titlePayloads ? @"ready-to-drag" : @"result-rejected",@"requestID":self.requestID,@"jobID":response[@"jobID"] ?: @""}];
         if (self.titlePayloads && self.resultWasDragged) self.displayState=@"sent";
         if (!self.titlePayloads) [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.requestID=nil; [self updateInterface];
@@ -964,7 +981,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     [NSNotificationCenter.defaultCenter removeObserver:self name:NSWindowWillMiniaturizeNotification object:self.lifecycleWindow];
     [NSNotificationCenter.defaultCenter removeObserver:self name:NSWindowDidDeminiaturizeNotification object:self.lifecycleWindow];
     self.lifecycleWindow=nil;self.windowMiniaturizing=NO;
-    self.validatingDrop=NO;
+    self.validatingDrop=NO;self.resultRevalidationURL=nil;self.recoveredResultNeedsRevalidation=NO;
     [self clearPendingRecognition];
     [self.updatesPanel close];
     [self.activity.wave setWorking:NO];
@@ -1053,9 +1070,13 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     [self record:result];
 }
 - (void)activeSequenceChanged {
+    if (self.titlePayloads && !self.requestID && !self.referenceRequestID && self.dropUID.length) {
+        [self snapshot:@"activeSequenceChanged"];
+        if ([self.dropUID isEqual:self.observedProjectUID]) { self.displayState=@"ready";[self updateInterface];return; }
+    }
     BOOL wasRunning=self.requestID!=nil || self.referenceRequestID!=nil;
     BOOL cancelled=[self cancelCurrentWorkForProjectSwitch];
-    self.validatingDrop=NO;[self clearPendingRecognition];self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
+    self.validatingDrop=NO;self.resultRevalidationURL=nil;self.recoveredResultNeedsRevalidation=NO;self.resultTimelineChanged=NO;[self clearPendingRecognition];self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
     self.freshDropURL=nil;self.snapshotConsumed=NO;self.titlePayloads=nil;self.dropGeneration++;self.observed=YES;
     [self clearFallbackAudio];self.fallbackImporting=NO;
     [self snapshot:@"activeSequenceChanged"];
@@ -1094,24 +1115,51 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     return YES;
 }
 - (void)finishDropValidation:(NSNumber *)generation {
-    if (!self.validatingDrop || generation.unsignedIntegerValue!=self.dropGeneration || !self.freshDropURL) return;
+    if (!self.validatingDrop || generation.unsignedIntegerValue!=self.dropGeneration || !(self.resultRevalidationURL ?: self.freshDropURL)) return;
     self.dropValidationAttempts++;
     if (self.timeline) [self snapshot:@"drop-state-refresh"];
     // SDK reads can deliver observer callbacks while servicing the host reply.
-    if (!self.validatingDrop || generation.unsignedIntegerValue!=self.dropGeneration || !self.freshDropURL) return;
+    if (!self.validatingDrop || generation.unsignedIntegerValue!=self.dropGeneration || !(self.resultRevalidationURL ?: self.freshDropURL)) return;
     if (!self.observed || !self.observedProjectUID.length || !CMTIME_IS_NUMERIC(self.observedProjectDuration)) {
         if (self.dropValidationAttempts<3) {
             [self performSelector:@selector(finishDropValidation:) withObject:generation afterDelay:.25*self.dropValidationAttempts inModes:@[NSDefaultRunLoopMode]];
         } else {
-            self.validatingDrop=NO;self.displayState=@"project-unavailable";
+            self.validatingDrop=NO;self.resultRevalidationURL=nil;self.displayState=@"project-unavailable";
             [self record:@{@"reason":@"drop-validation-unavailable",@"attempts":@(self.dropValidationAttempts),@"inputPreserved":@YES}];
         }
         return;
     }
     self.validatingDrop=NO;
+    if (self.resultRevalidationURL) {
+        NSURL *revalidated=self.resultRevalidationURL;self.resultRevalidationURL=nil;
+        if (![self.dropUID isEqual:self.observedProjectUID]) {
+            self.displayState=@"inactive";self.visibleError=@"当前打开的不是这批字幕所属的项目；原字幕已保留。";
+            [self updateInterface];return;
+        }
+        BOOL changed=CMTimeCompare(self.dropDuration,self.observedProjectDuration)!=0;
+        self.freshDropURL=revalidated;self.freshDropDate=NSDate.date;
+        self.dropDuration=self.observedProjectDuration;self.resultTimelineChanged=changed;
+        self.snapshotConsumed=YES;self.resultWasDragged=NO;self.displayState=@"ready";self.visibleError=nil;
+        NSMutableDictionary *session=[[NSUserDefaults.standardUserDefaults dictionaryForKey:@"pendingSession"] mutableCopy];
+        if (session && [session[@"requestID"] isEqual:self.resultRequestID]) {
+            session[@"durationValue"]=@(self.dropDuration.value);session[@"durationScale"]=@(self.dropDuration.timescale);
+            session[@"inputFile"]=revalidated.lastPathComponent;
+            [NSUserDefaults.standardUserDefaults setObject:session forKey:@"pendingSession"];
+        }
+        [self saveDraft];
+        [self record:@{@"reason":@"result-project-revalidated",@"projectUID":self.dropUID,@"durationChanged":@(changed),@"duration":Time(self.dropDuration)}];
+        return;
+    }
     [self validateDroppedProject];
     self.displayState=self.freshDropURL ? @"input" : @"project-mismatch";
     [self updateInterface];
+}
+- (BOOL)beginResultRevalidation:(NSURL *)url projectUID:(NSString *)uid {
+    if (!url || !self.titlePayloads || !self.resultDate || self.requestID || self.referenceRequestID || ![uid isEqual:self.dropUID]) return NO;
+    self.resultRevalidationURL=url;self.validatingDrop=YES;self.dropValidationAttempts=0;
+    self.displayState=@"validating-input";[self updateInterface];
+    [self performSelector:@selector(finishDropValidation:) withObject:@(self.dropGeneration) afterDelay:.1 inModes:@[NSDefaultRunLoopMode]];
+    return YES;
 }
 - (void)recheckLastDrop:(id)sender {
     if (self.requestID || self.titlePayloads) return;
@@ -1218,11 +1266,15 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
         if (ok && (!newDropURL || [type isEqual:@"com.apple.finalcutpro.xml.v1-14"])) newDropURL=url;
         [saved addObject:@{@"type":type,@"bytes":@(data.length),@"saved":@(ok),@"file":name,@"error":error.localizedDescription ?: @""}];
     }
-    if (!newDropURL || ![self cancelCurrentWorkForProjectSwitch]) return NO;
+    if (!newDropURL) return NO;
+    NSXMLDocument *newDoc=[[NSXMLDocument alloc] initWithData:[NSData dataWithContentsOfURL:newDropURL] options:NSXMLNodeLoadExternalEntitiesNever error:nil];
+    NSString *newUID=[[newDoc nodesForXPath:@"/fcpxml/project | /fcpxml/library/event/project" error:nil].firstObject attributeForName:@"uid"].stringValue;
+    if ([self beginResultRevalidation:newDropURL projectUID:newUID]) return YES;
+    if (![self cancelCurrentWorkForProjectSwitch]) return NO;
     [self clearPendingRecognition];
     self.historicalResult=NO;
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];
-    self.validatingDrop=NO;self.freshDropURL=newDropURL;self.freshDropDate=NSDate.date;self.snapshotConsumed=NO;
+    self.validatingDrop=NO;self.resultRevalidationURL=nil;self.resultTimelineChanged=NO;self.freshDropURL=newDropURL;self.freshDropDate=NSDate.date;self.snapshotConsumed=NO;
     [self clearFallbackAudio];self.fallbackImporting=NO;
     self.titlePayloads=nil;self.resultDate=nil;self.dropGeneration++;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
     BOOL received=[self beginDropValidation];
