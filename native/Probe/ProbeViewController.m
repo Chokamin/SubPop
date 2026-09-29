@@ -583,6 +583,9 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
         self.statusDetail.stringValue=[NSString stringWithFormat:@"项目中的文字标题与 %lu 条新字幕时段重叠，请在 FCP 检查画面是否叠加；原标题不会自动删除。",(unsigned long)[existingCollision[@"overlappingRows"] unsignedIntegerValue]];
     NSString *skipped=SubPopSkippedAudioSummary(self.resultManifest[@"skippedAudio"]);
     if (hasRows && skipped.length) self.statusDetail.stringValue=[skipped stringByAppendingString:@"；其余对白已识别。请核对空缺处。"];
+    NSUInteger effects=[self.resultManifest[@"bypassedAudioEffects"] unsignedIntegerValue];
+    if (hasRows && effects) self.statusDetail.stringValue=[NSString stringWithFormat:@"%@%lu 处音频效果未参与识别，字幕依据处理前原声生成；请核对文字。",
+        skipped.length ? [self.statusDetail.stringValue stringByAppendingString:@" "] : @"",(unsigned long)effects];
     self.tap5aStyleButton.hidden=![self usesFileImport];self.tap5aStyleButton.enabled=!self.importInProgress;
     self.resultView.enabled=ready && !self.importInProgress && !busy;
     self.resultView.toolTip=fileImport ? @"点击导入到 FCP 浏览器。若出现资源库选择，请选择原项目所在资源库；在本次新建的编号事件中将字幕片段拖到原项目起点上方。每次导入都会保留旧版并新建事件。" : @"按住卡片拖到原项目时间线起点上方，落轨后将片段项分开。";

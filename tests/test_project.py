@@ -365,6 +365,50 @@ class ProjectTests(unittest.TestCase):
             else:ET.SubElement(clip,change)
             with self.assertRaises(ValueError):self.inspect(root)
 
+    def test_dialogue_filters_and_builtin_enhancements_use_source_audio(self):
+        root,p,seq,clip=basic();asset=root.find('resources/asset')
+        original=self.inspect(root)['segments']
+        effect=ET.SubElement(root.find('resources'),'effect',id='compressor',name='Compressor',uid='example.compressor')
+        component=ET.SubElement(clip,'audio-channel-source',srcCh='1',role='dialogue')
+        ET.SubElement(component,'adjust-noiseReduction',amount='0.5')
+        ET.SubElement(component,'adjust-voiceIsolation',amount='0.7')
+        filter_node=ET.SubElement(clip,'filter-audio',ref=effect.get('id'))
+        param=ET.SubElement(filter_node,'param',name='Threshold',value='-18')
+        ET.SubElement(ET.SubElement(param,'keyframeAnimation'),'keyframe',time='0s',value='-18')
+        processed=self.inspect(root)
+        self.assertEqual(processed['segments'],original)
+        self.assertEqual(processed['bypassedAudioEffects'],3)
+        dtd=Path(__file__).resolve().parents[1]/'.subloom/verification/FCPXMLv1_14.dtd'
+        with tempfile.TemporaryDirectory() as temp:
+            xml=Path(temp)/'effects.fcpxml';xml.write_bytes(ET.tostring(root))
+            subprocess.run(['xmllint','--noout','--dtdvalid',str(dtd),str(xml)],capture_output=True,check=True)
+        filter_node.set('enabled','0')
+        self.assertEqual(self.inspect(root)['bypassedAudioEffects'],2)
+        filter_node.set('enabled','1');filter_node.set('ref','missing')
+        with self.assertRaisesRegex(ValueError,'音频效果引用'):self.inspect(root)
+        filter_node.set('ref',effect.get('id'))
+        ET.SubElement(component,'adjust-volume',amount='-6dB')
+        self.assertAlmostEqual(self.inspect(root)['segments'][0]['gain'],10**(-6/20))
+        ET.SubElement(component,'mute',start='0s',duration='1s')
+        with self.assertRaisesRegex(ValueError,'静音'):self.inspect(root)
+
+    def test_compound_role_filter_and_excluded_music_effect(self):
+        root,p,seq,clip=basic();media,ref=compound(root,seq,clip)
+        effect=ET.SubElement(root.find('resources'),'effect',id='compressor',uid='example.compressor')
+        role=ET.SubElement(ref,'audio-role-source',role='dialogue')
+        ET.SubElement(role,'adjust-volume',amount='-6dB')
+        ET.SubElement(role,'filter-audio',ref=effect.get('id'))
+        self.assertEqual(self.inspect(root)['bypassedAudioEffects'],1)
+        self.assertAlmostEqual(self.inspect(root)['segments'][0]['gain'],10**(-6/20))
+        dtd=Path(__file__).resolve().parents[1]/'.subloom/verification/FCPXMLv1_14.dtd'
+        with tempfile.TemporaryDirectory() as temp:
+            xml=Path(temp)/'compound-effects.fcpxml';xml.write_bytes(ET.tostring(root))
+            subprocess.run(['xmllint','--noout','--dtdvalid',str(dtd),str(xml)],capture_output=True,check=True)
+        clip.set('audioRole','music')
+        ET.SubElement(clip,'filter-audio',ref=effect.get('id'))
+        self.assertEqual(self.inspect(root)['bypassedAudioEffects'],1)
+        self.assertEqual(self.inspect(root,'all')['bypassedAudioEffects'],2)
+
     def test_general_title_format_escapes_text_and_preserves_fractional_time(self):
         m={'projectUID':'DAILY','frameDuration':'1001/30000','totalFrames':3000,'width':'1920','height':'1080','captions':[{'text':'A & B <测试>','start_frame':100,'end_frame':130}]}
         root=ET.fromstring(payload(m));title=root.find('clip/spine/title')
@@ -476,6 +520,29 @@ class ProjectTests(unittest.TestCase):
             self.assertEqual(actual,source[10*unit:12*unit]+source[18*unit:20*unit]+source[30*unit:30*unit+32240*4])
             self.assertEqual(len(actual),96240*4)
             self.assertFalse(mixed['silent'])
+
+    def test_native_render_with_audio_effect_uses_unprocessed_source_pcm(self):
+        import wave
+        from array import array
+        root,p,seq,clip=basic()
+        with tempfile.TemporaryDirectory() as temp:
+            directory=Path(temp);media=directory/'voice.wav'
+            with wave.open(str(media),'wb') as out:
+                out.setparams((1,2,16000,0,'NONE','not compressed'))
+                out.writeframes(array('h',[12000]).tobytes()*9*16000)
+            root.find('resources/asset/media-rep').set('src',media.as_uri())
+            xml=directory/'input.fcpxml';xml.write_bytes(ET.tostring(root))
+            binary=FIXTURE.parents[2]/'.subloom/build/SubPopAudioProbeCLI'
+            original=project.render(xml,directory,binary,'DAILY-PROJECT')
+            original_pcm=(directory/original['pcmFile']).read_bytes()
+            effect=ET.SubElement(root.find('resources'),'effect',id='compressor',uid='example.compressor')
+            component=ET.SubElement(clip,'audio-channel-source',srcCh='1',role='dialogue')
+            ET.SubElement(component,'adjust-noiseReduction',amount='0.5')
+            ET.SubElement(clip,'filter-audio',ref=effect.get('id'))
+            xml.write_bytes(ET.tostring(root))
+            processed=project.render(xml,directory,binary,'DAILY-PROJECT')
+            self.assertEqual((directory/processed['pcmFile']).read_bytes(),original_pcm)
+            self.assertEqual(processed['plan']['bypassedAudioEffects'],2)
 
     def test_native_render_skips_smooth_audio_but_keeps_later_dialogue(self):
         import wave

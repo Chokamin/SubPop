@@ -128,8 +128,10 @@ int main(int argc,const char *argv[]) {
                 [c updateInterface];
                 if (![c.statusDetail.stringValue containsString:@"文字标题与 1 条新字幕时段重叠"]) return 132;
                 withCollision[@"skippedAudio"]=@[@{@"startSample":@32000,@"endSample":@64000,@"reason":@"平滑变速"}];
+                withCollision[@"bypassedAudioEffects"]=@2;
                 [c updateInterface];
                 if (![c.statusDetail.stringValue containsString:@"00:02–00:04 平滑变速"]) return 133;
+                if (![c.statusDetail.stringValue containsString:@"2 处音频效果未参与识别"]) return 134;
                 c.resultManifest=m;[c updateInterface];
             }
             if (width.intValue==580) {

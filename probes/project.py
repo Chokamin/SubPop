@@ -25,6 +25,15 @@ def sample(value):
 
 STORY_TAGS={'asset-clip','gap','clip','audio','video','ref-clip'}
 CLIP_ATTRS={'ref','offset','name','start','duration','enabled','tcFormat','audioRole','videoRole','srcEnable','format','tcStart','modDate','lane'}
+AUDIO_ENHANCEMENTS={
+    'adjust-loudness':{'amount','uniformity'},
+    'adjust-noiseReduction':{'amount'},
+    'adjust-humReduction':{'frequency'},
+    'adjust-EQ':{'mode'},
+    'adjust-matchEQ':set(),
+    'adjust-voiceIsolation':{'amount'},
+}
+AUDIO_PARAMETER_TAGS={'data','param','fadeIn','fadeOut','keyframeAnimation','keyframe'}
 
 class UnsupportedAudioRetime(ValueError):
     """A valid edit whose audio clock cannot be reconstructed accurately."""
@@ -127,7 +136,41 @@ def excluded_role(role, audio_mode):
     return audio_mode=='dialogue' and role.split('.')[0] in ('music','effects')
 
 
-def audio_selection(node, asset, audio_mode):
+def bypassed_audio_processors(children, effects):
+    """Count audio effects intentionally omitted from source-media decoding."""
+    count=0
+    for processor in children:
+        if processor.tag=='filter-audio':
+            definition=effects.get(processor.get('ref'))
+            if (set(processor.attrib)-{'ref','name','nameOverride','enabled','presetID'}
+                    or definition is None or not definition.get('uid') or processor.get('enabled','1') not in ('0','1')):
+                raise ValueError('音频效果引用或设置无效')
+            if any(child.tag not in ('data','param') for child in processor):
+                raise ValueError('音频效果结构无效')
+            count+=processor.get('enabled','1')=='1'
+        elif processor.tag in AUDIO_ENHANCEMENTS:
+            if set(processor.attrib)-AUDIO_ENHANCEMENTS[processor.tag]:
+                raise ValueError('音频增强设置无效')
+            allowed={'param'} if processor.tag=='adjust-EQ' else {'data'} if processor.tag=='adjust-matchEQ' else set()
+            if any(child.tag not in allowed for child in processor):
+                raise ValueError('音频增强结构无效')
+            count+=1
+        else:raise ValueError('暂不支持音频组件的裁剪、静音或重映射：'+processor.tag)
+        if any(child.tag not in AUDIO_PARAMETER_TAGS for child in processor.iter() if child is not processor):
+            raise ValueError('音频效果参数结构无效')
+    return count
+
+
+def volume_gain(node):
+    amount=node.get('amount','0dB')
+    if len(node) or set(node.attrib)-{'amount'} or not re.fullmatch(r'-?\d+(?:\.\d+)?dB',amount):
+        raise ValueError('暂不支持音量关键帧或淡入淡出')
+    db=float(amount[:-2])
+    if not -96<=db<=12:raise ValueError('音量超出支持范围')
+    return 10**(db/20)
+
+
+def audio_selection(node, asset, audio_mode, effects):
     """Only downmix the full source when all its channels have equal audibility.
 
     Two mono components are a normal stereo layout, not two source tracks.
@@ -135,16 +178,21 @@ def audio_selection(node, asset, audio_mode):
     """
     role=node.get('audioRole',node.get('role','dialogue')).split('.')[0]
     components=node.findall('audio-channel-source')
-    if not components and excluded_role(role,audio_mode):return False,role
+    if not components and excluded_role(role,audio_mode):return False,role,0,1.0
     if asset.get('audioChannels') not in ('1','2') or asset.get('audioSources','1')!='1':raise ValueError('暂不支持多通道媒体')
-    expected=set(range(1,int(asset.get('audioChannels'))+1));seen=set();selected=set();roles=[]
+    expected=set(range(1,int(asset.get('audioChannels'))+1));seen=set();selected=set();roles=[];effect_count=0;gains=set()
     if not components:
         components=[ET.Element('audio-channel-source',srcCh=node.get('srcCh',', '.join(map(str,sorted(expected)))),role=role)]
     for component in components:
         component_role=component.get('role',role).split('.')[0]
         active=flag(component,'active') and flag(component,'enabled') and not excluded_role(component_role,audio_mode)
-        if set(component.attrib)-{'srcCh','role','active','enabled'} or (active and len(component)):
-            raise ValueError('暂不支持音频组件的通道重映射、裁剪或效果')
+        if set(component.attrib)-{'srcCh','role','active','enabled'}:
+            raise ValueError('暂不支持音频组件的通道重映射或裁剪')
+        if active:
+            volumes=component.findall('adjust-volume')
+            if len(volumes)>1:raise ValueError('音量结构无效')
+            gains.add(volume_gain(volumes[0]) if volumes else 1.0)
+            effect_count+=bypassed_audio_processors((child for child in component if child.tag!='adjust-volume'),effects)
         text=component.get('srcCh','')
         if not re.fullmatch(r'\s*[1-9]\d*(?:\s*,\s*[1-9]\d*)*\s*',text):raise ValueError('音频通道配置无效')
         channels=[int(x) for x in text.split(',')]
@@ -152,7 +200,8 @@ def audio_selection(node, asset, audio_mode):
         seen.update(channels)
         if active:selected.update(channels);roles.append(component_role)
     if selected and selected!=expected:raise ValueError('暂不支持只启用部分音频通道；请将此片段设为完整单声道或立体声')
-    return bool(selected),','.join(dict.fromkeys(roles)) or role
+    if len(gains)>1:raise ValueError('暂不支持立体声左右通道使用不同的音量')
+    return bool(selected),','.join(dict.fromkeys(roles)) or role,effect_count,next(iter(gains),1.0)
 
 
 def inspect(path, audio_mode='dialogue'):
@@ -173,7 +222,8 @@ def inspect(path, audio_mode='dialogue'):
     if spine is None or len(seq.findall('spine'))!=1 or any(n.tag not in ('spine','note','metadata') for n in seq) or spine.attrib:raise ValueError('暂不支持此时间线结构')
     assets={a.get('id'):a for a in root.findall('resources/asset')}
     medias={m.get('id'):m for m in root.findall('resources/media')}
-    segments=[];skipped=[];ignored=0;count=0;timeline_end=Fraction(0)
+    effects={e.get('id'):e for e in root.findall('resources/effect')}
+    segments=[];skipped=[];ignored=0;count=0;timeline_end=Fraction(0);bypassed_effects=0
 
     def possible_media_audio(sequence,visited=()):
         for clip in sequence.iter():
@@ -187,7 +237,7 @@ def inspect(path, audio_mode='dialogue'):
         return False
 
     def walk(node,parent_origin,parent_start,bounds,inherited=True,parent_gain=1.0,depth=0,media_stack=()):
-        nonlocal ignored,count,timeline_end,segments,skipped
+        nonlocal ignored,count,timeline_end,segments,skipped,bypassed_effects
         count+=1
         if count>5000 or depth>128:raise ValueError('项目片段过多或嵌套过深')
         if node.tag not in STORY_TAGS:raise ValueError('暂不支持此多机位或同步片段结构')
@@ -205,38 +255,44 @@ def inspect(path, audio_mode='dialogue'):
         if visible[1]>visible[0]:timeline_end=max(timeline_end,visible[1])
         allowed=CLIP_ATTRS | ({'role','srcCh','srcID','outCh'} if node.tag=='audio' else {'role','srcID'} if node.tag=='video' else {'useAudioSubroles'} if node.tag=='ref-clip' else set())
         if set(node.attrib)-allowed:raise ValueError('暂不支持分离的 J/L 音频或未知片段属性')
-        if node.tag=='ref-clip':
-            if node.get('useAudioSubroles','0') not in ('0','1'):raise ValueError('复合片段音频子角色设置无效')
-            for component in node.findall('audio-role-source'):
-                if set(component.attrib)-{'role','active','enabled'} or not component.get('role') or len(component) or not flag(component,'active') or not flag(component,'enabled'):
-                    raise ValueError('暂不支持复合片段音频组件的单独静音、裁剪或效果')
+        if node.tag=='ref-clip' and node.get('useAudioSubroles','0') not in ('0','1'):
+            raise ValueError('复合片段音频子角色设置无效')
         enabled=inherited and flag(node,'enabled')
         source_enable=node.get('srcEnable','all')
         if source_enable not in ('all','audio','video'):raise ValueError('无效的音频启用状态')
         audible=enabled and source_enable!='video' and visible[1]>visible[0]
         role=node.get('audioRole',node.get('role','dialogue')).split('.')[0]
+        effect_count=0;component_gain=1.0
         if node.tag in ('asset-clip','audio'):
             if asset is None:raise ValueError('媒体资源缺失')
             audible=audible and asset.get('hasAudio')=='1'
             if audible:
-                selected,role=audio_selection(node,asset,audio_mode)
+                selected,role,effect_count,component_gain=audio_selection(node,asset,audio_mode,effects)
                 if not selected:ignored+=1
                 audible=selected
             if audible and (node.get('srcID','1')!='1' or 'outCh' in node.attrib):raise ValueError('暂不支持音频通道重映射')
-        elif node.tag=='video':audible=False
+        elif node.tag in ('video','gap'):audible=False
         elif node.findall('audio-channel-source'):raise ValueError('暂不支持容器片段的音频通道重映射')
         if media_seq is not None and audible and not possible_media_audio(media_seq,(node.get('ref'),)):
             audible=False
         if media_seq is not None and excluded_role(role,audio_mode):audible=False
-        gain=parent_gain
+        if node.tag=='ref-clip':
+            role_gains=set()
+            for component in node.findall('audio-role-source'):
+                if set(component.attrib)-{'role','active','enabled'} or not component.get('role') or not flag(component,'active') or not flag(component,'enabled'):
+                    raise ValueError('暂不支持复合片段音频组件的单独静音或裁剪')
+                if audible and not excluded_role(component.get('role'),audio_mode):
+                    volumes=component.findall('adjust-volume')
+                    if len(volumes)>1:raise ValueError('音量结构无效')
+                    role_gains.add(volume_gain(volumes[0]) if volumes else 1.0)
+                    effect_count+=bypassed_audio_processors((child for child in component if child.tag!='adjust-volume'),effects)
+            if len(role_gains)>1:raise ValueError('暂不支持复合片段内不同音频角色使用不同的音量')
+            component_gain*=next(iter(role_gains),1.0)
+        gain=parent_gain*component_gain
         volumes=node.findall('adjust-volume')
         if len(volumes)>1:raise ValueError('音量结构无效')
         if volumes and audible:
-            v=volumes[0];amount=v.get('amount','0dB')
-            if len(v) or set(v.attrib)-{'amount'} or not re.fullmatch(r'-?\d+(?:\.\d+)?dB',amount):raise ValueError('暂不支持音量关键帧或淡入淡出')
-            db=float(amount[:-2])
-            if not -96<=db<=12:raise ValueError('音量超出支持范围')
-            gain*=10**(db/20)
+            gain*=volume_gain(volumes[0])
         conform=node.findall('conform-rate')
         if len(conform)>1:raise ValueError('帧率适配结构无效')
         if conform:
@@ -264,7 +320,7 @@ def inspect(path, audio_mode='dialogue'):
         harmless={'conform-rate','caption','adjust-volume','audio-channel-source','adjust-transform','adjust-crop','adjust-conform','adjust-blend','filter-video','filter-video-mask','metadata','marker','chapter-marker','keyword','rating','note'}
         if node.tag=='ref-clip':harmless.add('audio-role-source')
         if has_time_map:harmless.add('timeMap')
-        if not audible:harmless.add('filter-audio')
+        harmless.add('filter-audio')
         if node.tag=='video':harmless.update(('param','reserved'))
         children=[]
         for child in node:
@@ -277,6 +333,9 @@ def inspect(path, audio_mode='dialogue'):
             # project clock and let independent clips elsewhere still run.
             skipped.append((visible[0],visible[1],unsupported_retime))
             return
+        if audible:
+            effect_count+=bypassed_audio_processors(node.findall('filter-audio'),effects)
+            bypassed_effects+=effect_count
         if node.tag in ('asset-clip','audio') and audible:
             reps=asset.findall("media-rep[@kind='original-media']")
             if len(reps)!=1:raise ValueError('缺少原始媒体引用')
@@ -352,7 +411,7 @@ def inspect(path, audio_mode='dialogue'):
     # the last full video frame. PCM keeps that exact endpoint; titles use frames.
     skipped_audio=[{'offset':str(begin),'duration':str(end-begin),'startSample':sample(begin),'endSample':sample(end),'reason':reason}
                    for begin,end,reason in skipped if sample(end)>sample(begin)]
-    return dict(project=project.get('name','未命名项目'),uid=project.get('uid'),duration=str(duration),relative_start='0',frameDuration=str(frame),totalFrames=(duration/frame).__ceil__(),width=fmt.get('width','1920'),height=fmt.get('height','1080'),colorSpace=fmt.get('colorSpace','1-1-1 (Rec. 709)'),sampleCount=sample(duration),segments=segments,skippedAudio=skipped_audio,audioMode=audio_mode,ignoredRoleClips=ignored,audibility='XML-defined audio excluding music/effects roles' if audio_mode=='dialogue' else 'XML-defined mix; FCP live role/solo monitoring not included')
+    return dict(project=project.get('name','未命名项目'),uid=project.get('uid'),duration=str(duration),relative_start='0',frameDuration=str(frame),totalFrames=(duration/frame).__ceil__(),width=fmt.get('width','1920'),height=fmt.get('height','1080'),colorSpace=fmt.get('colorSpace','1-1-1 (Rec. 709)'),sampleCount=sample(duration),segments=segments,skippedAudio=skipped_audio,bypassedAudioEffects=bypassed_effects,audioMode=audio_mode,ignoredRoleClips=ignored,audibility='XML-defined audio excluding music/effects roles' if audio_mode=='dialogue' else 'XML-defined mix; FCP live role/solo monitoring not included')
 
 def render(xml,directory,binary,expected_uid,audio_mode='dialogue'):
     plan=inspect(xml,audio_mode)
