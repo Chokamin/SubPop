@@ -12,10 +12,10 @@ except ImportError:
     from project import inspect
 
 
-def run(xml, asr, aligner, output, pcm_path=None, device="cpu", verbose=True, audio_mode="dialogue", vocabulary=None, engine=None):
+def run(xml, asr, aligner, output, pcm_path=None, device="cpu", verbose=True, audio_mode="dialogue", vocabulary=None, engine=None, snapshot_override=None):
     from .vocabulary import context
     hints=context(vocabulary or [])
-    snapshot = inspect(xml,audio_mode)
+    snapshot = snapshot_override if snapshot_override is not None else inspect(xml,audio_mode)
     from .paths import ROOT
     expected = ROOT / '.subloom/verification'
     for key in ('HF_HUB_OFFLINE', 'TRANSFORMERS_OFFLINE', 'HF_HUB_DISABLE_TELEMETRY'):

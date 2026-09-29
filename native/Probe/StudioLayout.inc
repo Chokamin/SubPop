@@ -43,7 +43,7 @@
     self.tap5aStyleButton=[self toolbarButton:@"整批样式" symbol:@"slider.horizontal.3" action:@selector(showTap5aStyle:)];
     self.templateControls=[NSStackView stackViewWithViews:@[[self label:@"字幕样式" size:11 weight:NSFontWeightMedium],self.templatePicker,self.tap5aStyleButton,[NSView new],templateHint]];self.templateControls.spacing=10;self.templateControls.alignment=NSLayoutAttributeCenterY;[stack addArrangedSubview:self.templateControls];self.templateControls.hidden=YES;
     SubPopDropView *drop=[[SubPopDropView alloc] initWithFrame:NSMakeRect(0,0,600,96)];drop.controller=self;drop.wantsLayer=YES;
-    [drop registerForDraggedTypes:@[@"com.apple.finalcutpro.xml.v1-14",@"com.apple.finalcutpro.xml.v1-13",@"com.apple.finalcutpro.xml.v1-12",@"com.apple.finalcutpro.xml"]];[drop setAccessibilityElement:YES];[drop setAccessibilityRole:NSAccessibilityGroupRole];[drop setAccessibilityLabel:@"导入项目拖放区"];
+    [drop registerForDraggedTypes:@[@"com.apple.finalcutpro.xml.v1-14",@"com.apple.finalcutpro.xml.v1-13",@"com.apple.finalcutpro.xml.v1-12",@"com.apple.finalcutpro.xml",NSPasteboardTypeFileURL]];[drop setAccessibilityElement:YES];[drop setAccessibilityRole:NSAccessibilityGroupRole];[drop setAccessibilityLabel:@"导入项目或整条时间线音频拖放区"];
     NSImageView *importIcon=[NSImageView new];importIcon.translatesAutoresizingMaskIntoConstraints=NO;importIcon.image=[NSImage imageWithSystemSymbolName:@"rectangle.stack.badge.plus" accessibilityDescription:nil];importIcon.contentTintColor=SubPopAccent();[drop addSubview:importIcon];
     self.dropTitle=[self label:@"把项目拖到这里" size:16 weight:NSFontWeightSemibold];self.dropTitle.maximumNumberOfLines=1;self.dropTitle.lineBreakMode=NSLineBreakByTruncatingTail;
     self.dropDetail=[self label:@"从 Final Cut Pro 浏览器拖入整个项目" size:12 weight:NSFontWeightRegular];self.dropDetail.textColor=NSColor.secondaryLabelColor;
@@ -70,7 +70,10 @@
     NSStackView *statusLine=[NSStackView stackViewWithViews:@[self.statusTitle,[NSView new]]];statusLine.alignment=NSLayoutAttributeCenterY;
     self.activity=[[SubPopActivityView alloc] initWithFrame:NSMakeRect(0,0,520,56)];[self.activity.heightAnchor constraintEqualToConstant:56].active=YES;
     self.jobBar=[[NSProgressIndicator alloc] initWithFrame:NSZeroRect];self.jobBar.indeterminate=NO;self.jobBar.minValue=0;self.jobBar.maxValue=1;self.jobBar.style=NSProgressIndicatorStyleBar;[self.jobBar.heightAnchor constraintEqualToConstant:5].active=YES;self.jobBar.hidden=YES;
-    self.statusCard=[self surface:@[statusLine,self.statusDetail,self.activity,self.jobBar]];[stack addArrangedSubview:self.statusCard];
+    self.fallbackAudioButton=[self toolbarButton:@"导入整条时间线音频…" symbol:@"waveform" action:@selector(chooseFallbackAudio:)];
+    self.fallbackAudioButton.toolTip=@"仅在直接读取项目音频失败时使用。请从 Final Cut Pro 导出当前完整项目的音频；备用音频会按原项目时间轴识别。";
+    self.fallbackAudioButton.hidden=YES;
+    self.statusCard=[self surface:@[statusLine,self.statusDetail,self.fallbackAudioButton,self.activity,self.jobBar]];[stack addArrangedSubview:self.statusCard];
     self.captionCount=[self label:@"字幕预览" size:13 weight:NSFontWeightSemibold];self.reviewToggle=[self toolbarButton:@"展开预览与样式 ▾" symbol:@"text.alignleft" action:@selector(toggleReview:)];
     self.reviewHeader=[NSStackView stackViewWithViews:@[self.captionCount,[NSView new],self.reviewToggle]];[stack addArrangedSubview:self.reviewHeader];self.reviewHeader.hidden=YES;
     self.captionTable=[NSTableView new];self.captionTable.rowHeight=36;self.captionTable.intercellSpacing=NSMakeSize(10,4);self.captionTable.usesAlternatingRowBackgroundColors=NO;self.captionTable.backgroundColor=[NSColor colorWithCalibratedWhite:.09 alpha:1];self.captionTable.dataSource=self;self.captionTable.delegate=self;

@@ -45,6 +45,13 @@ def request_input(directory):
     spec=model_spec(data.get('modelID', DEFAULT_MODEL_ID))
     if spec.get('engine')=='doubao' and data.get('cloudConsent') is not True:raise ValueError('云端识别需要先确认上传音频及计费')
     if data.get('audioMode','dialogue') not in ('dialogue','all'):raise ValueError('Invalid audio mode')
+    if 'audioFile' in data or 'audioSHA256' in data:
+        from .exported_audio import validate_file
+        name=data.get('audioFile')
+        digest=data.get('audioSHA256')
+        if not isinstance(name,str) or not name.startswith('exported-audio.') or Path(name).name!=name or not isinstance(digest,str) or len(digest)!=64:
+            raise ValueError('Invalid exported audio identity')
+        validate_file(directory/name,digest)
     return xml
 
 
@@ -56,7 +63,20 @@ def job_command(directory):
     resolve_model(model_id)
     cloud=model_spec(model_id).get('engine')=='doubao'
     if cloud and request.get('cloudConsent') is not True:raise ValueError('云端识别需要先确认上传音频及计费')
-    return [sys.executable, '-B', '-m', 'probes.run_job', '--xml', str(directory/'input.fcpxml'), '--model', model_id, '--audio-mode', request.get('audioMode','dialogue'), '--vocabulary-file',str(directory/'request.json')] + (['--allow-cloud'] if cloud else [])
+    audio= (['--audio-file',str(directory/request['audioFile']),'--audio-sha',request['audioSHA256']]
+            if 'audioFile' in request else [])
+    return [sys.executable, '-B', '-m', 'probes.run_job', '--xml', str(directory/'input.fcpxml'), '--model', model_id, '--audio-mode', request.get('audioMode','dialogue'), '--vocabulary-file',str(directory/'request.json'),*audio] + (['--allow-cloud'] if cloud else [])
+
+
+def discard_imported_audio(directory):
+    """A bridge copy is only needed while the worker is processing its job."""
+    try:
+        request=json.loads((directory/'request.json').read_text())
+        name=request.get('audioFile')
+        if isinstance(name,str) and name.startswith('exported-audio.') and Path(name).name==name:
+            (directory/name).unlink(missing_ok=True)
+    except (OSError,ValueError):
+        pass
 
 
 def publish_result(directory, job):
@@ -70,6 +90,7 @@ def publish_result(directory, job):
     request_data=json.loads((directory/'request.json').read_text()) if (directory/'request.json').exists() else {'projectUID':UID}
     if status['projectUID']!=request_data['projectUID']:raise ValueError('Wrong project')
     if status.get('vocabulary',[])!=validate_vocabulary(request_data.get('vocabulary',[])):raise ValueError('Result vocabulary mismatch')
+    if status.get('audioSHA256')!=request_data.get('audioSHA256'):raise ValueError('Result audio mismatch')
     if reference_digest(status.get('referenceScript',''))!=reference_digest(request_data.get('referenceScript','')):raise ValueError('Result reference mismatch')
     if status['status']=='blocked-no-audio':
         save(directory/'response.json',{'requestID':directory.name,'modelID':model_id,'status':'blocked-no-audio',
@@ -168,6 +189,7 @@ def serve():
                         if code!=0 or (ready is None and not is_reference):raise ValueError(job_error or 'Recognition failed; see this request worker.log')
                         if not is_reference:publish_result(request,ready)
                     except Exception as error:save(request/'response.json',{'requestID':request.name,'status':'cancelled' if isinstance(error,InterruptedError) else 'failed','stage':'worker','error':str(error)})
+                    discard_imported_audio(request)
                     log.close();active=None
             else:
                 for candidate in sorted(BRIDGE.iterdir()):
@@ -206,6 +228,7 @@ def serve():
                         started=time.monotonic()
                     except Exception as error:
                         save(response,{'requestID':candidate.name,'status':'failed','stage':'request-validation','error':str(error)})
+                        discard_imported_audio(candidate)
                     break
             if not active and not model_process:update_lease.release()
             time.sleep(0.5)

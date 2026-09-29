@@ -32,12 +32,16 @@ def save(path,value):
 def preflight(xml, asr, aligner, audio_mode='dialogue'):
     snapshot=inspect(xml,audio_mode)
     if not snapshot['uid']:raise ValueError('Project UID required')
+    check_models(asr,aligner)
+    return snapshot
+
+
+def check_models(asr,aligner):
     for model in (asr,aligner):
         if model is None:continue
         if not model.resolve().is_relative_to(ROOT/'.subloom/models') or not any((model/name).is_file() for name in ('config.json','config.yaml')):
             raise ValueError('Use an independent SubPop model directory')
         if any(p.is_symlink() for p in model.rglob('*')):raise ValueError('Model files must not link to another project')
-    return snapshot
 
 
 def finalize(directory,state,result,existing):
@@ -46,6 +50,9 @@ def finalize(directory,state,result,existing):
     script=state.get('referenceScript','');reference_review={}
     rows=optimized_captions(result,fps,state.get('vocabulary',[]),warnings=review,reference_script=script,reference_report=reference_review)
     manifest={**result['snapshot'],'projectUID':state['projectUID'],'pcmSHA256':result['pcm_sha256'],'fps':str(fps),'captions':rows,'modelID':state['modelID'],'vocabulary':state.get('vocabulary',[])}
+    if state.get('audioSHA256'):
+        manifest.update(audioSource='exported-full-timeline',audioSHA256=state['audioSHA256'],
+                        existingTitleReview=state.get('existingTitleReview','available'))
     manifest.update(editorialRules=RULES_VERSION,reviewWarnings=review)
     manifest.update(referenceSHA256=reference_digest(script),referenceReview=reference_review)
     if script:
@@ -94,7 +101,7 @@ def cached_recognition(state, snapshot):
     return None
 
 
-def run(xml,asr,aligner,model_id=DEFAULT_MODEL_ID,audio_mode='dialogue',vocabulary=None,allow_cloud=False,reference_script=''):
+def run(xml,asr,aligner,model_id=DEFAULT_MODEL_ID,audio_mode='dialogue',vocabulary=None,allow_cloud=False,reference_script='',audio_file=None,audio_sha=None):
     # Validate before starting costly work. Each invocation owns a new directory.
     cloud=model_spec(model_id).get('engine')=='doubao'
     if cloud and allow_cloud is not True:raise ValueError('云端识别需要先确认上传音频及计费')
@@ -111,11 +118,23 @@ def run(xml,asr,aligner,model_id=DEFAULT_MODEL_ID,audio_mode='dialogue',vocabula
     try:
         model_spec(model_id)
         progress('validate')
-        normalized,existing=prepare(frozen.read_bytes(),generic=True)
-        audioXML=directory/'audio-input.fcpxml';audioXML.write_bytes(normalized)
-        snapshot=preflight(audioXML,asr,aligner,audio_mode)
+        if audio_file is not None:
+            from .exported_audio import project_context, render as render_exported, validate_file
+            check_models(asr,aligner)
+            snapshot=project_context(frozen)
+            state['audioSHA256']=validate_file(audio_file,audio_sha)
+            try:
+                _,existing=prepare(frozen.read_bytes(),generic=True)
+                state['existingTitleReview']='available'
+            except ValueError:
+                existing=[];state['existingTitleReview']='unavailable'
+            audioXML=frozen
+        else:
+            normalized,existing=prepare(frozen.read_bytes(),generic=True)
+            audioXML=directory/'audio-input.fcpxml';audioXML.write_bytes(normalized)
+            snapshot=preflight(audioXML,asr,aligner,audio_mode)
         state['projectUID']=snapshot['uid']
-        recovered=cached_recognition(state,snapshot)
+        recovered=None if audio_file is not None else cached_recognition(state,snapshot)
         if recovered:
             state['resumedFromJob'],result=recovered
             save(directory/'asr.json',result)
@@ -123,7 +142,9 @@ def run(xml,asr,aligner,model_id=DEFAULT_MODEL_ID,audio_mode='dialogue',vocabula
             return finalize(directory,state,result,existing)
         progress('decode')
         binary=AUDIO_BINARY
-        decoded=render(audioXML,directory,binary,snapshot['uid'],audio_mode);save(directory/'audio.json',decoded)
+        decoded=(render_exported(audio_file,directory,binary,snapshot,state['audioSHA256']) if audio_file is not None
+                 else render(audioXML,directory,binary,snapshot['uid'],audio_mode))
+        save(directory/'audio.json',decoded)
         if decoded['silent']:
             state.update(status='blocked-no-audio',stage='silent',pcmSHA256=decoded['pcmSHA256'],skippedAudio=snapshot.get('skippedAudio',[]))
             save(directory/'status.json',state)
@@ -134,10 +155,10 @@ def run(xml,asr,aligner,model_id=DEFAULT_MODEL_ID,audio_mode='dialogue',vocabula
         progress('recognize')
         if cloud:
             from .doubao import recognize
-            result=recognize(pcm,inspect(audioXML,audio_mode=audio_mode),consent=allow_cloud)
+            result=recognize(pcm,snapshot,consent=allow_cloud)
         else:
             from .recognize_fixture import run as recognize
-            result=recognize(audioXML,asr,aligner,directory/'asr.json',pcm,device='cpu',verbose=False,audio_mode=audio_mode,vocabulary=vocabulary,engine=model_spec(model_id).get("engine"))
+            result=recognize(audioXML,asr,aligner,directory/'asr.json',pcm,device='cpu',verbose=False,audio_mode=audio_mode,vocabulary=vocabulary,engine=model_spec(model_id).get("engine"),snapshot_override=snapshot if audio_file is not None else None)
         result['modelID']=model_id;save(directory/'asr.json',result)
         progress('generate-titles')
         return finalize(directory,state,result,existing)
@@ -157,6 +178,8 @@ if __name__=='__main__':
     parser.add_argument('--audio-mode',choices=['dialogue','all'],default='dialogue')
     parser.add_argument('--vocabulary-file',type=Path)
     parser.add_argument('--allow-cloud',action='store_true')
+    parser.add_argument('--audio-file',type=Path)
+    parser.add_argument('--audio-sha')
     args=parser.parse_args();asr,aligner=resolve_model(args.model)
     options=json.loads(args.vocabulary_file.read_text()) if args.vocabulary_file else {}
-    run(args.xml,asr,aligner,args.model,args.audio_mode,options.get('vocabulary',[]),args.allow_cloud,options.get('referenceScript',''))
+    run(args.xml,asr,aligner,args.model,args.audio_mode,options.get('vocabulary',[]),args.allow_cloud,options.get('referenceScript',''),args.audio_file,args.audio_sha)

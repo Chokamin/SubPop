@@ -64,6 +64,14 @@ int main(int argc,const char *argv[]) {
         if (![c.scopeLabel.stringValue containsString:@"上传音频"] || ![c.modelDetail.stringValue containsString:@"云端"]) return 100;
         c.selectedModelID=initialModel;[c updateInterface];
         if (![c.scopeLabel.stringValue containsString:@"留在本机"]) return 101;
+        c.freshDropURL=[NSURL fileURLWithPath:@"/tmp/subpop-fallback-test.fcpxml"];
+        c.freshDropDate=NSDate.date;c.dropUID=@"fallback-test";c.dropDuration=CMTimeMake(10,1);
+        c.displayState=@"error";[c updateInterface];
+        if (c.fallbackAudioButton.hidden || !c.fallbackAudioButton.enabled || ![c.dropDetail.stringValue containsString:@"音频拖到这里"] || ![c canReceiveExportedAudio]) return 135;
+        c.fallbackAudioURL=[NSURL fileURLWithPath:@"/tmp/subpop-fallback-test.wav"];
+        [c updateInterface];
+        if (c.audioPicker.enabled || ![c.dropDetail.stringValue containsString:@"全部声音"]) return 136;
+        c.fallbackAudioURL=nil;
         c.resultManifest=@{@"captions":@[@{@"text":@"测试字幕"}]};
         c.captionRows=[NSMutableArray arrayWithObject:[@{@"text":@"测试字幕"} mutableCopy]];
         c.titlePayloads=@{@"1.14":[NSData data]};c.resultDate=NSDate.date;c.resultRequestID=@"clear-test";

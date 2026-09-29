@@ -57,6 +57,10 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 @property NSDictionary<NSString *, NSData *> *titlePayloads;
 @property BOOL resultLoadAttempted;
 @property NSURL *freshDropURL;
+@property NSURL *fallbackAudioURL;
+@property NSString *fallbackAudioSHA;
+@property BOOL fallbackImporting;
+@property NSButton *fallbackAudioButton;
 @property NSDate *freshDropDate;
 @property BOOL snapshotConsumed;
 @property NSDate *resultDate;
@@ -69,6 +73,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 @property NSTimer *bridgeTimer;
 @property NSString *requestID;
 @property NSString *requestSHA;
+@property NSString *requestAudioSHA;
 @property NSString *lastJobStage;
 @property NSButton *generateButton;
 @property NSScrollView *pageScroll;
@@ -188,6 +193,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 - (void)updateInterface;
 - (BOOL)canDragResult;
 - (BOOL)receivePasteboard:(NSPasteboard *)pasteboard;
+- (BOOL)canReceiveExportedAudio;
 - (void)beginTitleDrag:(NSEvent *)event fromView:(NSView *)view;
 - (BOOL)usesFileImport;
 - (void)importTitlesToFCP:(id)sender;
@@ -202,6 +208,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
     BOOL supported=NO;
     for (NSString *type in sender.draggingPasteboard.types) if ([type hasPrefix:@"com.apple.finalcutpro.xml"]) supported=YES;
+    if (!supported && [self.controller canReceiveExportedAudio] && [sender.draggingPasteboard.types containsObject:NSPasteboardTypeFileURL]) supported=YES;
     self.dragHover=supported; if (supported) SubPopReveal(self); [self setNeedsDisplay:YES]; return supported ? NSDragOperationCopy : NSDragOperationNone;
 }
 - (void)draggingExited:(id<NSDraggingInfo>)sender { self.dragHover=NO; [self setNeedsDisplay:YES]; }
@@ -289,6 +296,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     NSString *file=saved[@"inputFile"];
     if ([file hasPrefix:@"drop-"] && [file.lastPathComponent isEqual:file]) { self.freshDropURL=[[self evidenceDirectory] URLByAppendingPathComponent:file];NSDate *captured=nil;[self.freshDropURL getResourceValue:&captured forKey:NSURLContentModificationDateKey error:nil];self.freshDropDate=captured; }
     self.requestReferenceSHA=saved[@"referenceSHA256"] ?: @"";self.requestVocabulary=saved[@"vocabulary"] ?: @[];self.requestID=saved[@"requestID"];self.requestSHA=saved[@"snapshotSHA"];self.requestModelID=saved[@"modelID"];self.requestGeneration=self.dropGeneration;self.displayState=@"validate";
+    self.requestAudioSHA=saved[@"audioSHA256"] ?: @"";
     // Keep historical results, but do not reselect a model removed from the catalog.
     for (NSMenuItem *item in self.modelPicker.itemArray) if ([item.representedObject isEqual:self.requestModelID]) { self.selectedModelID=self.requestModelID;[self.modelPicker selectItem:item];break; }
     self.restoringSession=NO;
@@ -476,6 +484,9 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     self.titlePayloads=updated;self.exportStatus.stringValue=@"";[self.captionTable reloadData];[self saveDraft];[self updateInterface];
 }
 - (BOOL)dropNeedsValidation { return self.freshDropURL && self.dropUID.length && !CMTIME_IS_NUMERIC(self.dropDuration); }
+- (BOOL)canReceiveExportedAudio {
+    return self.freshDropURL && !self.snapshotConsumed && !self.titlePayloads && !self.requestID && !self.pendingRecognition && !self.fallbackImporting && [self isolatedProjectActive];
+}
 - (void)primaryAction:(id)sender {
     if (self.validatingDrop) return;
     if ([self dropNeedsValidation]) {[self beginDropValidation];[self updateInterface];return;}
@@ -537,14 +548,22 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     if (cloud && self.requestID && [state isEqual:@"recognize"]) self.statusDetail.stringValue=@{@"uploading":@"正在向豆包上传音频…",@"queued":@"音频已提交，正在等待云端处理…",@"processing":@"豆包 2.0 正在识别音频，完成后在本机整理字幕。"}[self.cloudPhase ?: @""] ?: @"正在提交音频，完成后在本机整理字幕。";
     self.serviceLabel.textColor=connected ? NSColor.systemGreenColor : NSColor.secondaryLabelColor;
     self.dropTitle.stringValue=fresh ? (self.dropName ?: @"项目已导入") : @"把项目拖到这里";
-    self.dropDetail.stringValue=!fresh ? @"从 Final Cut Pro 浏览器拖入整个项目" : (awaitingProject ? @"项目已收到 · 等待确认当前时间线" : (self.snapshotConsumed ? @"上次识别已使用此快照 · 请重新拖入项目以确认最新时间线" : [NSString stringWithFormat:@"%02ld:%02ld · 整个项目 · 修改时间线后请重新拖入",(long)(CMTimeGetSeconds(self.dropDuration)/60),(long)CMTimeGetSeconds(self.dropDuration)%60]));
+    if (!fresh) self.dropDetail.stringValue=@"从 Final Cut Pro 浏览器拖入整个项目";
+    else if (awaitingProject) self.dropDetail.stringValue=@"项目已收到 · 等待确认当前时间线";
+    else if (self.snapshotConsumed) self.dropDetail.stringValue=@"上次识别已使用此快照 · 请重新拖入项目以确认最新时间线";
+    else if (self.fallbackImporting) self.dropDetail.stringValue=@"正在导入整条时间线的音频…";
+    else if (self.fallbackAudioURL) self.dropDetail.stringValue=@"备用音频包含导出的全部声音 · 按原项目时间轴生成字幕";
+    else if ([state isEqual:@"error"] || [state isEqual:@"silent"]) self.dropDetail.stringValue=@"也可将整条时间线导出的音频拖到这里";
+    else self.dropDetail.stringValue=[NSString stringWithFormat:@"%02ld:%02ld · 整个项目 · 修改时间线后请重新拖入",(long)(CMTimeGetSeconds(self.dropDuration)/60),(long)CMTimeGetSeconds(self.dropDuration)%60];
     BOOL managing=[self modelOperationBusy];
     BOOL preparing=[state isEqual:@"preparing"];
     self.generateButton.title=preparing ? @"正在准备…" : (busy ? @"正在处理…" : (connected ? (self.snapshotConsumed ? @"重新拖入项目" : @"生成字幕") : @"重新连接本机服务"));
-    self.generateButton.enabled=(!connected || !managing || [self selectedModelDownloadInProgress]) && !self.modelDownloadAlert && !preparing && !busy && !self.snapshotConsumed && (!connected || (fresh && [self isolatedProjectActive]));
+    self.generateButton.enabled=(!connected || !managing || [self selectedModelDownloadInProgress]) && !self.modelDownloadAlert && !preparing && !busy && !self.fallbackImporting && !self.snapshotConsumed && (!connected || (fresh && [self isolatedProjectActive]));
+    self.fallbackAudioButton.hidden=!fresh || self.snapshotConsumed || busy || self.fallbackImporting || !([state isEqual:@"error"] || [state isEqual:@"silent"]);
+    self.fallbackAudioButton.enabled=[self canReceiveExportedAudio];
     if (awaitingProject) {self.generateButton.title=self.validatingDrop ? @"正在确认项目…" : @"重新确认项目";self.generateButton.enabled=!self.validatingDrop && fresh && !busy;}
     self.vocabularyButton.enabled=!busy;self.vocabularyButton.title=[NSString stringWithFormat:@"词库 · %lu",(unsigned long)[self effectiveVocabulary].count];
-    self.modelPicker.enabled=!busy && !managing;self.audioPicker.enabled=!busy;self.cancelButton.hidden=!busy;
+    self.modelPicker.enabled=!busy && !managing;self.audioPicker.enabled=!busy && !self.fallbackAudioURL;self.cancelButton.hidden=!busy;
     BOOL hasRows=self.titlePayloads && self.captionRows.count;
     self.templateControls.hidden=!hasRows;
     BOOL newlyReady=hasRows && self.resultView.hidden;
@@ -586,6 +605,10 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     NSUInteger effects=[self.resultManifest[@"bypassedAudioEffects"] unsignedIntegerValue];
     if (hasRows && effects) self.statusDetail.stringValue=[NSString stringWithFormat:@"%@%lu 处音频效果未参与识别，字幕依据处理前原声生成；请核对文字。",
         skipped.length ? [self.statusDetail.stringValue stringByAppendingString:@" "] : @"",(unsigned long)effects];
+    if (hasRows && [self.resultManifest[@"audioSource"] isEqual:@"exported-full-timeline"])
+        self.statusDetail.stringValue=@"字幕按整条时间线的导出音频生成；请核对音频起点及字幕时间。";
+    if (hasRows && [self.resultManifest[@"existingTitleReview"] isEqual:@"unavailable"])
+        self.statusDetail.stringValue=[self.statusDetail.stringValue stringByAppendingString:@" 原项目标题未能核对，拖回前请检查是否与旧字幕重叠。"];
     self.tap5aStyleButton.hidden=![self usesFileImport];self.tap5aStyleButton.enabled=!self.importInProgress;
     self.resultView.enabled=ready && !self.importInProgress && !busy;
     self.resultView.toolTip=fileImport ? @"点击导入到 FCP 浏览器。若出现资源库选择，请选择原项目所在资源库；在本次新建的编号事件中将字幕片段拖到原项目起点上方。每次导入都会保留旧版并新建事件。" : @"按住卡片拖到原项目时间线起点上方，落轨后将片段项分开。";
@@ -613,11 +636,12 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     self.snapshotConsumed=!historical;
     if (historical) {self.freshDropURL=nil;self.freshDropDate=nil;self.dropUID=nil;self.dropName=nil;self.dropDuration=kCMTimeInvalid;}
     self.titlePayloads=nil;self.captionRows=nil;self.resultManifest=nil;self.resultDate=nil;self.resultRequestID=nil;self.resultWasDragged=NO;
-    self.requestID=nil;self.requestSHA=nil;self.requestModelID=nil;self.requestVocabulary=nil;self.requestReferenceSHA=nil;self.lastJobStage=nil;
+    self.requestID=nil;self.requestSHA=nil;self.requestAudioSHA=nil;self.requestModelID=nil;self.requestVocabulary=nil;self.requestReferenceSHA=nil;self.lastJobStage=nil;
     self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceUndone=NO;self.referenceUndoWasOriginal=NO;
     self.referenceSourceRows=nil;self.referenceSourceResultID=nil;self.referenceProcessingSHA=nil;self.referenceMessage=nil;self.referenceDraft=nil;
     self.importMessage=nil;self.exportStatus.stringValue=@"";[self.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];
     self.visibleError=nil;self.jobProgress=nil;self.cloudPhase=nil;self.displayState=self.freshDropURL ? @"input" : @"idle";
+    [self clearFallbackAudio];
     [self.captionTable reloadData];[self updateInterface];
 }
 - (NSDictionary *)readJSON:(NSURL *)url {
@@ -630,6 +654,21 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     unsigned char digest[CC_SHA256_DIGEST_LENGTH]; CC_SHA256(data.bytes,(CC_LONG)data.length,digest);
     NSMutableString *sha=[NSMutableString new]; for (int i=0;i<CC_SHA256_DIGEST_LENGTH;i++) [sha appendFormat:@"%02x",digest[i]];
     return sha;
+}
+- (NSString *)sha256File:(NSURL *)url {
+    NSInputStream *stream=[NSInputStream inputStreamWithURL:url];[stream open];
+    CC_SHA256_CTX context;CC_SHA256_Init(&context);
+    uint8_t buffer[1024*1024];NSInteger count=0;
+    while ((count=[stream read:buffer maxLength:sizeof(buffer)])>0) CC_SHA256_Update(&context,buffer,(CC_LONG)count);
+    [stream close];if (count<0) return nil;
+    unsigned char digest[CC_SHA256_DIGEST_LENGTH];CC_SHA256_Final(digest,&context);
+    NSMutableString *sha=[NSMutableString new];for (int i=0;i<CC_SHA256_DIGEST_LENGTH;i++) [sha appendFormat:@"%02x",digest[i]];
+    return sha;
+}
+- (void)clearFallbackAudio {
+    NSURL *old=self.fallbackAudioURL;
+    self.fallbackAudioURL=nil;self.fallbackAudioSHA=nil;
+    if (old && [old.lastPathComponent hasPrefix:@"fallback-"]) [[NSFileManager defaultManager] removeItemAtURL:old error:nil];
 }
 - (BOOL)isolatedProjectActive {
     if (self.validatingDrop) return NO;
@@ -701,7 +740,10 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     if (![self selectedCloudModel]) {[self submitWorkerJob];return;}
     NSString *model=self.selectedModelID;NSString *uid=self.dropUID;NSUInteger generation=self.dropGeneration;
     NSAlert *alert=[NSAlert new];alert.messageText=@"使用豆包云端识别？";
-    NSString *notice=@"所选范围的音频会直接发送给火山引擎的豆包录音文件识别 2.0。视频画面、项目文件、词库和参考脚本不上传，识别费用由你的火山引擎账户结算。\n\n取消或断网不会重新提交识别，已提交部分仍可能计费。";
+    NSString *sourceNotice=self.fallbackAudioURL
+        ? @"这次会上传你导出的整条时间线音频。导出音频是最终混音，可能包含音乐和效果；主界面的“仅对白”筛选不适用。"
+        : @"所选范围的音频会直接发送给火山引擎的豆包录音文件识别 2.0。";
+    NSString *notice=[sourceNotice stringByAppendingString:@"视频画面、项目文件、词库和参考脚本不上传，识别费用由你的火山引擎账户结算。\n\n取消或断网不会重新提交识别，已提交部分仍可能计费。"];
     NSData *snapshot=[NSData dataWithContentsOfURL:self.freshDropURL];
     NSXMLDocument *document=snapshot ? [[NSXMLDocument alloc] initWithData:snapshot options:NSXMLNodeLoadExternalEntitiesNever error:nil] : nil;
     NSUInteger existing=[document nodesForXPath:@"//project/sequence//title" error:nil].count;
@@ -736,15 +778,22 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     NSURL *directory=[self.bridgeURL URLByAppendingPathComponent:request isDirectory:YES]; NSError *error=nil;
     BOOL ok=[[NSFileManager defaultManager] createDirectoryAtURL:directory withIntermediateDirectories:NO attributes:nil error:&error];
     if (ok) ok=[data writeToURL:[directory URLByAppendingPathComponent:@"input.fcpxml"] options:NSDataWritingAtomic error:&error];
+    NSString *audioName=nil;
+    if (ok && self.fallbackAudioURL) {
+        audioName=[@"exported-audio." stringByAppendingString:self.fallbackAudioURL.pathExtension.lowercaseString];
+        NSURL *target=[directory URLByAppendingPathComponent:audioName];
+        ok=[[NSFileManager defaultManager] copyItemAtURL:self.fallbackAudioURL toURL:target error:&error];
+    }
     NSString *sha=[self sha256:data];
     self.requestVocabulary=[self effectiveVocabulary];NSString *reference=[self effectiveReferenceScript];self.requestReferenceSHA=[self referenceHash:reference];
-    NSDictionary *manifest=@{@"referenceScript":reference,@"cloudConsent":@([self selectedCloudModel]),@"vocabulary":self.requestVocabulary,@"requestID":request,@"projectUID":self.dropUID,@"xmlSHA256":sha,@"modelID":self.selectedModelID,@"audioMode":self.audioPicker.indexOfSelectedItem==0 ? @"dialogue" : @"all"};
+    NSMutableDictionary *manifest=[@{@"referenceScript":reference,@"cloudConsent":@([self selectedCloudModel]),@"vocabulary":self.requestVocabulary,@"requestID":request,@"projectUID":self.dropUID,@"xmlSHA256":sha,@"modelID":self.selectedModelID,@"audioMode":self.audioPicker.indexOfSelectedItem==0 ? @"dialogue" : @"all"} mutableCopy];
+    if (audioName) {manifest[@"audioFile"]=audioName;manifest[@"audioSHA256"]=self.fallbackAudioSHA;}
     if (ok) ok=[[NSJSONSerialization dataWithJSONObject:manifest options:0 error:nil] writeToURL:[directory URLByAppendingPathComponent:@"request.json"] options:NSDataWritingAtomic error:&error];
     if (!ok) { [self record:@{@"reason":@"worker-submit",@"status":@"write-failed",@"error":error.localizedDescription ?: @""}]; return; }
     self.jobProgress=nil;self.visibleError=nil;self.requestGeneration=self.dropGeneration; self.requestModelID=self.selectedModelID;self.cancelButton.enabled=YES;
-    self.requestID=request; self.requestSHA=sha; self.lastJobStage=nil; self.generateButton.enabled=NO;
+    self.requestID=request; self.requestSHA=sha;self.requestAudioSHA=self.fallbackAudioSHA ?: @""; self.lastJobStage=nil; self.generateButton.enabled=NO;
     self.resultLoadAttempted=YES; self.titlePayloads=nil;self.resultWasDragged=NO;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;self.referenceUndone=NO;
-    [NSUserDefaults.standardUserDefaults setObject:@{@"referenceSHA256":self.requestReferenceSHA,@"vocabulary":self.requestVocabulary,@"requestID":request,@"snapshotSHA":sha,@"modelID":self.selectedModelID,@"projectUID":self.dropUID,@"projectName":self.dropName ?: @"",@"durationValue":@(self.dropDuration.value),@"durationScale":@(self.dropDuration.timescale),@"inputFile":latest.lastPathComponent} forKey:@"pendingSession"];
+    [NSUserDefaults.standardUserDefaults setObject:@{@"referenceSHA256":self.requestReferenceSHA,@"audioSHA256":self.requestAudioSHA,@"vocabulary":self.requestVocabulary,@"requestID":request,@"snapshotSHA":sha,@"modelID":self.selectedModelID,@"projectUID":self.dropUID,@"projectName":self.dropName ?: @"",@"durationValue":@(self.dropDuration.value),@"durationScale":@(self.dropDuration.timescale),@"inputFile":latest.lastPathComponent} forKey:@"pendingSession"];
     [self record:@{@"reason":@"worker-submit",@"status":@"submitted",@"requestID":request,@"snapshotDate":latestDate.description ?: @"",@"source":@"received project snapshot; original capture date retained; edits after capture require another drop"}];
 }
 - (void)pollWorker:(NSTimer *)timer {
@@ -767,7 +816,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     self.jobProgress=[response[@"progress"] isKindOfClass:NSNumber.class] ? response[@"progress"] : nil;
     if ([response[@"status"] isEqual:@"ready"]) {
         NSMutableDictionary *payloads=[NSMutableDictionary new];
-        BOOL valid=[(response[@"manifest"][@"referenceSHA256"] ?: @"") isEqual:(self.requestReferenceSHA ?: @"")] && [(response[@"manifest"][@"vocabulary"] ?: @[]) isEqual:(self.requestVocabulary ?: @[])] && [response[@"modelID"] isEqual:self.requestModelID] && self.requestGeneration==self.dropGeneration && [self isolatedProjectActive] && [response[@"snapshotSHA256"] isEqual:self.requestSHA] &&
+        BOOL valid=[(response[@"manifest"][@"referenceSHA256"] ?: @"") isEqual:(self.requestReferenceSHA ?: @"")] && [(response[@"manifest"][@"audioSHA256"] ?: @"") isEqual:(self.requestAudioSHA ?: @"")] && [(response[@"manifest"][@"vocabulary"] ?: @[]) isEqual:(self.requestVocabulary ?: @[])] && [response[@"modelID"] isEqual:self.requestModelID] && self.requestGeneration==self.dropGeneration && [self isolatedProjectActive] && [response[@"snapshotSHA256"] isEqual:self.requestSHA] &&
             [response[@"projectUID"] isEqual:self.dropUID] &&
             [response[@"payloads"] isKindOfClass:NSDictionary.class] && [response[@"outputs"] isKindOfClass:NSDictionary.class];
         if (valid) for (NSString *version in @[@"1.12",@"1.13",@"1.14"]) {
@@ -820,7 +869,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
             }
             [self rebuildTitles];
             if (sameDraft) {self.resultWasDragged=[draft[@"dragged"] boolValue];[self saveDraft];}
-            [self.captionTable reloadData]; }
+            [self.captionTable reloadData];[self clearFallbackAudio]; }
         [self record:@{@"reason":@"worker-result",@"status":self.titlePayloads ? @"ready-to-drag" : @"result-rejected",@"requestID":self.requestID,@"jobID":response[@"jobID"] ?: @""}];
         if (self.titlePayloads && self.resultWasDragged) self.displayState=@"sent";
         if (!self.titlePayloads) [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.requestID=nil; [self updateInterface];
@@ -914,6 +963,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     [self.bridgeTimer invalidate]; self.bridgeTimer=nil;
     if (self.bridgeScoped) [self.bridgeURL stopAccessingSecurityScopedResource];
     self.freshDropURL=nil; self.freshDropDate=nil;self.snapshotConsumed=NO; self.titlePayloads=nil; self.resultDate=nil; self.dropGeneration++;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
+    [self clearFallbackAudio];self.fallbackImporting=NO;
     self.bridgeScoped=NO; self.bridgeURL=nil; self.requestID=nil; [self updateInterface];
     if (self.observingTimeline) [self.timeline removeTimelineObserver:self];self.observingTimeline=NO;
     self.timeline = nil; self.host = nil; self.observed = NO; self.observedProjectUID=nil;self.observedProjectDuration=kCMTimeInvalid;
@@ -999,6 +1049,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     BOOL cancelled=[self cancelCurrentWorkForProjectSwitch];
     self.validatingDrop=NO;[self clearPendingRecognition];self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
     self.freshDropURL=nil;self.snapshotConsumed=NO;self.titlePayloads=nil;self.dropGeneration++;self.observed=YES;
+    [self clearFallbackAudio];self.fallbackImporting=NO;
     [self snapshot:@"activeSequenceChanged"];
     if (wasRunning) {self.displayState=cancelled ? @"switch-cancelled" : @"error";[self updateInterface];}
 }
@@ -1075,6 +1126,63 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     [self record:@{@"reason":@"recheck-real-drop",@"originalRecordedAt":lastDate,@"received":@(received),@"validationPending":@(self.validatingDrop)}];
     [self.diagnostics close];[self updateInterface];
 }
+- (void)chooseFallbackAudio:(id)sender {
+    if (![self canReceiveExportedAudio]) return;
+    NSOpenPanel *panel=[NSOpenPanel openPanel];panel.canChooseDirectories=NO;panel.allowsMultipleSelection=NO;
+    NSMutableArray<UTType *> *types=[NSMutableArray new];
+    for (NSString *extension in @[@"wav",@"aif",@"aiff",@"m4a",@"caf"]) {
+        UTType *type=[UTType typeWithFilenameExtension:extension];if (type) [types addObject:type];
+    }
+    panel.allowedContentTypes=types;
+    panel.message=@"选择从当前完整 FCP 项目导出的音频（从时间线起点到结尾）";
+    [panel beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse response) {
+        if (response==NSModalResponseOK) [self importFallbackAudioURL:panel.URL];
+    }];
+}
+- (BOOL)importFallbackAudioURL:(NSURL *)source {
+    if (![self canReceiveExportedAudio] || !source.isFileURL) return NO;
+    NSString *extension=source.pathExtension.lowercaseString;
+    if (![@[@"wav",@"aif",@"aiff",@"m4a",@"caf"] containsObject:extension]) {
+        self.visibleError=@"请选择 WAV、AIFF、M4A 或 CAF 音频文件";self.displayState=@"error";[self updateInterface];return NO;
+    }
+    NSUInteger generation=self.dropGeneration;
+    self.fallbackImporting=YES;[self updateInterface];
+    __weak typeof(self) weakSelf=self;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
+        typeof(self) controller=weakSelf;
+        if (!controller) return;
+        BOOL scoped=[source startAccessingSecurityScopedResource];
+        NSError *error=nil;
+        NSDictionary *attributes=[[NSFileManager defaultManager] attributesOfItemAtPath:source.path error:&error];
+        unsigned long long size=[attributes fileSize];
+        if (attributes && (![attributes.fileType isEqual:NSFileTypeRegular] || size==0 || size>4ULL*1024*1024*1024))
+            error=[NSError errorWithDomain:@"SubPop" code:2 userInfo:@{NSLocalizedDescriptionKey:@"音频文件为空、不是普通文件或超过 4 GB"}];
+        NSURL *target=nil;NSString *sha=nil;
+        if (!error) {
+            target=[[controller evidenceDirectory] URLByAppendingPathComponent:[NSString stringWithFormat:@"fallback-%@.%@",NSUUID.UUID.UUIDString,extension]];
+            if ([[NSFileManager defaultManager] copyItemAtURL:source toURL:target error:&error]) sha=[controller sha256File:target];
+            if (!sha && !error) error=[NSError errorWithDomain:@"SubPop" code:3 userInfo:@{NSLocalizedDescriptionKey:@"无法校验导出音频"}];
+        }
+        if (scoped) [source stopAccessingSecurityScopedResource];
+        dispatch_async(dispatch_get_main_queue(),^{
+            if (!controller || generation!=controller.dropGeneration || !controller.freshDropURL) {
+                if (target) [[NSFileManager defaultManager] removeItemAtURL:target error:nil];return;
+            }
+            controller.fallbackImporting=NO;
+            if (error) {
+                if (target) [[NSFileManager defaultManager] removeItemAtURL:target error:nil];
+                controller.visibleError=[@"导入备用音频失败：" stringByAppendingString:error.localizedDescription ?: @"未知错误"];
+                controller.displayState=@"error";[controller updateInterface];return;
+            }
+            NSURL *old=controller.fallbackAudioURL;
+            controller.fallbackAudioURL=target;controller.fallbackAudioSHA=sha;
+            if (old && ![old isEqual:target]) [[NSFileManager defaultManager] removeItemAtURL:old error:nil];
+            [controller record:@{@"reason":@"fallback-audio",@"status":@"imported",@"projectUID":controller.dropUID ?: @"",@"bytes":@(size)}];
+            [controller startWorkerJob:nil];
+        });
+    });
+    return YES;
+}
 - (BOOL)receivePasteboard:(NSPasteboard *)pasteboard {
     // Reject unrelated or malformed drags before abandoning the running job.
     NSMutableArray<NSDictionary *> *items=[NSMutableArray new];
@@ -1086,7 +1194,10 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
         if (projects.count!=1 || ![[projects[0] attributeForName:@"uid"].stringValue length]) continue;
         [items addObject:@{@"type":type,@"data":data}];
     }
-    if (!items.count) return NO;
+    if (!items.count) {
+        NSArray<NSURL *> *files=[pasteboard readObjectsForClasses:@[NSURL.class] options:@{NSPasteboardURLReadingFileURLsOnlyKey:@YES}];
+        return files.count==1 && [self importFallbackAudioURL:files.firstObject];
+    }
     NSMutableArray *saved = [NSMutableArray new];
     NSURL *newDropURL=nil;
     for (NSDictionary *item in items) {
@@ -1104,6 +1215,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     self.historicalResult=NO;
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];
     self.validatingDrop=NO;self.freshDropURL=newDropURL;self.freshDropDate=NSDate.date;self.snapshotConsumed=NO;
+    [self clearFallbackAudio];self.fallbackImporting=NO;
     self.titlePayloads=nil;self.resultDate=nil;self.dropGeneration++;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
     BOOL received=[self beginDropValidation];
     [self record:@{@"reason":@"drop",@"types":pasteboard.types ?: @[],@"xml":saved}];

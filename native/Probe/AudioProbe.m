@@ -22,6 +22,30 @@ static CMTime ParseTime(NSString *text) {
 }
 static BOOL EqualTime(CMTime a, CMTime b) { return CMTIME_IS_NUMERIC(a) && CMTIME_IS_NUMERIC(b) && CMTimeCompare(a,b)==0; }
 
+NSDictionary *SubPopAudioFileInfo(NSURL *url) {
+    if (!url.isFileURL) return Failure(@"local-audio-required",nil);
+    AVURLAsset *asset=[AVURLAsset URLAssetWithURL:url options:nil];
+    dispatch_semaphore_t ready=dispatch_semaphore_create(0);
+    __block NSArray<AVAssetTrack *> *tracks=nil;
+    __block NSError *trackError=nil;
+    [asset loadTracksWithMediaType:AVMediaTypeAudio completionHandler:^(NSArray<AVAssetTrack *> *loaded, NSError *error) {
+        tracks=loaded;trackError=error;dispatch_semaphore_signal(ready);
+    }];
+    if (dispatch_semaphore_wait(ready,dispatch_time(DISPATCH_TIME_NOW,15*NSEC_PER_SEC))) return Failure(@"audio-track-timeout",nil);
+    if (tracks.count!=1) return Failure(@"single-audio-track-required",trackError);
+    dispatch_semaphore_t durationReady=dispatch_semaphore_create(0);
+    __block CMTime duration=kCMTimeInvalid;
+    __block NSError *durationError=nil;
+    [asset loadValuesAsynchronouslyForKeys:@[@"duration"] completionHandler:^{
+        duration=asset.duration;
+        if ([asset statusOfValueForKey:@"duration" error:&durationError]!=AVKeyValueStatusLoaded) duration=kCMTimeInvalid;
+        dispatch_semaphore_signal(durationReady);
+    }];
+    if (dispatch_semaphore_wait(durationReady,dispatch_time(DISPATCH_TIME_NOW,15*NSEC_PER_SEC))) return Failure(@"duration-timeout",nil);
+    if (!CMTIME_IS_NUMERIC(duration) || CMTimeGetSeconds(duration)<=0) return Failure(@"invalid-duration",durationError);
+    return @{@"status":@"ready",@"durationValue":@(duration.value),@"durationScale":@(duration.timescale),@"audioTracks":@(tracks.count)};
+}
+
 NSDictionary *SubPopProbeAudio(NSData *xml, NSString *expectedUID, NSURL *outputDirectory) {
     if (!xml.length || xml.length>16*1024*1024) return Failure(@"xml-size",nil);
     NSError *error=nil;
