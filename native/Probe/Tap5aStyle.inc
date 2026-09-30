@@ -20,6 +20,12 @@
     // The UI uses the inspector's percentage; XML and legacy presets use points.
     double size=[SubPopNormalizeTap5aStyle(values)[@"textSize"] doubleValue];
     if (values[@"kerning"]) values[@"kerning"]=@([values[@"kerning"] doubleValue]*size/100);
+    if (self.tap5aPreview.basicSubtitle) {
+        // Plain titles edit only text. Keep the shared Tap5a box/effect settings,
+        // already in canonical units, when its hidden fields are not present.
+        NSMutableDictionary *shared=SubPopNormalizeTap5aStyle(self.tap5aStyle).mutableCopy;
+        [shared addEntriesFromDictionary:values];values=shared;
+    }
     return self.editingNativeStyle ? SubPopNormalizeNativeStyle(values) : SubPopNormalizeTap5aStyle(values);
 }
 - (void)textFamilyChanged:(NSPopUpButton *)sender {
@@ -81,6 +87,7 @@
     NSDictionary *values=SubPopNormalizeTap5aStyle(style);
     for (NSArray *field in [[SubPopTap5aFields() arrayByAddingObjectsFromArray:SubPopTextFields()] arrayByAddingObjectsFromArray:SubPopEffectFields()]) {
         NSString *key=field[0];id control=self.tap5aStyleControls[key], value=values[key];
+        if (!control) continue;
         if ([control isKindOfClass:NSColorWell.class]) [control setColor:[NSColor colorWithSRGBRed:[value[0] doubleValue] green:[value[1] doubleValue] blue:[value[2] doubleValue] alpha:1]];
         else if ([control isKindOfClass:NSPopUpButton.class]) [control selectItemAtIndex:[value integerValue]];
         else if ([control isKindOfClass:NSButton.class]) [control setState:[value boolValue] ? NSControlStateValueOn : NSControlStateValueOff];
@@ -96,25 +103,28 @@
 }
 - (void)showTap5aStyle:(id)sender {
     if (self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative) {[self showNativeStyle:sender];return;}
-    if (![self usesFileImport] || self.importInProgress || self.tap5aStyleControls) return;
+    if (!self.captionRows.count || self.importInProgress || self.tap5aStyleControls) return;
+    BOOL basic=self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateBasic;
     [self.view.window makeFirstResponder:nil];
     NSString *request=self.resultRequestID;NSUInteger generation=self.dropGeneration;
-    NSAlert *alert=[NSAlert new];alert.messageText=@"整批字幕样式";
+    NSAlert *alert=[NSAlert new];alert.messageText=basic ? @"普通字幕预览与样式" : @"整批字幕样式";
     alert.informativeText=@"应用到当前全部字幕，无需重新识别。导入后需替换旧字幕，不会更新 FCP 时间线上已有的字幕。";
-    [alert addButtonWithTitle:@"应用到全部字幕"];[alert addButtonWithTitle:@"取消"];[alert addButtonWithTitle:@"保存预设并应用"];
+    [alert addButtonWithTitle:@"应用到全部字幕"];[alert addButtonWithTitle:@"取消"];if (!basic) [alert addButtonWithTitle:@"保存预设并应用"];
     NSRect available=(self.view.window.screen ?: NSScreen.mainScreen).visibleFrame;
     CGFloat previewWidth=MAX(360,MIN(640,MIN(available.size.width-660,(available.size.height-350)*16/9)));
     CGFloat contentHeight=MAX(342,122+previewWidth*9/16+18);
     NSView *content=[[NSView alloc] initWithFrame:NSMakeRect(0,0,previewWidth+580,contentHeight)];
-    NSPopUpButton *preset=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(previewWidth+30,contentHeight-32,230,26) pullsDown:NO];
-    [preset addItemsWithTitles:@[@"恢复模板默认",@"我的预设"]];[preset selectItemAtIndex:-1];preset.title=@"载入样式预设";
-    [preset itemAtIndex:1].enabled=[NSUserDefaults.standardUserDefaults dictionaryForKey:@"tap5aStylePreset"]!=nil;preset.target=self;preset.action=@selector(tap5aPresetChanged:);[preset setAccessibilityLabel:@"载入样式预设"];[content addSubview:preset];
+    if (!basic) {
+        NSPopUpButton *preset=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(previewWidth+30,contentHeight-32,230,26) pullsDown:NO];
+        [preset addItemsWithTitles:@[@"恢复模板默认",@"我的预设"]];[preset selectItemAtIndex:-1];preset.title=@"载入样式预设";
+        [preset itemAtIndex:1].enabled=[NSUserDefaults.standardUserDefaults dictionaryForKey:@"tap5aStylePreset"]!=nil;preset.target=self;preset.action=@selector(tap5aPresetChanged:);[preset setAccessibilityLabel:@"载入样式预设"];[content addSubview:preset];
+    }
     self.tap5aStyleControls=[NSMutableDictionary new];
-    NSTabView *tabs=[[NSTabView alloc] initWithFrame:NSMakeRect(previewWidth+20,contentHeight-342,560,305)];
+    NSTabView *tabs=[[NSTabView alloc] initWithFrame:NSMakeRect(previewWidth+20,contentHeight-(basic ? 305 : 342),560,305)];
     NSTabViewItem *textTab=[[NSTabViewItem alloc] initWithIdentifier:@"text"];textTab.label=@"文字";
     NSTabViewItem *boxTab=[[NSTabViewItem alloc] initWithIdentifier:@"box"];boxTab.label=@"底框与留白";
     NSTabViewItem *effectsTab=[[NSTabViewItem alloc] initWithIdentifier:@"effects"];effectsTab.label=@"文字效果";
-    [tabs addTabViewItem:textTab];[tabs addTabViewItem:effectsTab];[tabs addTabViewItem:boxTab];[content addSubview:tabs];
+    [tabs addTabViewItem:textTab];if (!basic) {[tabs addTabViewItem:effectsTab];[tabs addTabViewItem:boxTab];}[content addSubview:tabs];
     for (NSUInteger i=0;i<2;i++) {
         NSString *key=i==0 ? @"textFont" : @"textFace";
         NSTextField *label=[self label:i==0 ? @"字体" : @"字形 / 粗细" size:12 weight:NSFontWeightRegular];label.frame=NSMakeRect(12,230-i*36,130,24);[textTab.view addSubview:label];
@@ -131,6 +141,7 @@
     }
     NSArray *fields=[[SubPopTap5aFields() arrayByAddingObjectsFromArray:SubPopTextEditorFields()] arrayByAddingObjectsFromArray:SubPopEffectFields()];
     for (NSUInteger i=0;i<fields.count;i++) {
+        if (basic && (i<13 || i>=19)) continue;
         NSArray *field=fields[i];NSString *key=field[0];BOOL right=i>=9;NSUInteger row=right ? i-9 : i;
         BOOL typography=i>=13;CGFloat x=typography ? 12 : (right ? 290 : 12),y=typography ? 155-(i-13)*34 : 238-row*27;
         BOOL effect=i>=19;NSUInteger effectIndex=effect ? i-19 : 0;
@@ -152,7 +163,7 @@
     textNote.frame=NSMakeRect(12,0,510,44);textNote.font=[NSFont systemFontOfSize:11];textNote.textColor=NSColor.secondaryLabelColor;[textTab.view addSubview:textNote];
     NSTextField *note=[NSTextField wrappingLabelWithString:@"留白与圆角使用 Tap5a 参数单位。\n颜色的透明程度由“不透明度”控制。\n保存预设会覆盖“我的预设”，并用于下一次识别。"];
     note.frame=NSMakeRect(290,15,240,102);note.font=[NSFont systemFontOfSize:11];note.textColor=NSColor.secondaryLabelColor;[boxTab.view addSubview:note];
-    self.tap5aPreview=[[SubPopStylePreview alloc] initWithFrame:NSMakeRect(0,122,previewWidth,previewWidth*9/16)];self.tap5aPreview.wantsLayer=YES;self.tap5aPreview.layer.cornerRadius=10;self.tap5aPreview.layer.masksToBounds=YES;[self.tap5aPreview setAccessibilityLabel:@"源视频帧上的字幕样式示意预览"];[content addSubview:self.tap5aPreview];
+    self.tap5aPreview=[[SubPopStylePreview alloc] initWithFrame:NSMakeRect(0,122,previewWidth,previewWidth*9/16)];self.tap5aPreview.basicSubtitle=basic;self.tap5aPreview.wantsLayer=YES;self.tap5aPreview.layer.cornerRadius=10;self.tap5aPreview.layer.masksToBounds=YES;[self.tap5aPreview setAccessibilityLabel:@"源视频帧上的字幕样式示意预览"];[content addSubview:self.tap5aPreview];
     self.tap5aPreviewLabel=[self label:@"读取视频帧" size:11 weight:NSFontWeightMedium];self.tap5aPreviewLabel.frame=NSMakeRect(0,92,previewWidth,22);[content addSubview:self.tap5aPreviewLabel];
     NSButton *previous=[NSButton buttonWithTitle:@"上一句" target:self action:@selector(stepTap5aPreview:)];previous.tag=-1;previous.frame=NSMakeRect(0,57,75,28);[content addSubview:previous];
     NSButton *next=[NSButton buttonWithTitle:@"下一句" target:self action:@selector(stepTap5aPreview:)];next.tag=1;next.frame=NSMakeRect(82,57,75,28);[content addSubview:next];

@@ -55,6 +55,7 @@ static void SubPopDrawPreviewLines(NSArray *lines,NSDictionary *attributes) {
 @interface SubPopStylePreview : NSView
 @property BOOL showsSafeArea;
 @property BOOL nativeSubtitle;
+@property BOOL basicSubtitle;
 @property NSWindow *fullscreenWindow;
 @property (weak) SubPopStylePreview *fullscreenOwner;
 - (void)showFullscreen;
@@ -76,7 +77,7 @@ static void SubPopDrawPreviewLines(NSArray *lines,NSDictionary *attributes) {
     window.appearance=[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];window.becomesKeyOnlyIfNeeded=NO;window.releasedWhenClosed=NO;// The FCP-hosted sheet is in another process; a modal level does not clear it.
     window.level=NSPopUpMenuWindowLevel+1;window.backgroundColor=NSColor.blackColor;window.hidesOnDeactivate=YES;
     SubPopStylePreview *preview=[[SubPopStylePreview alloc] initWithFrame:NSMakeRect(0,0,screen.frame.size.width,screen.frame.size.height)];
-    preview.frameImage=self.frameImage;preview.style=self.style;preview.caption=self.caption;preview.projectWidth=self.projectWidth;preview.placeholder=self.placeholder;preview.showsSafeArea=self.showsSafeArea;preview.nativeSubtitle=self.nativeSubtitle;preview.fullscreenOwner=self;preview.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
+    preview.frameImage=self.frameImage;preview.style=self.style;preview.caption=self.caption;preview.projectWidth=self.projectWidth;preview.placeholder=self.placeholder;preview.showsSafeArea=self.showsSafeArea;preview.nativeSubtitle=self.nativeSubtitle;preview.basicSubtitle=self.basicSubtitle;preview.fullscreenOwner=self;preview.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
     // In FCP, view-service windows are reparented by the host. Render locally,
     // then let the containing app own and activate the actual preview window.
     if ([NSBundle.mainBundle.bundleIdentifier isEqual:@"com.chokamin.SubPopProbe.Extension"]) {
@@ -147,7 +148,7 @@ static void SubPopDrawPreviewLines(NSArray *lines,NSDictionary *attributes) {
         [self.placeholder ?: @"正在读取视频画面…" drawInRect:NSInsetRect(self.bounds,16,30) withAttributes:attrs];
     }
     NSDictionary *s=self.nativeSubtitle ? SubPopNormalizeNativeStyle(self.style) : SubPopNormalizeTap5aStyle(self.style);
-    // Tap5a uses a 1920x1080 Motion canvas, independent of output resolution.
+    // Basic Title and Tap5a use a 1920x1080 Motion canvas, independent of output resolution.
     // Project-pixel offsets keep their separate scale below.
     CGFloat scale=canvas.size.width/(self.nativeSubtitle ? 3840.0 : 1920.0),fontSize=MAX(1,[s[@"textSize"] doubleValue]*scale);
     NSString *postscript=s[@"textFont"];for (NSArray *member in SubPopFontMembers(s[@"textFont"])) if ([member[1] isEqual:s[@"textFace"]]) postscript=member[0];
@@ -182,8 +183,8 @@ static void SubPopDrawPreviewLines(NSArray *lines,NSDictionary *attributes) {
     CGFloat radius=MIN(MIN(box.size.width,box.size.height)/2,[s[@"roundness"] doubleValue]*(self.nativeSubtitle ? 1 : .5)*scale);
     NSBezierPath *path=[NSBezierPath bezierPathWithRoundedRect:box xRadius:radius yRadius:radius];
     NSArray *rgb=s[@"backgroundColor"];
-    if (self.nativeSubtitle || [s[@"background"] boolValue]) {[[NSColor colorWithSRGBRed:[rgb[0] doubleValue] green:[rgb[1] doubleValue] blue:[rgb[2] doubleValue] alpha:[s[@"opacity"] doubleValue]/100] setFill];[path fill];}
-    if (!self.nativeSubtitle && [s[@"border"] boolValue]) {
+    if (!self.basicSubtitle && (self.nativeSubtitle || [s[@"background"] boolValue])) {[[NSColor colorWithSRGBRed:[rgb[0] doubleValue] green:[rgb[1] doubleValue] blue:[rgb[2] doubleValue] alpha:[s[@"opacity"] doubleValue]/100] setFill];[path fill];}
+    if (!self.nativeSubtitle && !self.basicSubtitle && [s[@"border"] boolValue]) {
         rgb=s[@"borderColor"];[[NSColor colorWithSRGBRed:[rgb[0] doubleValue] green:[rgb[1] doubleValue] blue:[rgb[2] doubleValue] alpha:[s[@"borderOpacity"] doubleValue]/100] setStroke];
         CGFloat width=MAX(.5,[s[@"width"] doubleValue]*scale);NSInteger sides=[s[@"sides"] integerValue];
         if (!sides) {path.lineWidth=width;[path stroke];}
@@ -195,7 +196,7 @@ static void SubPopDrawPreviewLines(NSArray *lines,NSDictionary *attributes) {
     }
     NSMutableDictionary *draw=attrs.mutableCopy;
     if ([s[@"shadowEnabled"] boolValue]) {NSArray *c=s[@"shadowColor"];NSShadow *shadow=[NSShadow new];shadow.shadowColor=[NSColor colorWithSRGBRed:[c[0] doubleValue] green:[c[1] doubleValue] blue:[c[2] doubleValue] alpha:[s[@"shadowOpacity"] doubleValue]/100];CGFloat angle=[s[@"shadowAngle"] doubleValue]*M_PI/180,distance=[s[@"shadowDistance"] doubleValue]*scale;shadow.shadowOffset=NSMakeSize(cos(angle)*distance,sin(angle)*distance);shadow.shadowBlurRadius=[s[@"shadowBlur"] doubleValue]*scale;draw[NSShadowAttributeName]=shadow;SubPopDrawPreviewLines(lines,draw);[draw removeObjectForKey:NSShadowAttributeName];}
-    if ([s[@"glowEnabled"] boolValue]) {NSShadow *glow=[NSShadow new];glow.shadowColor=[NSColor colorWithSRGBRed:1 green:.878431 blue:.262745 alpha:[s[@"glowOpacity"] doubleValue]/100];glow.shadowBlurRadius=([s[@"glowBlur"] doubleValue]+[s[@"glowRadius"] doubleValue])*scale;glow.shadowOffset=NSZeroSize;draw[NSShadowAttributeName]=glow;SubPopDrawPreviewLines(lines,draw);[draw removeObjectForKey:NSShadowAttributeName];}
+    if (!self.basicSubtitle && [s[@"glowEnabled"] boolValue]) {NSShadow *glow=[NSShadow new];glow.shadowColor=[NSColor colorWithSRGBRed:1 green:.878431 blue:.262745 alpha:[s[@"glowOpacity"] doubleValue]/100];glow.shadowBlurRadius=([s[@"glowBlur"] doubleValue]+[s[@"glowRadius"] doubleValue])*scale;glow.shadowOffset=NSZeroSize;draw[NSShadowAttributeName]=glow;SubPopDrawPreviewLines(lines,draw);[draw removeObjectForKey:NSShadowAttributeName];}
     if ([s[@"outlineEnabled"] boolValue]) {NSArray *c=s[@"outlineColor"];draw[NSStrokeColorAttributeName]=[NSColor colorWithSRGBRed:[c[0] doubleValue] green:[c[1] doubleValue] blue:[c[2] doubleValue] alpha:[s[@"outlineOpacity"] doubleValue]/100];draw[NSStrokeWidthAttributeName]=@(-[s[@"outlineWidth"] doubleValue]/[s[@"textSize"] doubleValue]*100);}
     SubPopDrawPreviewLines(lines,draw);
     if (self.showsSafeArea) {
