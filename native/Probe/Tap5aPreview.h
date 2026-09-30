@@ -88,6 +88,7 @@ static NSDictionary *SubPopPreviewSource(NSData *data, double seconds) {
 @end
 @interface SubPopStylePreview : NSView
 @property BOOL showsSafeArea;
+@property BOOL nativeSubtitle;
 @property NSWindow *fullscreenWindow;
 @property (weak) SubPopStylePreview *fullscreenOwner;
 - (void)showFullscreen;
@@ -109,7 +110,7 @@ static NSDictionary *SubPopPreviewSource(NSData *data, double seconds) {
     window.appearance=[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];window.becomesKeyOnlyIfNeeded=NO;window.releasedWhenClosed=NO;// The FCP-hosted sheet is in another process; a modal level does not clear it.
     window.level=NSPopUpMenuWindowLevel+1;window.backgroundColor=NSColor.blackColor;window.hidesOnDeactivate=YES;
     SubPopStylePreview *preview=[[SubPopStylePreview alloc] initWithFrame:NSMakeRect(0,0,screen.frame.size.width,screen.frame.size.height)];
-    preview.frameImage=self.frameImage;preview.style=self.style;preview.caption=self.caption;preview.projectWidth=self.projectWidth;preview.placeholder=self.placeholder;preview.showsSafeArea=self.showsSafeArea;preview.fullscreenOwner=self;preview.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
+    preview.frameImage=self.frameImage;preview.style=self.style;preview.caption=self.caption;preview.projectWidth=self.projectWidth;preview.placeholder=self.placeholder;preview.showsSafeArea=self.showsSafeArea;preview.nativeSubtitle=self.nativeSubtitle;preview.fullscreenOwner=self;preview.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
     // In FCP, view-service windows are reparented by the host. Render locally,
     // then let the containing app own and activate the actual preview window.
     if ([NSBundle.mainBundle.bundleIdentifier isEqual:@"com.chokamin.SubPopProbe.Extension"]) {
@@ -169,7 +170,7 @@ static NSDictionary *SubPopPreviewSource(NSData *data, double seconds) {
     if (image) [image drawInRect:self.bounds]; else [self drawPreviewContent];
 }
 - (void)drawPreviewContent {
-    [[NSColor colorWithCalibratedWhite:.035 alpha:1] setFill];NSRectFill(self.bounds);
+    [[NSColor colorWithCalibratedWhite:self.nativeSubtitle ? .18 : .035 alpha:1] setFill];NSRectFill(self.bounds);
     NSRect canvas=self.bounds;
     if (self.frameImage) {
         NSSize size=self.frameImage.size;CGFloat scale=MIN(canvas.size.width/size.width,canvas.size.height/size.height);
@@ -179,10 +180,10 @@ static NSDictionary *SubPopPreviewSource(NSData *data, double seconds) {
         NSDictionary *attrs=@{NSFontAttributeName:[NSFont systemFontOfSize:12],NSForegroundColorAttributeName:NSColor.secondaryLabelColor};
         [self.placeholder ?: @"正在读取视频画面…" drawInRect:NSInsetRect(self.bounds,16,30) withAttributes:attrs];
     }
-    NSDictionary *s=SubPopNormalizeTap5aStyle(self.style);
+    NSDictionary *s=self.nativeSubtitle ? SubPopNormalizeNativeStyle(self.style) : SubPopNormalizeTap5aStyle(self.style);
     // Tap5a uses a 1920x1080 Motion canvas, independent of output resolution.
     // Project-pixel offsets keep their separate scale below.
-    CGFloat scale=canvas.size.width/1920.0,fontSize=MAX(1,[s[@"textSize"] doubleValue]*scale);
+    CGFloat scale=canvas.size.width/(self.nativeSubtitle ? 3840.0 : 1920.0),fontSize=MAX(1,[s[@"textSize"] doubleValue]*scale);
     NSString *postscript=s[@"textFont"];for (NSArray *member in SubPopFontMembers(s[@"textFont"])) if ([member[1] isEqual:s[@"textFace"]]) postscript=member[0];
     NSFont *font=[NSFont fontWithName:postscript size:fontSize] ?: [NSFont systemFontOfSize:fontSize];
     NSMutableParagraphStyle *paragraph=[NSMutableParagraphStyle new];paragraph.alignment=NSTextAlignmentCenter;paragraph.lineSpacing=[s[@"lineSpacing"] doubleValue]*scale;
@@ -193,14 +194,30 @@ static NSDictionary *SubPopPreviewSource(NSData *data, double seconds) {
     CGFloat positionScale=canvas.size.width/(self.projectWidth>0 ? self.projectWidth : 1920);
     // The exported title origin is 0,-40 percent of sequence height: its text
     // baseline is 10% above the bottom, including for non-1080p projects.
-    NSPoint baseline=NSMakePoint(NSMidX(canvas)+[s[@"positionX"] doubleValue]*positionScale,NSMinY(canvas)+canvas.size.height*.10+[s[@"positionY"] doubleValue]*positionScale);
+    NSPoint baseline=NSMakePoint(NSMidX(canvas)+(self.nativeSubtitle ? 0 : [s[@"positionX"] doubleValue]*positionScale),NSMinY(canvas)+canvas.size.height*.10+(self.nativeSubtitle ? 0 : [s[@"positionY"] doubleValue]*positionScale));
     NSRect textRect;NSArray *lines=SubPopPreviewTextLines(text,attrs,baseline,[s[@"lineSpacing"] doubleValue]*scale,scale,canvas.size.width*.86,&textRect);
+    if (self.nativeSubtitle) {
+        // Apple's native template is a 3840x2160, bottom-aligned paragraph.
+        // Static 2D geometry only: Motion sequencing and Z perspective stay in FCP.
+        CGFloat dx=([s[@"textPositionX"] doubleValue]+[s[@"positionX"] doubleValue])*scale;
+        CGFloat anchorBottom=NSMinY(canvas)+([s[@"verticalSafe"] boolValue] ? 754 : 240)*scale;
+        CGFloat dy=anchorBottom-textRect.origin.y+([s[@"textPositionY"] doubleValue]+[s[@"positionY"] doubleValue])*scale;
+        NSMutableArray *shifted=[NSMutableArray new];for (NSDictionary *line in lines) {
+            NSPoint p=[line[@"origin"] pointValue];p.x+=dx;p.y+=dy;
+            [shifted addObject:@{@"text":line[@"text"],@"origin":[NSValue valueWithPoint:p]}];
+        }
+        lines=shifted;textRect=NSOffsetRect(textRect,dx,dy);
+        // Native width/height rig snapshots: -100 -> -1000, 0 -> 100, 100 -> 1000.
+        double w=[s[@"boxWidth"] doubleValue],h=[s[@"boxHeight"] doubleValue];
+        CGFloat extraW=(100+w*(w<0 ? 11 : 9))*scale,extraH=(100+h*(h<0 ? 11 : 9))*scale;
+        left=right=MAX(-textRect.size.width+1,extraW)/2;top=bottom=MAX(-textRect.size.height+1,extraH)/2;
+    }
     NSRect box=NSMakeRect(textRect.origin.x-left,textRect.origin.y-bottom,textRect.size.width+left+right,textRect.size.height+top+bottom);
-    CGFloat radius=MIN(MIN(box.size.width,box.size.height)/2,[s[@"roundness"] doubleValue]*.5*scale);
+    CGFloat radius=MIN(MIN(box.size.width,box.size.height)/2,[s[@"roundness"] doubleValue]*(self.nativeSubtitle ? 1 : .5)*scale);
     NSBezierPath *path=[NSBezierPath bezierPathWithRoundedRect:box xRadius:radius yRadius:radius];
     NSArray *rgb=s[@"backgroundColor"];
-    if ([s[@"background"] boolValue]) {[[NSColor colorWithSRGBRed:[rgb[0] doubleValue] green:[rgb[1] doubleValue] blue:[rgb[2] doubleValue] alpha:[s[@"opacity"] doubleValue]/100] setFill];[path fill];}
-    if ([s[@"border"] boolValue]) {
+    if (self.nativeSubtitle || [s[@"background"] boolValue]) {[[NSColor colorWithSRGBRed:[rgb[0] doubleValue] green:[rgb[1] doubleValue] blue:[rgb[2] doubleValue] alpha:[s[@"opacity"] doubleValue]/100] setFill];[path fill];}
+    if (!self.nativeSubtitle && [s[@"border"] boolValue]) {
         rgb=s[@"borderColor"];[[NSColor colorWithSRGBRed:[rgb[0] doubleValue] green:[rgb[1] doubleValue] blue:[rgb[2] doubleValue] alpha:[s[@"borderOpacity"] doubleValue]/100] setStroke];
         CGFloat width=MAX(.5,[s[@"width"] doubleValue]*scale);NSInteger sides=[s[@"sides"] integerValue];
         if (!sides) {path.lineWidth=width;[path stroke];}

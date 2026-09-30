@@ -1,5 +1,6 @@
 // Isolated preferences + offscreen editor checks. No FCP or model invocation.
 #import "ProbeViewController.m"
+#import "PreviewGeometryTests.h"
 @interface SubPopNativeStyleTestController : SubPopProbeViewController
 @end
 @implementation SubPopNativeStyleTestController
@@ -14,11 +15,12 @@ static void check(BOOL ok,NSString *message) {if (!ok) {fprintf(stderr,"Native s
 int main(int argc,const char *argv[]) {
     @autoreleasepool {
         check(argc==3 || argc==4,@"expected fixture and output folder, optional preview");[NSApplication sharedApplication];
+        check(SubPopCheckPreviewGeometry(),@"shared Tap5a preview geometry remains intact");
         NSString *suite=[@"com.chokamin.SubPop.style-test." stringByAppendingString:NSUUID.UUID.UUIDString];
         NSUserDefaults *defaults=[[NSUserDefaults alloc] initWithSuiteName:suite];
         SubPopNativePresetStore *store=[[SubPopNativePresetStore alloc] initWithDefaults:defaults];
         check(store.presets.count==0 && !store.defaultID.length,@"first installation has no saved presets");
-        NSDictionary *style=SubPopNormalizeNativeStyle(@{@"textFont":@"Helvetica",@"textFace":@"Bold",@"textSize":@72,@"opacity":@95,@"roundness":@20,@"boxHeight":@-8,@"boxWidth":@15,@"positionX":@-300,@"positionY":@200,@"textPositionX":@37,@"textPositionY":@-125.457,@"textPositionZ":@12,@"animationStyle":@4,@"animateBy":@2,@"fillColor":@[@1,@0.5,@0],@"verticalSafe":@1});
+        NSDictionary *style=SubPopNormalizeNativeStyle(@{@"textFont":@"Helvetica",@"textFace":@"Bold",@"textSize":@72,@"kerning":@8.64,@"opacity":@95,@"roundness":@20,@"boxHeight":@-8,@"boxWidth":@15,@"positionX":@-300,@"positionY":@200,@"textPositionX":@37,@"textPositionY":@-125.457,@"textPositionZ":@12,@"animationStyle":@4,@"animateBy":@2,@"fillColor":@[@1,@0.5,@0],@"verticalSafe":@1});
         NSString *first=[store saveStyle:style name:@"黑底白字"];
         NSString *second=[store saveStyle:@{@"opacity":@50} name:@"浅底框"];
         [store setDefaultID:first];
@@ -78,6 +80,13 @@ int main(int argc,const char *argv[]) {
         [c showTap5aStyle:nil];spin();
         check(c.editingNativeStyle && c.tap5aStyleControls.count==20 && window.attachedSheet!=nil,@"native editor opens with all supported controls");
         [c fillNativeStyleControls:style];check([[c currentTap5aStyleValues] isEqual:style],@"editor preserves all published units including negative height and animation tags");
+        check(fabs([c.tap5aStyleControls[@"kerning"] doubleValue]-12)<1e-9,@"legacy point-based preset displays FCP tracking percentage");
+        [c controlTextDidEndEditing:[NSNotification notificationWithName:NSControlTextDidEndEditingNotification object:c.tap5aStyleControls[@"kerning"]]];
+        check([c.tap5aStyleControls[@"kerning"] doubleValue]==12 && [[c currentTap5aStyleValues][@"kerning"] doubleValue]==8.64,@"committing percentage does not turn it back into points");
+        [c.tap5aStyleControls[@"textSize"] setDoubleValue:144];[c tap5aPreviewChanged:nil];
+        check([[c currentTap5aStyleValues][@"kerning"] doubleValue]==17.28,@"font-size change retains the entered tracking percentage");
+        [c fillNativeStyleControls:style];
+        check(c.tap5aPreview.nativeSubtitle && [c.tap5aPreview.style isEqual:style] && [c.tap5aPreview renderLinearPreview]!=nil,@"native preview renders the selected preset without invoking FCP or recognition");
         c.nativePresetName.stringValue=@"测试默认";[c saveNativePreset:nil];[c defaultNativePreset:nil];
         check([store.defaultStyle isEqual:style] && store.presets.count==1,@"save and default actions persist editor settings");
         if (argc==4) {
@@ -89,13 +98,24 @@ int main(int argc,const char *argv[]) {
         NSBitmapImageRep *image=[sheet bitmapImageRepForCachingDisplayInRect:sheet.bounds];[sheet cacheDisplayInRect:sheet.bounds toBitmapImageRep:image];
         [[image representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:[folder stringByAppendingPathComponent:@"native-style-editor.png"] atomically:YES];
         [window endSheet:window.attachedSheet returnCode:NSAlertSecondButtonReturn];spin();
-        check(!c.editingNativeStyle && !c.tap5aStyleControls && [c.nativeStyle isEqual:oldStyle] && [c.titlePayloads isEqual:before],@"cancel leaves current captions and style untouched even after deliberate preset save");
+        check(!c.editingNativeStyle && !c.tap5aStyleControls && !c.tap5aPreview && [c.nativeStyle isEqual:oldStyle] && [c.titlePayloads isEqual:before],@"cancel leaves current captions and style untouched and cleans preview resources");
         [c showNativeStyle:nil];[c.nativePresetPicker selectItemAtIndex:2];[c nativePresetChanged:c.nativePresetPicker];
         [window endSheet:window.attachedSheet returnCode:NSAlertFirstButtonReturn];spin();
         check([c.nativeStyle isEqual:style] && ![c.titlePayloads isEqual:before],@"apply loads saved native style onto current captions");
         NSXMLDocument *applied=[[NSXMLDocument alloc] initWithData:c.titlePayloads[@"1.14"] options:0 error:nil];
         check([[applied nodesForXPath:@"//title/param[@name='Background Height']/@value" error:nil].firstObject.stringValue isEqual:@"0.46"],@"applied payload contains native published height");
         check([[applied nodesForXPath:@"//title/param[@name='Position']/@value" error:nil].firstObject.stringValue isEqual:@"37 -125.457 12"],@"saved preset restores the text inspector position into every generated title");
+        check([[applied nodesForXPath:@"//text-style-def/text-style/@kerning" error:nil].firstObject.stringValue isEqual:@"8.64"],@"12 percent at size 72 exports the original 8.64 points");
+        SubPopStylePreview *preview=[[SubPopStylePreview alloc] initWithFrame:NSMakeRect(0,0,640,360)];preview.nativeSubtitle=YES;preview.caption=@"字幕 gjpq";
+        NSMutableDictionary *red=[@{@"backgroundColor":@[@1,@0,@0],@"textColor":@[@0,@0,@0],@"opacity":@100,@"roundness":@0,@"textSize":@144,@"textPositionY":@400} mutableCopy];preview.style=red;
+        NSRect base=SubPopRedPixelBounds([NSBitmapImageRep imageRepWithData:[preview renderLinearPreview].TIFFRepresentation]);
+        red[@"textPositionX"]=@120;red[@"positionX"]=@120;preview.style=red;
+        NSRect shifted=SubPopRedPixelBounds([NSBitmapImageRep imageRepWithData:[preview renderLinearPreview].TIFFRepresentation]);
+        fprintf(stderr,"Native preview bounds: base %s; shifted %s\n",NSStringFromRect(base).UTF8String,NSStringFromRect(shifted).UTF8String);
+        check(base.size.width>0 && fabs(shifted.origin.x-base.origin.x-40)<2 && fabs(shifted.size.width-base.size.width)<2,@"native preview responds to both independent horizontal positions");
+        red[@"boxHeight"]=@-8;preview.style=red;
+        NSRect tight=SubPopRedPixelBounds([NSBitmapImageRep imageRepWithData:[preview renderLinearPreview].TIFFRepresentation]);
+        check(fabs(shifted.size.height-tight.size.height-88.0/6)<2,@"native height adjustment uses its own rig units, independent of Tap5a padding");
         c.nativeStyle=nil;[c templateChanged:nil];check([c.nativeStyle isEqual:style],@"new result selecting native uses saved default");
         [c.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];[c templateChanged:nil];
         check(![c.templatePicker.titleOfSelectedItem containsString:@"自适应"],@"plain subtitle remains independently selectable");

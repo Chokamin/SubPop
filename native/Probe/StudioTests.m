@@ -251,6 +251,9 @@ int main(int argc,const char *argv[]) {
         [c fillTap5aStyleControls:@{@"outlineEnabled":@1,@"glowEnabled":@1,@"shadowEnabled":@1,@"positionX":@120,@"positionY":@-80,@"roundness":@30,@"top":@25,@"textFont":@"Helvetica",@"textFace":@"Bold",@"textSize":@83,@"kerning":@4,@"lineSpacing":@16}];
         if ([c.tap5aStyleControls[@"roundness"] doubleValue]!=30 || [c.tap5aStyleControls[@"top"] doubleValue]!=25) return 22;
         if (![[c currentTap5aStyleValues][@"textFace"] isEqual:@"Bold"] || [[c currentTap5aStyleValues][@"textSize"] doubleValue]!=83 || [c.tap5aPreview.style[@"kerning"] doubleValue]!=4) return 28;
+        if (fabs([c.tap5aStyleControls[@"kerning"] doubleValue]-400.0/83)>1e-9) return 129;
+        [c.tap5aStyleControls[@"kerning"] setDoubleValue:12];[c tap5aPreviewChanged:nil];
+        if (fabs([[c currentTap5aStyleValues][@"kerning"] doubleValue]-9.96)>1e-9) return 130;
         NSTextField *size=c.tap5aStyleControls[@"textSize"];
         if (size.formatter) return 35;
         for (NSString *entry in @[@"1",@"12",@"128",@"7",@"7.5",@"350",@"999.5"]) {

@@ -21,7 +21,16 @@ static NSArray *SubPopTap5aFields(void) {
     ];
 }
 static NSArray *SubPopTextFields(void) {
-    return @[@[@"textSize",@"字号",@72,@1,@1000],@[@"kerning",@"字距（点）",@0,@-20,@100],@[@"lineSpacing",@"额外行间距",@0,@0,@200],@[@"textColor",@"文字颜色",@[@1,@1,@1],@0,@1],@[@"positionX",@"X 偏移（px）",@0,@-10000,@10000],@[@"positionY",@"Y 偏移（px）",@0,@-10000,@10000]];
+    // Persist kerning in FCPXML points so older presets retain their spacing.
+    return @[@[@"textSize",@"字号",@72,@1,@1000],@[@"kerning",@"字距 %",@0,@-10000,@10000],@[@"lineSpacing",@"额外行间距",@0,@0,@200],@[@"textColor",@"文字颜色",@[@1,@1,@1],@0,@1],@[@"positionX",@"X 偏移（px）",@0,@-10000,@10000],@[@"positionY",@"Y 偏移（px）",@0,@-10000,@10000]];
+}
+static NSArray *SubPopTextEditorFields(void) {
+    NSMutableArray *fields=SubPopTextFields().mutableCopy;
+    fields[1]=@[@"kerning",@"字距 %",@0,@-1000,@1000];return fields;
+}
+static double SubPopTextEditorNumber(NSDictionary *style,NSString *key) {
+    double value=[style[key] doubleValue];
+    return [key isEqual:@"kerning"] ? value*100/MAX(1,[style[@"textSize"] doubleValue]) : value;
 }
 static NSArray *SubPopEffectFields(void) {
     return @[
@@ -70,6 +79,7 @@ static NSDictionary *SubPopNormalizeTap5aStyle(id input) {
             double n=[value isKindOfClass:NSNumber.class] ? [value doubleValue] : [field[2] doubleValue];
             if (!isfinite(n)) n=[field[2] doubleValue];
             n=MAX([field[3] doubleValue],MIN([field[4] doubleValue],n));
+            if ([key isEqual:@"kerning"]) n=round(n*1e9)/1e9;
             if ([key hasSuffix:@"Enabled"] || [key isEqual:@"sides"] || [key isEqual:@"background"] || [key isEqual:@"border"]) n=round(n);
             result[key]=@(n);
         }
@@ -114,12 +124,13 @@ static void SubPopApplyTap5aStyle(NSXMLDocument *doc, NSDictionary *input) {
 
 static void SubPopApplyTextStyle(NSXMLElement *node,NSDictionary *input) {
     NSDictionary *s=SubPopNormalizeTap5aStyle(input);NSArray *rgb=s[@"textColor"];
-    NSDictionary *attrs=@{@"font":s[@"textFont"],@"fontFace":s[@"textFace"],@"fontSize":[s[@"textSize"] stringValue],@"kerning":[s[@"kerning"] stringValue],@"lineSpacing":[s[@"lineSpacing"] stringValue],@"fontColor":[NSString stringWithFormat:@"%.9g %.9g %.9g 1",[rgb[0] doubleValue],[rgb[1] doubleValue],[rgb[2] doubleValue]]};
+    NSString *trackingValue=[NSString stringWithFormat:@"%.9g",[s[@"kerning"] doubleValue]];
+    NSDictionary *attrs=@{@"font":s[@"textFont"],@"fontFace":s[@"textFace"],@"fontSize":[s[@"textSize"] stringValue],@"kerning":trackingValue,@"lineSpacing":[s[@"lineSpacing"] stringValue],@"fontColor":[NSString stringWithFormat:@"%.9g %.9g %.9g 1",[rgb[0] doubleValue],[rgb[1] doubleValue],[rgb[2] doubleValue]]};
     for (NSXMLElement *old in [node elementsForName:@"param"]) if ([[old attributeForName:@"key"].stringValue isEqual:@"MotionTextStyle:SimpleValues"]) [old detach];
     NSXMLElement *simple=[NSXMLElement elementWithName:@"param"];
     [simple addAttribute:[NSXMLNode attributeWithName:@"name" stringValue:@"MotionSimpleValues"]];[simple addAttribute:[NSXMLNode attributeWithName:@"key" stringValue:@"MotionTextStyle:SimpleValues"]];
     NSXMLElement *tracking=[NSXMLElement elementWithName:@"param"];
-    [tracking addAttribute:[NSXMLNode attributeWithName:@"name" stringValue:@"motionTextTracking"]];[tracking addAttribute:[NSXMLNode attributeWithName:@"key" stringValue:@"tracking"]];[tracking addAttribute:[NSXMLNode attributeWithName:@"value" stringValue:[s[@"kerning"] stringValue]]];[simple addChild:tracking];[node addChild:simple];
+    [tracking addAttribute:[NSXMLNode attributeWithName:@"name" stringValue:@"motionTextTracking"]];[tracking addAttribute:[NSXMLNode attributeWithName:@"key" stringValue:@"tracking"]];[tracking addAttribute:[NSXMLNode attributeWithName:@"value" stringValue:trackingValue]];[simple addChild:tracking];[node addChild:simple];
     for (NSString *key in @[@"strokeColor",@"strokeWidth",@"shadowColor",@"shadowOffset",@"shadowBlurRadius"]) [node removeAttributeForName:key];
     NSMutableDictionary *effects=[NSMutableDictionary new];
     for (NSString *prefix in @[@"outline",@"shadow"]) if ([s[[prefix stringByAppendingString:@"Enabled"]] boolValue]) {

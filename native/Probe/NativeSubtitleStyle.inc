@@ -33,12 +33,12 @@
             if ([key isEqual:@"textFont"] || [key isEqual:@"textFace"]) continue;
             for (NSMenuItem *item in [control itemArray]) if ([item.representedObject isEqual:value]) [control selectItem:item];
         } else if ([control isKindOfClass:NSButton.class]) [control setState:[value boolValue] ? NSControlStateValueOn : NSControlStateValueOff];
-        else [control setDoubleValue:[value doubleValue]];
+        else [control setDoubleValue:SubPopTextEditorNumber(style,key)];
     }
     SubPopSelectFontFamily(self.tap5aStyleControls[@"textFont"],style[@"textFont"]);
     [self textFamilyChanged:self.tap5aStyleControls[@"textFont"]];
     [self.tap5aStyleControls[@"textFace"] selectItemWithTitle:style[@"textFace"]];
-    [self updateNativePresetActions];
+    [self tap5aPreviewChanged:nil];
 }
 - (void)nativePresetChanged:(NSPopUpButton *)sender {
     if (sender.indexOfSelectedItem==0) return;
@@ -85,22 +85,25 @@
     NSAlert *alert=[NSAlert new];alert.messageText=@"原生底框样式与预设";
     alert.informativeText=@"应用到当前全部字幕，无需重新识别。FCP 中刚调整的样式需重新拖入项目后读取；已导入的字幕不会自动更新。";
     [alert addButtonWithTitle:@"应用到全部字幕"];[alert addButtonWithTitle:@"取消"];
-    NSView *content=[[NSView alloc] initWithFrame:NSMakeRect(0,0,600,475)];
-    NSTextField *label=[self label:@"样式预设" size:12 weight:NSFontWeightMedium];label.frame=NSMakeRect(0,441,74,24);[content addSubview:label];
+    NSRect available=(self.view.window.screen ?: NSScreen.mainScreen).visibleFrame;
+    CGFloat previewWidth=MAX(280,MIN(560,available.size.width-724)),previewHeight=previewWidth*9/16;
+    NSView *content=[[NSView alloc] initWithFrame:NSMakeRect(0,0,previewWidth+624,475)];
+    NSView *settings=[[NSView alloc] initWithFrame:NSMakeRect(previewWidth+24,0,600,475)];[content addSubview:settings];
+    NSTextField *label=[self label:@"样式预设" size:12 weight:NSFontWeightMedium];label.frame=NSMakeRect(0,441,74,24);[settings addSubview:label];
     self.nativePresetPicker=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(76,439,524,26) pullsDown:NO];
-    self.nativePresetPicker.target=self;self.nativePresetPicker.action=@selector(nativePresetChanged:);[self.nativePresetPicker setAccessibilityLabel:@"原生底框样式预设"];[content addSubview:self.nativePresetPicker];
-    label=[self label:@"名称" size:12 weight:NSFontWeightRegular];label.frame=NSMakeRect(0,405,74,24);[content addSubview:label];
-    self.nativePresetName=[[NSTextField alloc] initWithFrame:NSMakeRect(76,403,226,26)];self.nativePresetName.placeholderString=@"例如：白字黑底";self.nativePresetName.delegate=self;[self.nativePresetName setAccessibilityLabel:@"预设名称"];[content addSubview:self.nativePresetName];
+    self.nativePresetPicker.target=self;self.nativePresetPicker.action=@selector(nativePresetChanged:);[self.nativePresetPicker setAccessibilityLabel:@"原生底框样式预设"];[settings addSubview:self.nativePresetPicker];
+    label=[self label:@"名称" size:12 weight:NSFontWeightRegular];label.frame=NSMakeRect(0,405,74,24);[settings addSubview:label];
+    self.nativePresetName=[[NSTextField alloc] initWithFrame:NSMakeRect(76,403,226,26)];self.nativePresetName.placeholderString=@"例如：白字黑底";self.nativePresetName.delegate=self;[self.nativePresetName setAccessibilityLabel:@"预设名称"];[settings addSubview:self.nativePresetName];
     NSArray *buttonNames=@[@"保存预设",@"设为默认",@"删除预设"];
     SEL actions[]={@selector(saveNativePreset:),@selector(defaultNativePreset:),@selector(deleteNativePreset:)};
     for (NSUInteger i=0;i<3;i++) {
-        NSButton *button=[NSButton buttonWithTitle:buttonNames[i] target:self action:actions[i]];button.frame=NSMakeRect(310+i*100,402,92,28);[content addSubview:button];
+        NSButton *button=[NSButton buttonWithTitle:buttonNames[i] target:self action:actions[i]];button.frame=NSMakeRect(310+i*100,402,92,28);[settings addSubview:button];
         if (i==0) button.toolTip=@"同名预设会更新，其他预设保留";
         if (i==1) self.nativePresetDefaultButton=button;
         if (i==2) self.nativePresetDeleteButton=button;
     }
     NSTabView *tabs=[[NSTabView alloc] initWithFrame:NSMakeRect(0,91,600,303)];
-    NSMutableArray *tabItems=[NSMutableArray new];for (NSString *name in @[@"文字",@"底框与位置",@"动画"]) {NSTabViewItem *item=[[NSTabViewItem alloc] initWithIdentifier:name];item.label=name;[tabs addTabViewItem:item];[tabItems addObject:item];}[content addSubview:tabs];
+    NSMutableArray *tabItems=[NSMutableArray new];for (NSString *name in @[@"文字",@"底框与位置",@"动画"]) {NSTabViewItem *item=[[NSTabViewItem alloc] initWithIdentifier:name];item.label=name;[tabs addTabViewItem:item];[tabItems addObject:item];}[settings addSubview:tabs];
     NSView *textTab=[tabItems[0] view],*boxTab=[tabItems[1] view],*animationTab=[tabItems[2] view];
     for (NSUInteger i=0;i<2;i++) {
         NSString *key=i ? @"textFace" : @"textFont";
@@ -112,7 +115,7 @@
         }
         popup.target=self;popup.action=i ? @selector(tap5aPreviewChanged:) : @selector(textFamilyChanged:);[popup setAccessibilityLabel:label.stringValue];[textTab addSubview:popup];self.tap5aStyleControls[key]=popup;
     }
-    NSArray *textFields=[SubPopTextFields() subarrayWithRange:NSMakeRange(0,4)];
+    NSArray *textFields=[SubPopTextEditorFields() subarrayWithRange:NSMakeRange(0,4)];
     NSArray *fields=[[textFields arrayByAddingObjectsFromArray:SubPopNativeBoxFields()] arrayByAddingObjectsFromArray:SubPopNativeTextPositionFields()];
     for (NSUInteger i=0;i<fields.count;i++) {
         NSArray *f=fields[i];NSString *key=f[0];BOOL position=i>=15,text=i<4 || position,animation=i>=12 && i<15;
@@ -137,7 +140,7 @@
     label.frame=NSMakeRect(304,20,255,54);label.font=[NSFont systemFontOfSize:11];label.textColor=NSColor.secondaryLabelColor;[textTab addSubview:label];
     label=[NSTextField wrappingLabelWithString:@"宽高为自适应底框的调整量，0 使用模板默认。\n数值与 FCP 检查器一致；最终画面和动画请在 FCP 中查看。"];
     label.frame=NSMakeRect(12,6,550,40);label.font=[NSFont systemFontOfSize:11];label.textColor=NSColor.secondaryLabelColor;[boxTab addSubview:label];
-    label=[self label:@"读取项目字幕" size:12 weight:NSFontWeightRegular];label.frame=NSMakeRect(0,56,110,24);[content addSubview:label];
+    label=[self label:@"读取项目字幕" size:12 weight:NSFontWeightRegular];label.frame=NSMakeRect(0,56,110,24);[settings addSubview:label];
     NSPopUpButton *source=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(120,54,480,26) pullsDown:NO];[source addItemWithTitle:@"选择已调整好的原生底框字幕…"];
     NSData *xml=self.freshDropURL ? [NSData dataWithContentsOfURL:self.freshDropURL] : nil;
     NSXMLDocument *doc=xml ? [[NSXMLDocument alloc] initWithData:xml options:NSXMLNodeLoadExternalEntitiesNever error:nil] : nil;
@@ -145,14 +148,24 @@
         NSString *name=[title attributeForName:@"name"].stringValue ?: @"字幕";if (name.length>32) name=[[name substringToIndex:32] stringByAppendingString:@"…"];
         [source addItemWithTitle:[NSString stringWithFormat:@"%lu · %@",(unsigned long)++n,name]];source.lastItem.representedObject=title;
     }
-    source.enabled=n>0;source.target=self;source.action=@selector(readNativeProjectStyle:);[source setAccessibilityLabel:@"读取项目中已有字幕的静态样式"];[content addSubview:source];
-    self.nativePresetNotice=[NSTextField wrappingLabelWithString:@""];self.nativePresetNotice.frame=NSMakeRect(0,0,600,42);self.nativePresetNotice.font=[NSFont systemFontOfSize:11];self.nativePresetNotice.textColor=NSColor.secondaryLabelColor;[content addSubview:self.nativePresetNotice];
-    [self reloadNativePresetPicker:nil];[self fillNativeStyleControls:self.nativeStyle];alert.accessoryView=content;
+    source.enabled=n>0;source.target=self;source.action=@selector(readNativeProjectStyle:);[source setAccessibilityLabel:@"读取项目中已有字幕的静态样式"];[settings addSubview:source];
+    self.nativePresetNotice=[NSTextField wrappingLabelWithString:@""];self.nativePresetNotice.frame=NSMakeRect(0,0,600,42);self.nativePresetNotice.font=[NSFont systemFontOfSize:11];self.nativePresetNotice.textColor=NSColor.secondaryLabelColor;[settings addSubview:self.nativePresetNotice];
+    CGFloat previewY=475-previewHeight;
+    self.tap5aPreview=[[SubPopStylePreview alloc] initWithFrame:NSMakeRect(0,previewY,previewWidth,previewHeight)];self.tap5aPreview.nativeSubtitle=YES;self.tap5aPreview.wantsLayer=YES;self.tap5aPreview.layer.cornerRadius=10;self.tap5aPreview.layer.masksToBounds=YES;[self.tap5aPreview setAccessibilityLabel:@"原生自适应底框静态样式预览"];[content addSubview:self.tap5aPreview];
+    self.tap5aPreviewLabel=[self label:@"读取视频帧" size:11 weight:NSFontWeightMedium];self.tap5aPreviewLabel.frame=NSMakeRect(0,previewY-27,previewWidth,22);[content addSubview:self.tap5aPreviewLabel];
+    NSArray *previewActions=@[@"上一句",@"下一句",@"选择视频截图…"];
+    for (NSUInteger i=0;i<3;i++) {NSButton *button=[NSButton buttonWithTitle:previewActions[i] target:self action:i==2 ? @selector(chooseTap5aPreviewImage:) : @selector(stepTap5aPreview:)];button.tag=i==0 ? -1 : 1;button.frame=NSMakeRect(i==2 ? previewWidth-132 : i*72,previewY-65,i==2 ? 132 : 65,28);[content addSubview:button];}
+    NSButton *safe=[NSButton checkboxWithTitle:@"安全框" target:self action:@selector(togglePreviewSafe:)];safe.frame=NSMakeRect(0,previewY-100,110,24);[content addSubview:safe];
+    NSButton *full=[NSButton buttonWithTitle:@"全屏预览" target:self action:@selector(fullscreenPreview:)];full.frame=NSMakeRect(previewWidth-116,previewY-100,116,26);[content addSubview:full];
+    label=[NSTextField wrappingLabelWithString:@"静态样式示意，不含动画、Z 轴透视及调色特效。最终效果以 FCP 为准。"];label.frame=NSMakeRect(0,0,previewWidth,48);label.font=[NSFont systemFontOfSize:11];label.textColor=NSColor.secondaryLabelColor;[content addSubview:label];
+    self.tap5aPreviewIndex=MAX(0,self.captionTable.selectedRow);
+    [self reloadNativePresetPicker:nil];[self fillNativeStyleControls:self.nativeStyle];[self loadTap5aPreviewFrame];alert.accessoryView=content;
     [alert beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse response) {
         if (response==NSAlertFirstButtonReturn && generation==self.dropGeneration && [request isEqual:self.resultRequestID] && self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative) {
             self.nativeStyle=[self currentTap5aStyleValues];[self syncStyleFontPickers:self.nativeStyle];[self rebuildTitles];
         }
         for (id control in self.tap5aStyleControls.allValues) if ([control isKindOfClass:NSColorWell.class]) [control deactivate];
+        [self.tap5aPreview closeFullscreen:nil];++self.tap5aPreviewGeneration;[self.tap5aImageGenerator cancelAllCGImageGeneration];self.tap5aImageGenerator=nil;self.tap5aPreview=nil;self.tap5aPreviewLabel=nil;
         self.tap5aStyleControls=nil;self.editingNativeStyle=NO;self.nativePresetPicker=nil;self.nativePresetName=nil;self.nativePresetNotice=nil;self.nativePresetDefaultButton=nil;self.nativePresetDeleteButton=nil;
     }];
 }

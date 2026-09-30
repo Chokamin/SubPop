@@ -11,9 +11,15 @@
             NSString *text=[[control stringValue] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
             NSScanner *scanner=[NSScanner scannerWithString:[text stringByReplacingOccurrencesOfString:@"," withString:@"."]];double number=0;
             if (text.length && [scanner scanDouble:&number] && scanner.isAtEnd && isfinite(number)) values[key]=@(number);
-            else values[key]=self.editingNativeStyle ? SubPopNormalizeNativeStyle(self.nativeStyle)[key] : (self.tap5aPreview.style[key] ?: SubPopNormalizeTap5aStyle(self.tap5aStyle)[key]);
+            else {
+                NSDictionary *fallback=self.tap5aPreview.style ?: (self.editingNativeStyle ? SubPopNormalizeNativeStyle(self.nativeStyle) : SubPopNormalizeTap5aStyle(self.tap5aStyle));
+                values[key]=@(SubPopTextEditorNumber(fallback,key));
+            }
         }
     }
+    // The UI uses the inspector's percentage; XML and legacy presets use points.
+    double size=[SubPopNormalizeTap5aStyle(values)[@"textSize"] doubleValue];
+    if (values[@"kerning"]) values[@"kerning"]=@([values[@"kerning"] doubleValue]*size/100);
     return self.editingNativeStyle ? SubPopNormalizeNativeStyle(values) : SubPopNormalizeTap5aStyle(values);
 }
 - (void)textFamilyChanged:(NSPopUpButton *)sender {
@@ -23,7 +29,7 @@
     [self tap5aPreviewChanged:nil];
 }
 - (void)tap5aPreviewChanged:(id)sender {
-    if (self.editingNativeStyle) {[self updateNativePresetActions];return;}
+    if (self.editingNativeStyle) [self updateNativePresetActions];
     self.tap5aPreview.style=[self currentTap5aStyleValues];self.tap5aPreview.needsDisplay=YES;
 }
 - (void)controlTextDidChange:(NSNotification *)notification {
@@ -32,7 +38,7 @@
 }
 - (void)controlTextDidEndEditing:(NSNotification *)notification {
     for (NSString *key in self.tap5aStyleControls) if (self.tap5aStyleControls[key]==notification.object) {
-        NSDictionary *values=[self currentTap5aStyleValues];[(NSTextField *)notification.object setDoubleValue:[values[key] doubleValue]];[self tap5aPreviewChanged:nil];break;
+        NSDictionary *values=[self currentTap5aStyleValues];[(NSTextField *)notification.object setDoubleValue:SubPopTextEditorNumber(values,key)];[self tap5aPreviewChanged:nil];break;
     }
 }
 - (void)loadTap5aPreviewFrame {
@@ -78,7 +84,7 @@
         if ([control isKindOfClass:NSColorWell.class]) [control setColor:[NSColor colorWithSRGBRed:[value[0] doubleValue] green:[value[1] doubleValue] blue:[value[2] doubleValue] alpha:1]];
         else if ([control isKindOfClass:NSPopUpButton.class]) [control selectItemAtIndex:[value integerValue]];
         else if ([control isKindOfClass:NSButton.class]) [control setState:[value boolValue] ? NSControlStateValueOn : NSControlStateValueOff];
-        else [control setDoubleValue:[value doubleValue]];
+        else [control setDoubleValue:SubPopTextEditorNumber(values,key)];
     }
     SubPopSelectFontFamily(self.tap5aStyleControls[@"textFont"],values[@"textFont"]);
     [self textFamilyChanged:self.tap5aStyleControls[@"textFont"]];
@@ -123,7 +129,7 @@
         }
         popup.target=self;popup.action=i==0 ? @selector(textFamilyChanged:) : @selector(tap5aPreviewChanged:);[popup setAccessibilityLabel:label.stringValue];[textTab.view addSubview:popup];self.tap5aStyleControls[key]=popup;
     }
-    NSArray *fields=[[SubPopTap5aFields() arrayByAddingObjectsFromArray:SubPopTextFields()] arrayByAddingObjectsFromArray:SubPopEffectFields()];
+    NSArray *fields=[[SubPopTap5aFields() arrayByAddingObjectsFromArray:SubPopTextEditorFields()] arrayByAddingObjectsFromArray:SubPopEffectFields()];
     for (NSUInteger i=0;i<fields.count;i++) {
         NSArray *field=fields[i];NSString *key=field[0];BOOL right=i>=9;NSUInteger row=right ? i-9 : i;
         BOOL typography=i>=13;CGFloat x=typography ? 12 : (right ? 290 : 12),y=typography ? 155-(i-13)*34 : 238-row*27;
@@ -142,7 +148,7 @@
     }
     NSTextField *effectNote=[NSTextField wrappingLabelWithString:@"外框作用于文字轮廓，与底框边框独立。光晕沿用 Tap5a 的暖黄色；预览为效果示意。"];
     effectNote.frame=NSMakeRect(12,6,510,34);effectNote.font=[NSFont systemFontOfSize:11];effectNote.textColor=NSColor.secondaryLabelColor;[effectsTab.view addSubview:effectNote];
-    NSTextField *textNote=[NSTextField wrappingLabelWithString:@"数值左右拖动，Shift 精调，点击输入；双击标签恢复默认。X 右正，Y 上正。\n行间距仅影响多行字幕；字距以点计，FCP 会换算为字号百分比。"];
+    NSTextField *textNote=[NSTextField wrappingLabelWithString:@"数值左右拖动，Shift 精调，点击输入；双击标签恢复默认。X 右正，Y 上正。\n行间距仅影响多行字幕；字距使用与 FCP 相同的字号百分比。"];
     textNote.frame=NSMakeRect(12,0,510,44);textNote.font=[NSFont systemFontOfSize:11];textNote.textColor=NSColor.secondaryLabelColor;[textTab.view addSubview:textNote];
     NSTextField *note=[NSTextField wrappingLabelWithString:@"留白与圆角使用 Tap5a 参数单位。\n颜色的透明程度由“不透明度”控制。\n保存预设会覆盖“我的预设”，并用于下一次识别。"];
     note.frame=NSMakeRect(290,15,240,102);note.font=[NSFont systemFontOfSize:11];note.textColor=NSColor.secondaryLabelColor;[boxTab.view addSubview:note];
