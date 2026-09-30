@@ -198,7 +198,7 @@ int main(int argc,const char *argv[]) {
             if ([c.statusDetail.stringValue containsString:@"底框"]) return 113;
             if ([c.resultView accessibilityPerformPress] || c.importInvocationCount!=3) return 20;
             [c.templatePicker selectItemAtIndex:SubPopTitleTemplateNative];[c updateInterface];
-            if ([c usesFileImport] || !c.tap5aStyleButton.hidden || ![c.resultView.accessibilityLabel isEqual:@"拖回字幕到 Final Cut Pro"]) return 112;
+            if ([c usesFileImport] || c.tap5aStyleButton.hidden || ![c.resultView.accessibilityLabel isEqual:@"拖回字幕到 Final Cut Pro"]) return 112;
             if (![c.statusDetail.stringValue containsString:@"底框"]) return 114;
             [c.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];[c updateInterface];
             c.requestID=@"preview";c.displayState=@"recognize";c.jobProgress=@.42;[c updateInterface];

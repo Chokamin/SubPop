@@ -5,16 +5,16 @@
     for (NSString *key in self.tap5aStyleControls) {
         id control=self.tap5aStyleControls[key];
         if ([control isKindOfClass:NSColorWell.class]) {NSColor *color=[[control color] colorUsingColorSpace:NSColorSpace.sRGBColorSpace];values[key]=@[@(color.redComponent),@(color.greenComponent),@(color.blueComponent)];}
-        else if ([control isKindOfClass:NSPopUpButton.class]) values[key]=[key isEqual:@"textFont"] ? SubPopSelectedFontFamily(control) : ([key hasPrefix:@"text"] ? [control titleOfSelectedItem] : @([control indexOfSelectedItem]));
+        else if ([control isKindOfClass:NSPopUpButton.class]) values[key]=[key isEqual:@"textFont"] ? SubPopSelectedFontFamily(control) : ([key hasPrefix:@"text"] ? [control titleOfSelectedItem] : (self.editingNativeStyle ? [[control selectedItem] representedObject] : @([control indexOfSelectedItem])));
         else if ([control isKindOfClass:NSButton.class]) values[key]=@([control state]==NSControlStateValueOn);
         else {
             NSString *text=[[control stringValue] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
             NSScanner *scanner=[NSScanner scannerWithString:[text stringByReplacingOccurrencesOfString:@"," withString:@"."]];double number=0;
             if (text.length && [scanner scanDouble:&number] && scanner.isAtEnd && isfinite(number)) values[key]=@(number);
-            else values[key]=self.tap5aPreview.style[key] ?: SubPopNormalizeTap5aStyle(self.tap5aStyle)[key];
+            else values[key]=self.editingNativeStyle ? SubPopNormalizeNativeStyle(self.nativeStyle)[key] : (self.tap5aPreview.style[key] ?: SubPopNormalizeTap5aStyle(self.tap5aStyle)[key]);
         }
     }
-    return SubPopNormalizeTap5aStyle(values);
+    return self.editingNativeStyle ? SubPopNormalizeNativeStyle(values) : SubPopNormalizeTap5aStyle(values);
 }
 - (void)textFamilyChanged:(NSPopUpButton *)sender {
     NSPopUpButton *faces=self.tap5aStyleControls[@"textFace"];NSString *old=faces.titleOfSelectedItem;
@@ -23,9 +23,11 @@
     [self tap5aPreviewChanged:nil];
 }
 - (void)tap5aPreviewChanged:(id)sender {
+    if (self.editingNativeStyle) {[self updateNativePresetActions];return;}
     self.tap5aPreview.style=[self currentTap5aStyleValues];self.tap5aPreview.needsDisplay=YES;
 }
 - (void)controlTextDidChange:(NSNotification *)notification {
+    if (notification.object==self.nativePresetName) [self updateNativePresetActions];
     if ([self.tap5aStyleControls.allValues containsObject:notification.object]) [self tap5aPreviewChanged:nil];
 }
 - (void)controlTextDidEndEditing:(NSNotification *)notification {
@@ -87,6 +89,7 @@
     [self fillTap5aStyleControls:sender.indexOfSelectedItem==1 ? [NSUserDefaults.standardUserDefaults dictionaryForKey:@"tap5aStylePreset"] : nil];
 }
 - (void)showTap5aStyle:(id)sender {
+    if (self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative) {[self showNativeStyle:sender];return;}
     if (![self usesFileImport] || self.importInProgress || self.tap5aStyleControls) return;
     [self.view.window makeFirstResponder:nil];
     NSString *request=self.resultRequestID;NSUInteger generation=self.dropGeneration;

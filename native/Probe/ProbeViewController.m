@@ -12,6 +12,7 @@
 #import "TitleTemplates.h"
 #import "Tap5aInstaller.h"
 #import "Tap5aStyle.h"
+#import "NativeSubtitleStyle.h"
 #import "ScrubbableNumberField.h"
 #import "Tap5aPreview.h"
 #import "TitleImport.h"
@@ -119,6 +120,14 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 @property NSPopUpButton *audioPicker;
 @property NSPopUpButton *templatePicker;
 @property NSDictionary *tap5aStyle;
+@property NSDictionary *nativeStyle;
+@property BOOL editingNativeStyle;
+@property SubPopNativePresetStore *nativePresetStore;
+@property NSPopUpButton *nativePresetPicker;
+@property NSTextField *nativePresetName;
+@property NSTextField *nativePresetNotice;
+@property NSButton *nativePresetDefaultButton;
+@property NSButton *nativePresetDeleteButton;
 @property SubPopStylePreview *tap5aPreview;
 @property NSTextField *tap5aPreviewLabel;
 @property NSInteger tap5aPreviewIndex;
@@ -288,6 +297,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 }
 #include "StudioLayout.inc"
 #include "Tap5aStyle.inc"
+#include "NativeSubtitleStyle.inc"
 - (void)restoreSession {
     if (self.restoringSession || self.requestID || self.pendingRecognition || self.titlePayloads || !self.bridgeURL || !self.timeline || ![self workerAvailable]) return;
     NSDictionary *saved=[NSUserDefaults.standardUserDefaults dictionaryForKey:@"pendingSession"];
@@ -313,7 +323,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 }
 - (void)saveDraft {
     if (!self.resultRequestID || !self.titlePayloads || !self.captionRows) return;
-    NSDictionary *draft=@{@"requestID":self.resultRequestID,@"snapshotSHA":self.requestSHA ?: @"",@"modelID":self.requestModelID ?: @"",@"captions":self.captionRows,@"font":self.fontPicker.titleOfSelectedItem,@"fontSize":self.sizePicker.titleOfSelectedItem,@"tap5aStyle":SubPopNormalizeTap5aStyle(self.tap5aStyle),@"referenceUndoCaptions":self.referenceUndoRows ?: @[],@"referenceUndoWasOriginal":@(self.referenceUndoWasOriginal),@"referenceMessage":self.referenceMessage ?: @"",@"referenceUndone":@(self.referenceUndone),@"dragged":@(self.resultWasDragged),@"referenceSHA256":self.requestReferenceSHA ?: @"",@"templateID":SubPopTitleTemplateID(self.templatePicker.indexOfSelectedItem),@"titleTemplate":@(self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateTap5a)};
+    NSDictionary *draft=@{@"requestID":self.resultRequestID,@"snapshotSHA":self.requestSHA ?: @"",@"modelID":self.requestModelID ?: @"",@"captions":self.captionRows,@"font":self.fontPicker.titleOfSelectedItem,@"fontSize":self.sizePicker.titleOfSelectedItem,@"tap5aStyle":SubPopNormalizeTap5aStyle(self.tap5aStyle),@"nativeStyle":SubPopNormalizeNativeStyle(self.nativeStyle),@"referenceUndoCaptions":self.referenceUndoRows ?: @[],@"referenceUndoWasOriginal":@(self.referenceUndoWasOriginal),@"referenceMessage":self.referenceMessage ?: @"",@"referenceUndone":@(self.referenceUndone),@"dragged":@(self.resultWasDragged),@"referenceSHA256":self.requestReferenceSHA ?: @"",@"templateID":SubPopTitleTemplateID(self.templatePicker.indexOfSelectedItem),@"titleTemplate":@(self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateTap5a)};
     NSData *data=[NSJSONSerialization dataWithJSONObject:draft options:0 error:nil];[data writeToURL:[[self evidenceDirectory] URLByAppendingPathComponent:[@"draft-" stringByAppendingString:self.resultRequestID]] atomically:YES];
 }
 - (NSDictionary *)selectedModel {
@@ -459,9 +469,19 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
         else if(result==NSAlertSecondButtonReturn)[self chooseTap5aTemplate];
         return;
     }
+    if (self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative) {
+        self.nativePresetStore=self.nativePresetStore ?: [[SubPopNativePresetStore alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];
+        self.nativeStyle=self.nativeStyle ?: self.nativePresetStore.defaultStyle;[self syncStyleFontPickers:self.nativeStyle];
+    } else [self syncStyleFontPickers:SubPopNormalizeTap5aStyle(self.tap5aStyle)];
     [self rebuildTitles];
 }
 - (void)styleChanged:(id)sender {
+    if (self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative) {
+        NSMutableDictionary *style=SubPopNormalizeNativeStyle(self.nativeStyle).mutableCopy;
+        style[@"textFont"]=self.fontPicker.titleOfSelectedItem;style[@"textSize"]=@(self.sizePicker.titleOfSelectedItem.doubleValue);
+        if (sender==self.fontPicker) style[@"textFace"]=@"Regular";
+        self.nativeStyle=SubPopNormalizeNativeStyle(style);[self rebuildTitles];return;
+    }
     NSMutableDictionary *style=SubPopNormalizeTap5aStyle(self.tap5aStyle).mutableCopy;
     style[@"textFont"]=self.fontPicker.titleOfSelectedItem;style[@"textSize"]=@(self.sizePicker.titleOfSelectedItem.doubleValue);
     if (sender==self.fontPicker) style[@"textFace"]=@"Regular";
@@ -475,7 +495,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
         if (!doc) return;
         SubPopSetTitleTemplate(doc,self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateTap5a ? self.tap5aURL : nil);
         if ([self usesFileImport]) SubPopApplyTap5aStyle(doc,self.tap5aStyle);
-        if (self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative) SubPopSetNativeSubtitle(doc);
+        if (self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative) {SubPopSetNativeSubtitle(doc);SubPopApplyNativeStyle(doc,self.nativeStyle);}
         else SubPopApplyTitlePosition(doc,self.tap5aStyle);
         NSArray *titles=[doc nodesForXPath:@"/fcpxml/clip/spine/title" error:nil];
         if (titles.count!=self.captionRows.count) return;
@@ -484,7 +504,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
             [title attributeForName:@"name"].stringValue=text;
             NSXMLNode *node=[title nodesForXPath:@"text/text-style" error:nil].firstObject;node.stringValue=text;
             NSXMLElement *style=[title nodesForXPath:@"text-style-def/text-style" error:nil].firstObject;
-            NSMutableDictionary *textStyle=SubPopNormalizeTap5aStyle(self.tap5aStyle).mutableCopy;
+            NSMutableDictionary *textStyle=(self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative ? SubPopNormalizeNativeStyle(self.nativeStyle) : SubPopNormalizeTap5aStyle(self.tap5aStyle)).mutableCopy;
             textStyle[@"textFont"]=self.fontPicker.titleOfSelectedItem;textStyle[@"textSize"]=@(self.sizePicker.titleOfSelectedItem.doubleValue);
             SubPopApplyTextStyle(style,textStyle);
         }
@@ -624,7 +644,8 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
         self.statusDetail.stringValue=[self.statusDetail.stringValue stringByAppendingString:@" 原项目标题未能核对，拖回前请检查是否与旧字幕重叠。"];
     if (hasRows && self.resultTimelineChanged)
         self.statusDetail.stringValue=[self.statusDetail.stringValue stringByAppendingString:@" 当前时间线时长与识别时不同，旧字幕可能错位；请在 FCP 核对时间。"];
-    self.tap5aStyleButton.hidden=![self usesFileImport];self.tap5aStyleButton.enabled=!self.importInProgress;
+    self.tap5aStyleButton.hidden=![self usesFileImport] && self.templatePicker.indexOfSelectedItem!=SubPopTitleTemplateNative;self.tap5aStyleButton.enabled=!self.importInProgress;
+    self.tap5aStyleButton.title=self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative ? @"样式与预设" : @"整批样式";
     self.resultView.enabled=ready && !self.importInProgress && !busy;
     self.resultView.toolTip=fileImport ? @"点击导入到 FCP 浏览器。若出现资源库选择，请选择原项目所在资源库；在本次新建的编号事件中将字幕片段拖到原项目起点上方。每次导入都会保留旧版并新建事件。" : @"按住卡片拖到原项目时间线起点上方，落轨后将片段项分开。";
     [self.resultView setAccessibilityRole:fileImport ? NSAccessibilityButtonRole : NSAccessibilityGroupRole];
@@ -849,7 +870,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
             if (![[self sha256:data] isEqual:response[@"outputs"][name]]) {valid=NO;break;}originals[version]=data;
         }
         if (valid && self.requestReferenceSHA.length && ![response[@"manifest"][@"unreferencedCaptions"] isKindOfClass:NSArray.class]) valid=NO;
-        if (valid && payloads.count==3) { self.snapshotConsumed=YES;self.titlePayloads=payloads;self.resultTimelineChanged=NO; self.resultDate=NSDate.date;self.resultManifest=response[@"manifest"];self.tap5aStyle=SubPopNormalizeTap5aStyle([NSUserDefaults.standardUserDefaults dictionaryForKey:@"tap5aStylePreset"]);NSString *presetFont=self.tap5aStyle[@"textFont"],*presetSize=[self.tap5aStyle[@"textSize"] stringValue];
+        if (valid && payloads.count==3) { self.snapshotConsumed=YES;self.titlePayloads=payloads;self.resultTimelineChanged=NO; self.resultDate=NSDate.date;self.resultManifest=response[@"manifest"];self.nativePresetStore=self.nativePresetStore ?: [[SubPopNativePresetStore alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];self.nativeStyle=self.nativePresetStore.defaultStyle;self.tap5aStyle=SubPopNormalizeTap5aStyle([NSUserDefaults.standardUserDefaults dictionaryForKey:@"tap5aStylePreset"]);NSString *presetFont=self.tap5aStyle[@"textFont"],*presetSize=[self.tap5aStyle[@"textSize"] stringValue];
             if (![self.fontPicker itemWithTitle:presetFont]) [self.fontPicker addItemWithTitle:presetFont];[self.fontPicker selectItemWithTitle:presetFont];
             if (![self.sizePicker itemWithTitle:presetSize]) [self.sizePicker addItemWithTitle:presetSize];[self.sizePicker selectItemWithTitle:presetSize];[self.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];self.resultRequestID=self.requestID;self.captionRows=[NSMutableArray new];for (NSDictionary *row in response[@"manifest"][@"captions"]) [self.captionRows addObject:row.mutableCopy];
             self.referenceUndone=NO;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
@@ -874,6 +895,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
             if (sameDraft && [self referenceRows:draft[@"captions"] matchTimingOf:self.captionRows]) {
                 // Restore only text and presentation onto fresh, validated timing/payloads.
                 self.tap5aStyle=SubPopNormalizeTap5aStyle(draft[@"tap5aStyle"]);
+                self.nativeStyle=SubPopNormalizeNativeStyle(draft[@"nativeStyle"]);
                 SubPopTitleTemplate restoredTemplate=SubPopTitleTemplateFromDraft(draft);
                 if (restoredTemplate!=SubPopTitleTemplateTap5a || [self resolveTap5a]) [self.templatePicker selectItemAtIndex:restoredTemplate];
                 for (NSUInteger i=0;i<self.captionRows.count;i++) { id text=draft[@"captions"][i][@"text"];if ([text isKindOfClass:NSString.class] && [text length]>0 && [text length]<=500) self.captionRows[i][@"text"]=text; }
