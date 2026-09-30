@@ -150,9 +150,8 @@
     NSPopUpButton *source=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(120,54,480,26) pullsDown:NO];[source addItemWithTitle:@"选择已调整好的原生底框字幕…"];
     NSData *xml=self.freshDropURL ? [NSData dataWithContentsOfURL:self.freshDropURL] : nil;
     NSXMLDocument *doc=xml ? [[NSXMLDocument alloc] initWithData:xml options:NSXMLNodeLoadExternalEntitiesNever error:nil] : nil;
-    NSUInteger n=0;for (NSXMLElement *title in SubPopNativeProjectTitles(doc)) {
-        NSString *name=[title attributeForName:@"name"].stringValue ?: @"字幕";if (name.length>32) name=[[name substringToIndex:32] stringByAppendingString:@"…"];
-        [source addItemWithTitle:[NSString stringWithFormat:@"%lu · %@",(unsigned long)++n,name]];source.lastItem.representedObject=title;
+    NSUInteger n=0;for (NSDictionary *entry in SubPopNativeProjectSources(doc)) {
+        [source addItemWithTitle:SubPopNativeSourceLabel(entry,++n)];source.lastItem.representedObject=entry[@"title"];
     }
     source.enabled=n>0;source.target=self;source.action=@selector(readNativeProjectStyle:);[source setAccessibilityLabel:@"读取项目中已有字幕的静态样式"];[settings addSubview:source];
     }

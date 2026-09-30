@@ -156,24 +156,66 @@ static NSDictionary *SubPopNativeStyleFromTitle(NSXMLElement *title) {
     return SubPopNormalizeNativeStyle(s);
 }
 
-// Follow referenced compound clips so a freshly dropped project can read the
-// styles inside a subtitle wrapper as well as individual timeline titles.
-static NSArray<NSXMLElement *> *SubPopNativeProjectTitles(NSXMLDocument *doc) {
-    NSMutableSet *effects=[NSMutableSet new],*visited=[NSMutableSet new];
-    NSMutableDictionary *media=[NSMutableDictionary new];
+// Source labels use the current text runs, never a stale clip name. Whitespace
+// between XML elements is formatting, while spaces inside a run are subtitle text.
+static NSString *SubPopNativeSourceText(NSXMLElement *title) {
+    NSMutableString *text=[NSMutableString new];
+    for (NSXMLElement *element in [title elementsForName:@"text"]) for (NSXMLNode *run in element.children) {
+        if ([run.name isEqual:@"text-style"]) [text appendString:run.stringValue ?: @""];
+        else if (run.kind==NSXMLTextKind && [run.stringValue stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length) [text appendString:run.stringValue];
+    }
+    NSString *value=[[text componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] componentsJoinedByString:@" "];
+    value=[value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    while ([value containsString:@"  "]) value=[value stringByReplacingOccurrencesOfString:@"  " withString:@" "];
+    return value.length ? value : ([title attributeForName:@"name"].stringValue ?: @"空字幕");
+}
+static double SubPopNativeSourceSeconds(NSString *value) {
+    if (!value.length) return 0;
+    NSString *s=[value hasSuffix:@"s"] ? [value substringToIndex:value.length-1] : value;
+    NSArray *parts=[s componentsSeparatedByString:@"/"];if (parts.count>2) return NAN;
+    double n=0,d=1;NSScanner *scan=[NSScanner scannerWithString:parts[0]];
+    if (![scan scanDouble:&n] || !scan.isAtEnd) return NAN;
+    if (parts.count==2) {scan=[NSScanner scannerWithString:parts[1]];if (![scan scanDouble:&d] || !scan.isAtEnd || d==0) return NAN;}
+    return n/d;
+}
+static NSString *SubPopNativeSourceTime(double seconds) {
+    if (!isfinite(seconds) || seconds < -1e-6 || seconds>360000) return @"时间待核对";
+    long long ms=llround(MAX(0,seconds)*1000),minutes=ms/60000;
+    if (minutes>=60) return [NSString stringWithFormat:@"%02lld:%02lld:%02lld.%03lld",minutes/60,minutes%60,(ms/1000)%60,ms%1000];
+    return [NSString stringWithFormat:@"%02lld:%02lld.%03lld",minutes,(ms/1000)%60,ms%1000];
+}
+// Carry each container's source clock into project-relative time. Referenced
+// compounds can occur more than once; cycle protection is scoped to the path.
+// Retime contexts remain selectable for style, without claiming a precise time.
+static NSArray<NSDictionary *> *SubPopNativeProjectSources(NSXMLDocument *doc) {
+    NSMutableSet *effects=[NSMutableSet new];NSMutableDictionary *media=[NSMutableDictionary new];
     for (NSXMLElement *e in [doc nodesForXPath:@"/fcpxml/resources/effect" error:nil]) {
         NSString *identifier=[e attributeForName:@"id"].stringValue;
         if (identifier.length && [[e attributeForName:@"uid"].stringValue isEqual:SubPopNativeSubtitleUID]) [effects addObject:identifier];
     }
     for (NSXMLElement *m in [doc nodesForXPath:@"/fcpxml/resources/media" error:nil]) {NSString *identifier=[m attributeForName:@"id"].stringValue;if (identifier.length) media[identifier]=m;}
-    NSMutableArray *queue=[[doc nodesForXPath:@"//project/sequence" error:nil] mutableCopy] ?: [NSMutableArray new],*result=[NSMutableArray new];
-    for (NSUInteger i=0;i<queue.count;i++) {
-        NSXMLElement *node=queue[i];NSString *ref=[node attributeForName:@"ref"].stringValue;
-        if ([node.name isEqual:@"title"] && [effects containsObject:ref]) [result addObject:node];
-        if ([node.name isEqual:@"ref-clip"] && media[ref] && ![visited containsObject:ref]) {[visited addObject:ref];[queue addObject:media[ref]];}
-        for (NSXMLNode *child in node.children) if (child.kind==NSXMLElementKind) [queue addObject:child];
-    }
-    return result;
+    NSMutableArray *result=[NSMutableArray new];__block NSUInteger budget=5000;
+    __block __weak void (^visit)(NSXMLElement *,double,NSSet *,NSUInteger);
+    void (^walk)(NSXMLElement *,double,NSSet *,NSUInteger)=^(NSXMLElement *node,double base,NSSet *path,NSUInteger depth) {
+        if (depth>64 || !budget) return;--budget;
+        NSString *ref=[node attributeForName:@"ref"].stringValue;
+        double offset=SubPopNativeSourceSeconds([node attributeForName:@"offset"].stringValue);
+        if ([node.name isEqual:@"title"] && [effects containsObject:ref]) [result addObject:@{@"title":node,@"seconds":@(base+offset)}];
+        BOOL timed=[node attributeForName:@"offset"] || [node attributeForName:@"start"];
+        double childBase=timed ? base+offset-SubPopNativeSourceSeconds([node attributeForName:@"start"].stringValue) : base;
+        if ([node elementsForName:@"timeMap"].count) childBase=NAN;
+        for (NSXMLElement *rate in [node elementsForName:@"conform-rate"]) if (![[rate attributeForName:@"scaleEnabled"].stringValue isEqual:@"0"]) childBase=NAN;
+        if ([node.name isEqual:@"ref-clip"] && media[ref] && ![path containsObject:ref]) visit(media[ref],childBase,[path setByAddingObject:ref],depth+1);
+        for (NSXMLNode *child in node.children) if (child.kind==NSXMLElementKind && ![@[@"param",@"text",@"text-style-def",@"timeMap",@"conform-rate"] containsObject:child.name]) visit((NSXMLElement *)child,childBase,path,depth+1);
+    };
+    visit=walk;
+    for (NSXMLElement *sequence in [doc nodesForXPath:@"//project/sequence" error:nil]) walk(sequence,-SubPopNativeSourceSeconds([sequence attributeForName:@"tcStart"].stringValue),[NSSet set],0);
+    visit=nil;return result;
+}
+static NSString *SubPopNativeSourceLabel(NSDictionary *source,NSUInteger index) {
+    NSString *text=SubPopNativeSourceText(source[@"title"]);
+    if (text.length>32) {NSRange range=[text rangeOfComposedCharacterSequencesForRange:NSMakeRange(0,32)];text=[[text substringWithRange:range] stringByAppendingString:@"…"];}
+    return [NSString stringWithFormat:@"%lu · %@ · %@",(unsigned long)index,SubPopNativeSourceTime([source[@"seconds"] doubleValue]),text];
 }
 
 // Plain presets contain only text and effects, independently of box templates.
