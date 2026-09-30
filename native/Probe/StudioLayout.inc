@@ -40,7 +40,7 @@
     [stack addArrangedSubview:self.exportStatus];self.exportStatus.hidden=YES;
     self.templatePicker=[[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];[self.templatePicker addItemsWithTitles:@[@"普通字幕 · 无底框",@"FCP 原生 · 自适应底框",@"Tap5a · 自适应底框"]];[self.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];self.templatePicker.target=self;self.templatePicker.action=@selector(templateChanged:);[self.templatePicker setAccessibilityLabel:@"字幕样式"];
     NSTextField *templateHint=[self label:@"无需重新识别" size:11 weight:NSFontWeightRegular];templateHint.textColor=NSColor.secondaryLabelColor;
-    self.tap5aStyleButton=[self toolbarButton:@"整批样式" symbol:@"slider.horizontal.3" action:@selector(showTap5aStyle:)];
+    self.tap5aStyleButton=[self toolbarButton:@"预览与样式" symbol:@"slider.horizontal.3" action:@selector(showTap5aStyle:)];
     self.templateControls=[NSStackView stackViewWithViews:@[[self label:@"字幕样式" size:11 weight:NSFontWeightMedium],self.templatePicker,self.tap5aStyleButton,[NSView new],templateHint]];self.templateControls.spacing=10;self.templateControls.alignment=NSLayoutAttributeCenterY;[stack addArrangedSubview:self.templateControls];self.templateControls.hidden=YES;
     SubPopDropView *drop=[[SubPopDropView alloc] initWithFrame:NSMakeRect(0,0,600,96)];drop.controller=self;drop.wantsLayer=YES;
     [drop registerForDraggedTypes:@[@"com.apple.finalcutpro.xml.v1-14",@"com.apple.finalcutpro.xml.v1-13",@"com.apple.finalcutpro.xml.v1-12",@"com.apple.finalcutpro.xml",NSPasteboardTypeFileURL]];[drop setAccessibilityElement:YES];[drop setAccessibilityRole:NSAccessibilityGroupRole];[drop setAccessibilityLabel:@"导入项目或整条时间线音频拖放区"];

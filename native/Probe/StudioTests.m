@@ -302,8 +302,11 @@ int main(int argc,const char *argv[]) {
         composite.style=@{@"textColor":@[@1,@0,@0],@"positionX":@120,@"positionY":@360,@"background":@1,@"border":@1,@"backgroundColor":@[@0,@0,@0]};
         NSRect plainShift=SubPopRedPixelBounds([NSBitmapImageRep imageRepWithData:[composite renderLinearPreview].TIFFRepresentation]);
         if (NSIsEmptyRect(plainOrigin) || fabs(plainShift.origin.x-plainOrigin.origin.x-40)>.1 || fabs(plainShift.origin.y-plainOrigin.origin.y+20)>.1 || !NSEqualSizes(plainOrigin.size,plainShift.size)) return 141;
+        for (NSNumber *templateIndex in @[@(SubPopTitleTemplateBasic),@(SubPopTitleTemplateNative),@(SubPopTitleTemplateTap5a)]) {
+            [c.templatePicker selectItemAtIndex:templateIndex.integerValue];[c updateInterface];
+            if(c.tap5aStyleButton.hidden || ![c.tap5aStyleButton.title isEqual:@"预览与样式"]) return 142;
+        }
         [c.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];[c updateInterface];
-        if(c.tap5aStyleButton.hidden || ![c.tap5aStyleButton.title isEqual:@"预览与样式"]) return 142;
         c.titlePayloads=@{@"1.14":[NSData dataWithContentsOfFile:[@(argv[2]) stringByAppendingPathComponent:@"TitleProbe-1.14.fcpxml"]]};
         NSXMLDocument *plainFixture=[[NSXMLDocument alloc] initWithData:c.titlePayloads[@"1.14"] options:NSXMLNodeLoadExternalEntitiesNever error:nil];
         NSUInteger plainCount=[plainFixture nodesForXPath:@"/fcpxml/clip/spine/title" error:nil].count;

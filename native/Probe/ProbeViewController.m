@@ -652,7 +652,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     if (hasRows && self.resultTimelineChanged)
         self.statusDetail.stringValue=[self.statusDetail.stringValue stringByAppendingString:@" 当前时间线时长与识别时不同，旧字幕可能错位；请在 FCP 核对时间。"];
     self.tap5aStyleButton.hidden=NO;self.tap5aStyleButton.enabled=!self.importInProgress;
-    self.tap5aStyleButton.title=self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative ? @"样式与预设" : ([self usesFileImport] ? @"整批样式" : @"预览与样式");
+    self.tap5aStyleButton.title=@"预览与样式";
     self.resultView.enabled=ready && !self.importInProgress && !busy;
     self.resultView.toolTip=fileImport ? @"点击导入到 FCP 浏览器。若出现资源库选择，请选择原项目所在资源库；在本次新建的编号事件中将字幕片段拖到原项目起点上方。每次导入都会保留旧版并新建事件。" : @"按住卡片拖到原项目时间线起点上方，落轨后将片段项分开。";
     [self.resultView setAccessibilityRole:fileImport ? NSAccessibilityButtonRole : NSAccessibilityGroupRole];
