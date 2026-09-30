@@ -35,7 +35,7 @@ static double SubPopTextEditorNumber(NSDictionary *style,NSString *key) {
 static NSArray *SubPopEffectFields(void) {
     return @[
         @[@"outlineEnabled",@"启用文字外框",@0,@0,@1],@[@"outlineColor",@"外框颜色",@[@0,@0,@0],@0,@1],@[@"outlineWidth",@"外框宽度",@2,@0,@20],@[@"outlineOpacity",@"外框不透明度 %",@100,@0,@100],
-        @[@"glowEnabled",@"启用光晕",@0,@0,@1],@[@"glowOpacity",@"光晕不透明度 %",@70,@0,@100],@[@"glowRadius",@"光晕半径",@6,@0,@100],@[@"glowBlur",@"光晕模糊",@8,@0,@100],
+        @[@"glowEnabled",@"启用光晕",@0,@0,@1],@[@"glowColor",@"光晕颜色",@[@1,@0.878431,@0.262745],@0,@1],@[@"glowOpacity",@"光晕不透明度 %",@70,@0,@100],@[@"glowRadius",@"光晕半径",@6,@0,@100],@[@"glowBlur",@"光晕模糊",@8,@0,@100],
         @[@"shadowEnabled",@"启用投影",@0,@0,@1],@[@"shadowColor",@"投影颜色",@[@0,@0,@0],@0,@1],@[@"shadowOpacity",@"投影不透明度 %",@75,@0,@100],@[@"shadowBlur",@"投影模糊",@4,@0,@100],@[@"shadowDistance",@"投影距离",@5,@0,@100],@[@"shadowAngle",@"投影角度 °",@315,@0,@360]
     ];
 }
@@ -93,16 +93,34 @@ static NSDictionary *SubPopNormalizeTap5aStyle(id input) {
     result[@"textFont"]=family;result[@"textFace"]=face;
     return result;
 }
+// Motion text-style paths differ by title template. Keep glow separate from
+// the generic FCPXML text-style attributes used by outline and shadow.
+static NSString *const SubPopBasicGlowKey=@"9999/999166631/999166633/5/999166635/38";
+static NSString *const SubPopNativeGlowKey=@"9999/3336674837/3336674846/5/3336674848/38";
+static NSString *const SubPopTap5aGlowKey=@"9999/1825821564/10045/10047/5/10049/38";
+static void SubPopApplyTitleGlow(NSXMLDocument *doc,NSDictionary *input,NSString *base) {
+    NSDictionary *s=SubPopNormalizeTap5aStyle(input);NSArray *color=s[@"glowColor"];
+    BOOL enabled=[s[@"glowEnabled"] boolValue];
+    NSDictionary *values=@{@"":@(enabled),@"/39":@0,@"/40":[NSString stringWithFormat:@"%.9g %.9g %.9g",[color[0] doubleValue],[color[1] doubleValue],[color[2] doubleValue]],@"/43":@(enabled ? [s[@"glowOpacity"] doubleValue]/100 : 0),@"/45":s[@"glowRadius"],@"/77":[NSString stringWithFormat:@"%@ %@",s[@"glowBlur"],s[@"glowBlur"]]};
+    for (NSXMLElement *title in [doc nodesForXPath:@"/fcpxml/clip/spine/title" error:nil]) {
+        for (NSXMLElement *old in [title elementsForName:@"param"]) {
+            NSString *key=[old attributeForName:@"key"].stringValue;
+            if ([key isEqual:base] || [key hasPrefix:[base stringByAppendingString:@"/"]]) [old detach];
+        }
+        // Defaults already have glow disabled; avoid adding invisible parameters.
+        if (!enabled) continue;
+        for (NSString *suffix in values) {
+            NSXMLElement *param=[NSXMLElement elementWithName:@"param"];
+            [param addAttribute:[NSXMLNode attributeWithName:@"name" stringValue:@"Glow"]];
+            [param addAttribute:[NSXMLNode attributeWithName:@"key" stringValue:[base stringByAppendingString:suffix]]];
+            [param addAttribute:[NSXMLNode attributeWithName:@"value" stringValue:[values[suffix] description]]];[title insertChild:param atIndex:0];
+        }
+    }
+}
 static void SubPopApplyTap5aStyle(NSXMLDocument *doc, NSDictionary *input) {
     NSDictionary *style=SubPopNormalizeTap5aStyle(input);
+    SubPopApplyTitleGlow(doc,style,SubPopTap5aGlowKey);
     for (NSXMLElement *title in [doc nodesForXPath:@"/fcpxml/clip/spine/title" error:nil]) {
-        NSDictionary *glow=@{@"":@([style[@"glowEnabled"] boolValue]),@"/43":@([style[@"glowEnabled"] boolValue] ? [style[@"glowOpacity"] doubleValue]/100 : 0),@"/45":style[@"glowRadius"],@"/77":[NSString stringWithFormat:@"%@ %@",style[@"glowBlur"],style[@"glowBlur"]]};
-        for (NSString *suffix in glow) {
-            NSString *key=[@"9999/1825821564/10045/10047/5/10049/38" stringByAppendingString:suffix];
-            for (NSXMLElement *old in [title elementsForName:@"param"]) if ([[old attributeForName:@"key"].stringValue isEqual:key]) [old detach];
-            NSXMLElement *param=[NSXMLElement elementWithName:@"param"];[param addAttribute:[NSXMLNode attributeWithName:@"name" stringValue:@"Glow"]];[param addAttribute:[NSXMLNode attributeWithName:@"key" stringValue:key]];[param addAttribute:[NSXMLNode attributeWithName:@"value" stringValue:[glow[suffix] description]]];[title insertChild:param atIndex:0];
-        }
-
         for (NSArray *field in SubPopTap5aFields()) {
             NSString *key=field[0], *path=field[6];id value=style[key];NSString *encoded;
             if ([value isKindOfClass:NSArray.class]) encoded=[NSString stringWithFormat:@"%.9g %.9g %.9g",[value[0] doubleValue],[value[1] doubleValue],[value[2] doubleValue]];

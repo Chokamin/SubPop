@@ -101,6 +101,22 @@
 - (void)tap5aPresetChanged:(NSPopUpButton *)sender {
     [self fillTap5aStyleControls:sender.indexOfSelectedItem==1 ? [NSUserDefaults.standardUserDefaults dictionaryForKey:@"tap5aStylePreset"] : nil];
 }
+- (void)addTextEffectControlsToView:(NSView *)container width:(CGFloat)width {
+    NSArray *fields=SubPopEffectFields();CGFloat columnWidth=(width-24)/3;
+    for (NSUInteger i=0;i<fields.count;i++) {
+        NSArray *field=fields[i];NSString *key=field[0];
+        NSUInteger column=i<4 ? 0 : (i<9 ? 1 : 2),row=i-(column==0 ? 0 : (column==1 ? 4 : 9));
+        CGFloat x=12+column*columnWidth,y=235-row*36,labelWidth=columnWidth-70;
+        SubPopResetLabel *label=[[SubPopResetLabel alloc] initWithFrame:NSMakeRect(x,y,labelWidth,24)];label.title=field[1];label.bordered=NO;label.alignment=NSTextAlignmentLeft;label.font=[NSFont systemFontOfSize:12];label.target=label;label.action=@selector(resetClick:);[container addSubview:label];
+        NSControl *control;
+        if ([field[2] isKindOfClass:NSArray.class]) control=[[NSColorWell alloc] initWithFrame:NSMakeRect(x+labelWidth+2,y,60,24)];
+        else if ([key hasSuffix:@"Enabled"]) {NSButton *button=[NSButton checkboxWithTitle:@"" target:nil action:nil];button.frame=NSMakeRect(x+labelWidth+2,y,30,24);control=button;}
+        else {SubPopNumberField *number=[[SubPopNumberField alloc] initWithFrame:NSMakeRect(x+labelWidth+2,y,60,24)];number.minimumValue=[field[3] doubleValue];number.maximumValue=[field[4] doubleValue];number.delegate=self;number.toolTip=[NSString stringWithFormat:@"范围 %@–%@；左右拖动调整，Shift 精调；点击输入数字",field[3],field[4]];label.numberField=number;label.defaultValue=[field[2] doubleValue];control=number;}
+        control.target=self;control.action=@selector(tap5aPreviewChanged:);[control setAccessibilityLabel:field[1]];[container addSubview:control];self.tap5aStyleControls[key]=control;
+    }
+    NSTextField *note=[NSTextField wrappingLabelWithString:@"外框描绘文字轮廓，投影和光晕分别调整。预览为静态效果示意，最终以 FCP 为准。"];
+    note.frame=NSMakeRect(12,0,width-36,38);note.font=[NSFont systemFontOfSize:11];note.textColor=NSColor.secondaryLabelColor;[container addSubview:note];
+}
 - (void)showTap5aStyle:(id)sender {
     if (self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative) {[self showNativeStyle:sender];return;}
     if (!self.captionRows.count || self.importInProgress || self.tap5aStyleControls) return;
@@ -124,7 +140,7 @@
     NSTabViewItem *textTab=[[NSTabViewItem alloc] initWithIdentifier:@"text"];textTab.label=@"文字";
     NSTabViewItem *boxTab=[[NSTabViewItem alloc] initWithIdentifier:@"box"];boxTab.label=@"底框与留白";
     NSTabViewItem *effectsTab=[[NSTabViewItem alloc] initWithIdentifier:@"effects"];effectsTab.label=@"文字效果";
-    [tabs addTabViewItem:textTab];if (!basic) {[tabs addTabViewItem:effectsTab];[tabs addTabViewItem:boxTab];}[content addSubview:tabs];
+    [tabs addTabViewItem:textTab];[tabs addTabViewItem:effectsTab];if (!basic) [tabs addTabViewItem:boxTab];[content addSubview:tabs];
     for (NSUInteger i=0;i<2;i++) {
         NSString *key=i==0 ? @"textFont" : @"textFace";
         NSTextField *label=[self label:i==0 ? @"字体" : @"字形 / 粗细" size:12 weight:NSFontWeightRegular];label.frame=NSMakeRect(12,230-i*36,130,24);[textTab.view addSubview:label];
@@ -139,9 +155,10 @@
         }
         popup.target=self;popup.action=i==0 ? @selector(textFamilyChanged:) : @selector(tap5aPreviewChanged:);[popup setAccessibilityLabel:label.stringValue];[textTab.view addSubview:popup];self.tap5aStyleControls[key]=popup;
     }
-    NSArray *fields=[[SubPopTap5aFields() arrayByAddingObjectsFromArray:SubPopTextEditorFields()] arrayByAddingObjectsFromArray:SubPopEffectFields()];
+    [self addTextEffectControlsToView:effectsTab.view width:560];
+    NSArray *fields=[SubPopTap5aFields() arrayByAddingObjectsFromArray:SubPopTextEditorFields()];
     for (NSUInteger i=0;i<fields.count;i++) {
-        if (basic && (i<13 || i>=19)) continue;
+        if (basic && i<13) continue;
         NSArray *field=fields[i];NSString *key=field[0];BOOL right=i>=9;NSUInteger row=right ? i-9 : i;
         BOOL typography=i>=13;CGFloat x=typography ? 12 : (right ? 290 : 12),y=typography ? 155-(i-13)*34 : 238-row*27;
         BOOL effect=i>=19;NSUInteger effectIndex=effect ? i-19 : 0;
@@ -157,8 +174,6 @@
         if ([control isKindOfClass:SubPopNumberField.class]) {label.numberField=(SubPopNumberField *)control;label.defaultValue=[field[2] doubleValue];label.toolTip=[NSString stringWithFormat:@"双击恢复默认值 %@",field[2]];}
         control.target=self;control.action=@selector(tap5aPreviewChanged:);[control setAccessibilityLabel:field[1]];[container addSubview:control];self.tap5aStyleControls[key]=control;
     }
-    NSTextField *effectNote=[NSTextField wrappingLabelWithString:@"外框作用于文字轮廓，与底框边框独立。光晕沿用 Tap5a 的暖黄色；预览为效果示意。"];
-    effectNote.frame=NSMakeRect(12,6,510,34);effectNote.font=[NSFont systemFontOfSize:11];effectNote.textColor=NSColor.secondaryLabelColor;[effectsTab.view addSubview:effectNote];
     NSTextField *textNote=[NSTextField wrappingLabelWithString:@"数值左右拖动，Shift 精调，点击输入；双击标签恢复默认。X 右正，Y 上正。\n行间距仅影响多行字幕；字距使用与 FCP 相同的字号百分比。"];
     textNote.frame=NSMakeRect(12,0,510,44);textNote.font=[NSFont systemFontOfSize:11];textNote.textColor=NSColor.secondaryLabelColor;[textTab.view addSubview:textNote];
     NSTextField *note=[NSTextField wrappingLabelWithString:@"留白与圆角使用 Tap5a 参数单位。\n颜色的透明程度由“不透明度”控制。\n保存预设会覆盖“我的预设”，并用于下一次识别。"];

@@ -20,7 +20,7 @@ int main(int argc,const char *argv[]) {
         NSUserDefaults *defaults=[[NSUserDefaults alloc] initWithSuiteName:suite];
         SubPopNativePresetStore *store=[[SubPopNativePresetStore alloc] initWithDefaults:defaults];
         check(store.presets.count==0 && !store.defaultID.length,@"first installation has no saved presets");
-        NSDictionary *style=SubPopNormalizeNativeStyle(@{@"textFont":@"Helvetica",@"textFace":@"Bold",@"textSize":@72,@"kerning":@8.64,@"opacity":@95,@"roundness":@20,@"boxHeight":@-8,@"boxWidth":@15,@"positionX":@-300,@"positionY":@200,@"textPositionX":@37,@"textPositionY":@-125.457,@"textPositionZ":@12,@"animationStyle":@4,@"animateBy":@2,@"fillColor":@[@1,@0.5,@0],@"verticalSafe":@1});
+        NSDictionary *style=SubPopNormalizeNativeStyle(@{@"textFont":@"Helvetica",@"textFace":@"Bold",@"textSize":@72,@"kerning":@8.64,@"opacity":@95,@"roundness":@20,@"boxHeight":@-8,@"boxWidth":@15,@"positionX":@-300,@"positionY":@200,@"textPositionX":@37,@"textPositionY":@-125.457,@"textPositionZ":@12,@"outlineEnabled":@1,@"outlineWidth":@3,@"outlineColor":@[@1,@0,@0],@"shadowEnabled":@1,@"shadowBlur":@7,@"shadowDistance":@8,@"shadowAngle":@120,@"glowEnabled":@1,@"glowColor":@[@0,@1,@0],@"glowRadius":@12,@"glowBlur":@9,@"glowOpacity":@65,@"animationStyle":@4,@"animateBy":@2,@"fillColor":@[@1,@0.5,@0],@"verticalSafe":@1});
         NSString *first=[store saveStyle:style name:@"黑底白字"];
         NSString *second=[store saveStyle:@{@"opacity":@50} name:@"浅底框"];
         [store setDefaultID:first];
@@ -39,7 +39,8 @@ int main(int argc,const char *argv[]) {
         NSString *offset=[title attributeForName:@"offset"].stringValue,*duration=[title attributeForName:@"duration"].stringValue;
         NSString *caption=[title nodesForXPath:@"text" error:nil].firstObject.XMLString;
         SubPopSetNativeSubtitle(doc);SubPopApplyNativeStyle(doc,style);SubPopApplyNativeStyle(doc,style);
-        check([title elementsForName:@"param"].count==12,@"idempotent published parameters and text position");
+        check([title elementsForName:@"param"].count==18,@"idempotent published parameters and text position");
+        check([title nodesForXPath:@"param[@key='9999/3336674837/3336674846/5/3336674848/38/40'][@value='0 1 0']" error:nil].count==1 && [title nodesForXPath:@"param[@key='9999/3336674837/3336674846/5/3336674848/38/39'][@value='0']" error:nil].count==1,@"FCP verified glow Color 40 and Fill 39 keys");
         SubPopApplyTextStyle([title nodesForXPath:@"text-style-def/text-style" error:nil].firstObject,style);
         check([SubPopNativeStyleFromTitle(title) isEqual:style],@"published values and text style round-trip");
         NSXMLElement *position=[title nodesForXPath:@"param[@name='Position']" error:nil].firstObject;
@@ -78,7 +79,7 @@ int main(int argc,const char *argv[]) {
         NSWindow *window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,840,850) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];window.contentView=c.view;[window orderFront:nil];
         NSDictionary *before=c.titlePayloads.copy,*oldStyle=c.nativeStyle.copy;
         [c showTap5aStyle:nil];spin();
-        check(c.editingNativeStyle && c.tap5aStyleControls.count==20 && window.attachedSheet!=nil,@"native editor opens with all supported controls");
+        check(c.editingNativeStyle && c.tap5aStyleControls.count==35 && window.attachedSheet!=nil,@"native editor opens with all supported controls");
         [c fillNativeStyleControls:style];check([[c currentTap5aStyleValues] isEqual:style],@"editor preserves all published units including negative height and animation tags");
         check(fabs([c.tap5aStyleControls[@"kerning"] doubleValue]-12)<1e-9,@"legacy point-based preset displays FCP tracking percentage");
         [c controlTextDidEndEditing:[NSNotification notificationWithName:NSControlTextDidEndEditingNotification object:c.tap5aStyleControls[@"kerning"]]];
@@ -101,6 +102,7 @@ int main(int argc,const char *argv[]) {
         check(!c.editingNativeStyle && !c.tap5aStyleControls && !c.tap5aPreview && [c.nativeStyle isEqual:oldStyle] && [c.titlePayloads isEqual:before],@"cancel leaves current captions and style untouched and cleans preview resources");
         [c showNativeStyle:nil];[c.nativePresetPicker selectItemAtIndex:2];[c nativePresetChanged:c.nativePresetPicker];
         [window endSheet:window.attachedSheet returnCode:NSAlertFirstButtonReturn];spin();
+        if (![c.nativeStyle isEqual:style] || [c.titlePayloads isEqual:before]) NSLog(@"Native apply: style=%@ expected=%@ unchanged=%d",c.nativeStyle,style,[c.titlePayloads isEqual:before]);
         check([c.nativeStyle isEqual:style] && ![c.titlePayloads isEqual:before],@"apply loads saved native style onto current captions");
         NSXMLDocument *applied=[[NSXMLDocument alloc] initWithData:c.titlePayloads[@"1.14"] options:0 error:nil];
         check([[applied nodesForXPath:@"//title/param[@name='Background Height']/@value" error:nil].firstObject.stringValue isEqual:@"0.46"],@"applied payload contains native published height");

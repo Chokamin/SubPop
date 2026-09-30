@@ -71,9 +71,9 @@
     NSXMLElement *title=sender.selectedItem.representedObject;
     if (![title isKindOfClass:NSXMLElement.class]) return;
     NSDictionary *style=SubPopNativeStyleFromTitle(title);
-    if (!style) {self.nativePresetNotice.stringValue=@"这条字幕含参数关键帧或无法读取的位置，无法保存为静态样式；请选择其他字幕。";return;}
+    if (!style) {self.nativePresetNotice.stringValue=@"这条字幕含参数关键帧或无法读取的文字效果／位置，无法保存为静态样式；请选择其他字幕。";return;}
     [self.nativePresetPicker selectItemAtIndex:0];self.nativePresetName.stringValue=@"";[self fillNativeStyleControls:style];
-    self.nativePresetNotice.stringValue=@"已读取静态字体、文字位置及底框参数。输入名称后可保存预设。";
+    self.nativePresetNotice.stringValue=@"已读取静态字体、文字效果、文字位置及底框参数。输入名称后可保存预设。";
 }
 - (void)showNativeStyle:(id)sender {
     if (self.importInProgress || self.tap5aStyleControls || !self.captionRows.count) return;
@@ -103,8 +103,9 @@
         if (i==2) self.nativePresetDeleteButton=button;
     }
     NSTabView *tabs=[[NSTabView alloc] initWithFrame:NSMakeRect(0,91,600,303)];
-    NSMutableArray *tabItems=[NSMutableArray new];for (NSString *name in @[@"文字",@"底框与位置",@"动画"]) {NSTabViewItem *item=[[NSTabViewItem alloc] initWithIdentifier:name];item.label=name;[tabs addTabViewItem:item];[tabItems addObject:item];}[settings addSubview:tabs];
-    NSView *textTab=[tabItems[0] view],*boxTab=[tabItems[1] view],*animationTab=[tabItems[2] view];
+    NSMutableArray *tabItems=[NSMutableArray new];for (NSString *name in @[@"文字",@"文字效果",@"底框与位置",@"动画"]) {NSTabViewItem *item=[[NSTabViewItem alloc] initWithIdentifier:name];item.label=name;[tabs addTabViewItem:item];[tabItems addObject:item];}[settings addSubview:tabs];
+    NSView *textTab=[tabItems[0] view],*boxTab=[tabItems[2] view],*animationTab=[tabItems[3] view];
+    [self addTextEffectControlsToView:[tabItems[1] view] width:600];
     for (NSUInteger i=0;i<2;i++) {
         NSString *key=i ? @"textFace" : @"textFont";
         label=[self label:i ? @"字形 / 粗细" : @"字体" size:12 weight:NSFontWeightRegular];label.frame=NSMakeRect(12,233-i*35,135,24);[textTab addSubview:label];

@@ -61,6 +61,7 @@ static double SubPopNativeDecodeNumber(NSString *key,double value) {
 }
 static void SubPopApplyNativeStyle(NSXMLDocument *doc,NSDictionary *input) {
     NSDictionary *s=SubPopNormalizeNativeStyle(input);
+    SubPopApplyTitleGlow(doc,s,SubPopNativeGlowKey);
     for (NSXMLElement *title in [doc nodesForXPath:@"/fcpxml/clip/spine/title" error:nil]) {
         for (NSXMLElement *old in [title elementsForName:@"param"]) if ([[old attributeForName:@"key"].stringValue isEqual:SubPopNativeTextPositionKey]) [old detach];
         NSXMLElement *position=[NSXMLElement elementWithName:@"param"];
@@ -102,6 +103,39 @@ static NSDictionary *SubPopNativeStyleFromTitle(NSXMLElement *title) {
     }
     NSString *rgb=[text attributeForName:@"fontColor"].stringValue;
     if (rgb) {NSScanner *scan=[NSScanner scannerWithString:rgb];double a,b,c;if ([scan scanDouble:&a] && [scan scanDouble:&b] && [scan scanDouble:&c]) s[@"textColor"]=@[@(a),@(b),@(c)];}
+    // Outline/shadow use standard text attributes; glow uses this template's
+    // Motion style path. Read static values so named presets include effects.
+    NSArray *(^numbers)(NSString *,NSUInteger,NSUInteger)=^NSArray *(NSString *value,NSUInteger minimum,NSUInteger maximum) {
+        if (!value.length) return nil;NSScanner *scan=[NSScanner scannerWithString:value];NSMutableArray *parts=[NSMutableArray new];
+        while (!scan.isAtEnd) {double n;if (![scan scanDouble:&n] || !isfinite(n) || parts.count==maximum) return nil;[parts addObject:@(n)];}
+        return parts.count>=minimum ? parts : nil;
+    };
+    for (NSString *prefix in @[@"outline",@"shadow"]) {
+        NSString *attribute=[prefix isEqual:@"outline"] ? @"strokeColor" : @"shadowColor";
+        NSString *value=[text attributeForName:attribute].stringValue;
+        if (!value) continue;NSArray *c=numbers(value,4,4);if (!c) return nil;
+        s[[prefix stringByAppendingString:@"Enabled"]]=@YES;s[[prefix stringByAppendingString:@"Color"]]=[c subarrayWithRange:NSMakeRange(0,3)];s[[prefix stringByAppendingString:@"Opacity"]]=@([c[3] doubleValue]*100);
+    }
+    NSString *stroke=[text attributeForName:@"strokeWidth"].stringValue;
+    if (stroke) {NSArray *n=numbers(stroke,1,1);if (!n) return nil;s[@"outlineWidth"]=@(fabs([n[0] doubleValue]));}
+    NSString *shadow=[text attributeForName:@"shadowOffset"].stringValue;
+    if (shadow) {NSArray *n=numbers(shadow,2,2);if (!n) return nil;s[@"shadowDistance"]=n[0];s[@"shadowAngle"]=n[1];}
+    shadow=[text attributeForName:@"shadowBlurRadius"].stringValue;
+    if (shadow) {NSArray *n=numbers(shadow,1,1);if (!n) return nil;s[@"shadowBlur"]=@([n[0] doubleValue]/2);}
+    for (NSXMLElement *param in [title elementsForName:@"param"]) {
+        NSString *key=[param attributeForName:@"key"].stringValue;
+        if (![key isEqual:SubPopNativeGlowKey] && ![key hasPrefix:[SubPopNativeGlowKey stringByAppendingString:@"/"]]) continue;
+        if ([param elementsForName:@"keyframeAnimation"].count) return nil;
+        NSString *suffix=[key substringFromIndex:SubPopNativeGlowKey.length];
+        if (![@[@"",@"/40",@"/39",@"/43",@"/45",@"/77"] containsObject:suffix]) continue;
+        NSArray *n=numbers([param attributeForName:@"value"].stringValue,[suffix isEqual:@"/40"] ? 3 : ([suffix isEqual:@"/77"] ? 2 : 1),[suffix isEqual:@"/40"] ? 4 : ([suffix isEqual:@"/77"] ? 2 : 1));if (!n) return nil;
+        if ([suffix isEqual:@""]) s[@"glowEnabled"]=@([n[0] boolValue]);
+        else if ([suffix isEqual:@"/39"]) {if ([n[0] doubleValue]!=0) return nil;}
+        else if ([suffix isEqual:@"/40"]) s[@"glowColor"]=[n subarrayWithRange:NSMakeRange(0,3)];
+        else if ([suffix isEqual:@"/43"]) s[@"glowOpacity"]=@([n[0] doubleValue]*100);
+        else if ([suffix isEqual:@"/45"]) s[@"glowRadius"]=n[0];
+        else {if (fabs([n[0] doubleValue]-[n[1] doubleValue])>1e-9) return nil;s[@"glowBlur"]=n[0];}
+    }
     for (NSXMLElement *param in [title elementsForName:@"param"]) {
         if (![[param attributeForName:@"key"].stringValue isEqual:SubPopNativeTextPositionKey]) continue;
         if ([param elementsForName:@"keyframeAnimation"].count) return nil;

@@ -175,7 +175,7 @@ int main(int argc,const char *argv[]) {
             for (NSUInteger i=0;i<b.count;i++) {
                 NSXMLElement *original=b[i],*imported=importTitles[i];
                 for (NSString *key in @[@"offset",@"start",@"duration",@"ref"]) if (![[original attributeForName:key].stringValue isEqual:[imported attributeForName:key].stringValue]) return 36;
-                if (![[original nodesForXPath:@"text/text-style" error:nil].firstObject.stringValue isEqual:[imported nodesForXPath:@"text/text-style" error:nil].firstObject.stringValue] || [imported elementsForName:@"param"].count!=17) return 37;
+                if (![[original nodesForXPath:@"text/text-style" error:nil].firstObject.stringValue isEqual:[imported nodesForXPath:@"text/text-style" error:nil].firstObject.stringValue] || [imported elementsForName:@"param"].count!=19) return 37;
             }
             [importData writeToFile:[directory stringByAppendingPathComponent:[NSString stringWithFormat:@"Tap5a-Import-%@.fcpxml",v]] atomically:YES];
         }
@@ -187,7 +187,7 @@ int main(int argc,const char *argv[]) {
         [controller.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];[controller rebuildTitles];
         for (NSString *v in basic) {
             NSXMLDocument *after=[[NSXMLDocument alloc] initWithData:controller.titlePayloads[v] options:0 error:nil];
-            if ([after nodesForXPath:@"/fcpxml/resources/effect/@src" error:nil].count || [after nodesForXPath:@"//title/param" error:nil].count || ![[[after nodesForXPath:@"/fcpxml/resources/effect/@uid" error:nil] firstObject].stringValue isEqual:SubPopBasicTitleUID]) return 30;
+            if ([after nodesForXPath:@"/fcpxml/resources/effect/@src" error:nil].count || [after nodesForXPath:@"//title/param" error:nil].count!=controller.captionRows.count*6 || ![[[after nodesForXPath:@"/fcpxml/resources/effect/@uid" error:nil] firstObject].stringValue isEqual:SubPopBasicTitleUID]) return 30;
             NSXMLDocument *exported=[[NSXMLDocument alloc] initWithData:SubPopTitleExportXML(controller.titlePayloads[v],@"测试",4,nil) options:0 error:nil];
             if (![[[exported nodesForXPath:@"/fcpxml/resources/effect/@uid" error:nil] firstObject].stringValue isEqual:SubPopBasicTitleUID]) return 91;
         }

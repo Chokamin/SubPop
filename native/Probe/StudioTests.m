@@ -218,7 +218,7 @@ int main(int argc,const char *argv[]) {
         [c.templatePicker selectItemAtIndex:SubPopTitleTemplateTap5a];c.resultRequestID=@"style-test";[window orderFront:nil];
         if (argc==4) c.freshDropURL=[NSURL fileURLWithPath:@(argv[3])];
         [c showTap5aStyle:nil];
-        if (c.tap5aStyleControls.count!=35 || !window.attachedSheet) return 21;
+        if (c.tap5aStyleControls.count!=36 || !window.attachedSheet) return 21;
         if(c.tap5aPreview.bounds.size.width<360 || c.tap5aPreview.bounds.size.width>640 || fabs(c.tap5aPreview.bounds.size.height/c.tap5aPreview.bounds.size.width-9.0/16)>.001) return 44;
         SubPopNumberField *scrub=c.tap5aStyleControls[@"positionX"];
         scrub.doubleValue=0;
@@ -293,9 +293,9 @@ int main(int argc,const char *argv[]) {
         [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.1]];
         if ([c.tap5aStyle[@"roundness"] doubleValue]!=30) return 27;
         [NSUserDefaults.standardUserDefaults removeObjectForKey:@"tap5aStylePreset"];
-        // A plain title must not draw the shared Tap5a background, border or glow.
+        // Plain titles ignore the shared box/border but can render text effects.
         composite.basicSubtitle=YES;composite.projectWidth=1920;
-        composite.style=@{@"background":@1,@"backgroundColor":@[@1,@0,@0],@"border":@1,@"borderColor":@[@1,@0,@0],@"opacity":@100,@"borderOpacity":@100,@"glowEnabled":@1};
+        composite.style=@{@"background":@1,@"backgroundColor":@[@1,@0,@0],@"border":@1,@"borderColor":@[@1,@0,@0],@"opacity":@100,@"borderOpacity":@100,@"glowEnabled":@0};
         if (!NSIsEmptyRect(SubPopRedPixelBounds([NSBitmapImageRep imageRepWithData:[composite renderLinearPreview].TIFFRepresentation]))) return 140;
         composite.style=@{@"textColor":@[@1,@0,@0],@"positionY":@300,@"background":@0};
         NSRect plainOrigin=SubPopRedPixelBounds([NSBitmapImageRep imageRepWithData:[composite renderLinearPreview].TIFFRepresentation]);
@@ -311,7 +311,7 @@ int main(int argc,const char *argv[]) {
         c.captionRows=[[c.captionRows subarrayWithRange:NSMakeRange(0,plainCount)] mutableCopy];
         NSDictionary *plainBefore=c.titlePayloads,*sharedBefore=c.tap5aStyle;
         [c showTap5aStyle:nil];
-        if(c.tap5aStyleControls.count!=8 || !c.tap5aPreview.basicSubtitle || c.tap5aPreview.nativeSubtitle || c.tap5aStyleControls[@"background"] || !window.attachedSheet) return 143;
+        if(c.tap5aStyleControls.count!=23 || !c.tap5aPreview.basicSubtitle || c.tap5aPreview.nativeSubtitle || c.tap5aStyleControls[@"background"] || !window.attachedSheet) return 143;
         [c.tap5aStyleControls[@"textSize"] setDoubleValue:90];[c tap5aPreviewChanged:nil];
         [c fullscreenPreview:nil];SubPopStylePreview *plainFull=(SubPopStylePreview *)c.tap5aPreview.fullscreenWindow.contentView;
         if(!plainFull.basicSubtitle || plainFull.nativeSubtitle) return 144;
@@ -320,18 +320,24 @@ int main(int argc,const char *argv[]) {
         [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.1]];
         if(c.tap5aPreview || c.tap5aImageGenerator || ![c.titlePayloads isEqual:plainBefore] || ![c.tap5aStyle isEqual:sharedBefore]) return 145;
         [c showTap5aStyle:nil];
+        [c.tap5aStyleControls[@"glowColor"] setColor:[NSColor colorWithSRGBRed:0 green:1 blue:0 alpha:1]];
         [c.tap5aStyleControls[@"textSize"] setDoubleValue:90];[c.tap5aStyleControls[@"kerning"] setDoubleValue:12];
         [c.tap5aStyleControls[@"positionX"] setDoubleValue:120];[c.tap5aStyleControls[@"positionY"] setDoubleValue:-60];[c tap5aPreviewChanged:nil];
         [window endSheet:window.attachedSheet returnCode:NSAlertFirstButtonReturn];
         [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.1]];
-        if(c.tap5aPreview || [c.titlePayloads isEqual:plainBefore] || fabs([c.tap5aStyle[@"kerning"] doubleValue]-10.8)>1e-9 || [c.tap5aStyle[@"top"] doubleValue]!=25 || [c.tap5aStyle[@"roundness"] doubleValue]!=30 || ![c.tap5aStyle[@"glowEnabled"] boolValue] || [NSUserDefaults.standardUserDefaults dictionaryForKey:@"tap5aStylePreset"]) return 146;
+        if(c.tap5aPreview || [c.titlePayloads isEqual:plainBefore] || fabs([c.tap5aStyle[@"kerning"] doubleValue]-10.8)>1e-9 || [c.tap5aStyle[@"top"] doubleValue]!=25 || [c.tap5aStyle[@"roundness"] doubleValue]!=30 || ![c.tap5aStyle[@"glowEnabled"] boolValue] || ![c.tap5aStyle[@"glowColor"] isEqual:@[@0,@1,@0]] || [NSUserDefaults.standardUserDefaults dictionaryForKey:@"tap5aStylePreset"]) return 146;
         NSXMLDocument *plainDoc=[[NSXMLDocument alloc] initWithData:c.titlePayloads[@"1.14"] options:NSXMLNodeLoadExternalEntitiesNever error:nil];
         NSXMLElement *plainText=[plainDoc nodesForXPath:@"//title/text-style-def/text-style" error:nil].firstObject;
         NSXMLElement *plainTransform=[plainDoc nodesForXPath:@"//title/adjust-transform" error:nil].firstObject;
         NSString *plainXML=plainDoc.XMLString;
         double projectHeight=[[plainDoc nodesForXPath:@"//format" error:nil].firstObject attributeForName:@"height"].stringValue.doubleValue;
         NSString *expectedPosition=[NSString stringWithFormat:@"%.12g %.12g",12000/projectHeight,-40-6000/projectHeight];
-        if([[plainText attributeForName:@"fontSize"].stringValue doubleValue]!=90 || fabs([[plainText attributeForName:@"kerning"].stringValue doubleValue]-10.8)>1e-9 || ![[plainTransform attributeForName:@"position"].stringValue isEqual:expectedPosition] || ![plainXML containsString:@"Basic Title"] || [plainXML containsString:@"Tap5a Autosize"] || [plainDoc nodesForXPath:@"//title/param" error:nil].count) return 147;
+        if([[plainText attributeForName:@"fontSize"].stringValue doubleValue]!=90 || fabs([[plainText attributeForName:@"kerning"].stringValue doubleValue]-10.8)>1e-9 || ![[plainTransform attributeForName:@"position"].stringValue isEqual:expectedPosition] || ![plainXML containsString:@"Basic Title"] || [plainXML containsString:@"Tap5a Autosize"] || [plainDoc nodesForXPath:@"//title/param" error:nil].count!=plainCount*6 || [plainDoc nodesForXPath:@"//title/param[@key='9999/999166631/999166633/5/999166635/38'][@value='1']" error:nil].count!=plainCount) return 147;
+        [[plainDoc XMLDataWithOptions:NSXMLNodePrettyPrint] writeToFile:@"/tmp/subpop-plain-effects126.fcpxml" atomically:YES];
+        // Disabling glow removes stale Basic parameters without changing timing.
+        NSString *timing=[plainDoc nodesForXPath:@"//title/@duration" error:nil].firstObject.stringValue;
+        SubPopApplyTitleGlow(plainDoc,@{},SubPopBasicGlowKey);
+        if([plainDoc nodesForXPath:@"//title/param" error:nil].count || ![[plainDoc nodesForXPath:@"//title/@duration" error:nil].firstObject.stringValue isEqual:timing]) return 149;
         puts("Plain subtitle preview: no box/border, project-pixel position, fullscreen, cancel/apply and Basic Title export passed.");
         puts("Studio layout: 422pt first-open content, fixed footer, 580/756/800/1100 widths, large editor, progress, cancellation and waveform start/stop passed.");return 0;
     }

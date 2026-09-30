@@ -496,7 +496,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
         SubPopSetTitleTemplate(doc,self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateTap5a ? self.tap5aURL : nil);
         if ([self usesFileImport]) SubPopApplyTap5aStyle(doc,self.tap5aStyle);
         if (self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative) {SubPopSetNativeSubtitle(doc);SubPopApplyNativeStyle(doc,self.nativeStyle);}
-        else SubPopApplyTitlePosition(doc,self.tap5aStyle);
+        else {SubPopApplyTitlePosition(doc,self.tap5aStyle);if (![self usesFileImport]) SubPopApplyTitleGlow(doc,self.tap5aStyle,SubPopBasicGlowKey);}
         NSArray *titles=[doc nodesForXPath:@"/fcpxml/clip/spine/title" error:nil];
         if (titles.count!=self.captionRows.count) return;
         for (NSUInteger i=0;i<titles.count;i++) {
