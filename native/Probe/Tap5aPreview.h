@@ -147,7 +147,7 @@ static void SubPopDrawPreviewLines(NSArray *lines,NSDictionary *attributes) {
         NSDictionary *attrs=@{NSFontAttributeName:[NSFont systemFontOfSize:12],NSForegroundColorAttributeName:NSColor.secondaryLabelColor};
         [self.placeholder ?: @"正在读取视频画面…" drawInRect:NSInsetRect(self.bounds,16,30) withAttributes:attrs];
     }
-    NSDictionary *s=self.nativeSubtitle ? SubPopNormalizeNativeStyle(self.style) : SubPopNormalizeTap5aStyle(self.style);
+    NSDictionary *s=self.nativeSubtitle ? SubPopNormalizeNativeStyle(self.style) : (self.basicSubtitle ? SubPopNormalizeBasicStyle(self.style) : SubPopNormalizeTap5aStyle(self.style));
     // Basic Title and Tap5a use a 1920x1080 Motion canvas, independent of output resolution.
     // Project-pixel offsets keep their separate scale below.
     CGFloat scale=canvas.size.width/(self.nativeSubtitle ? 3840.0 : 1920.0),fontSize=MAX(1,[s[@"textSize"] doubleValue]*scale);
@@ -162,6 +162,7 @@ static void SubPopDrawPreviewLines(NSArray *lines,NSDictionary *attributes) {
     // The exported title origin is 0,-40 percent of sequence height: its text
     // baseline is 10% above the bottom, including for non-1080p projects.
     NSPoint baseline=NSMakePoint(NSMidX(canvas)+(self.nativeSubtitle ? 0 : [s[@"positionX"] doubleValue]*positionScale),NSMinY(canvas)+canvas.size.height*.10+(self.nativeSubtitle ? 0 : [s[@"positionY"] doubleValue]*positionScale));
+    if (self.basicSubtitle) {baseline.x+=[s[@"textPositionX"] doubleValue]*scale;baseline.y+=[s[@"textPositionY"] doubleValue]*scale;}
     NSRect textRect;NSArray *lines=SubPopPreviewTextLines(text,attrs,baseline,[s[@"lineSpacing"] doubleValue]*scale,scale,canvas.size.width*.86,&textRect);
     if (self.nativeSubtitle) {
         // Apple's native template is a 3840x2160, bottom-aligned paragraph.

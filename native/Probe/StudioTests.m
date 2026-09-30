@@ -315,7 +315,7 @@ int main(int argc,const char *argv[]) {
         NSDictionary *plainBefore=c.titlePayloads,*sharedBefore=c.tap5aStyle;
         [c showTap5aStyle:nil];
         NSDictionary *basicBefore=c.basicStyle;
-        if(c.tap5aStyleControls.count!=23 || !c.tap5aPreview.basicSubtitle || c.tap5aPreview.nativeSubtitle || c.tap5aStyleControls[@"background"] || !window.attachedSheet) return 143;
+        if(c.tap5aStyleControls.count!=26 || !c.tap5aPreview.basicSubtitle || c.tap5aPreview.nativeSubtitle || c.tap5aStyleControls[@"background"] || !window.attachedSheet) return 143;
         [c.tap5aStyleControls[@"textSize"] setDoubleValue:90];[c tap5aPreviewChanged:nil];
         [c fullscreenPreview:nil];SubPopStylePreview *plainFull=(SubPopStylePreview *)c.tap5aPreview.fullscreenWindow.contentView;
         if(!plainFull.basicSubtitle || plainFull.nativeSubtitle) return 144;

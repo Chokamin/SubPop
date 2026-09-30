@@ -131,6 +131,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 @property NSTextField *nativePresetNotice;
 @property NSButton *nativePresetDefaultButton;
 @property NSButton *nativePresetDeleteButton;
+@property NSXMLDocument *styleSourceDocument;
 @property SubPopStylePreview *tap5aPreview;
 @property NSTextField *tap5aPreviewLabel;
 @property NSInteger tap5aPreviewIndex;
@@ -503,7 +504,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
         SubPopSetTitleTemplate(doc,self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateTap5a ? self.tap5aURL : nil);
         if ([self usesFileImport]) SubPopApplyTap5aStyle(doc,self.tap5aStyle);
         if (self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative) {SubPopSetNativeSubtitle(doc);SubPopApplyNativeStyle(doc,self.nativeStyle);}
-        else {NSDictionary *style=[self usesFileImport] ? self.tap5aStyle : self.basicStyle;SubPopApplyTitlePosition(doc,style);if (![self usesFileImport]) SubPopApplyTitleGlow(doc,style,SubPopBasicGlowKey);}
+        else {NSDictionary *style=[self usesFileImport] ? self.tap5aStyle : self.basicStyle;SubPopApplyTitlePosition(doc,style);if (![self usesFileImport]) {SubPopApplyTitleGlow(doc,style,SubPopBasicGlowKey);SubPopApplyBasicTextPosition(doc,style);}}
         NSArray *titles=[doc nodesForXPath:@"/fcpxml/clip/spine/title" error:nil];
         if (titles.count!=self.captionRows.count) return;
         for (NSUInteger i=0;i<titles.count;i++) {

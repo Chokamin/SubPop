@@ -1,6 +1,8 @@
 #import "Tap5aStyle.h"
 
 // Text inspector position is separate from the template's published rig offsets.
+static NSString *const SubPopBasicTextPositionKey=@"9999/999166631/999166633/1/100/101";
+static NSDictionary *SubPopNormalizeBasicStyle(id input);
 static NSString *const SubPopNativeTextPositionKey=@"9999/3336674837/3336674846/1/100/101";
 static NSArray *SubPopNativeTextPositionFields(void) {
     return @[@[@"textPositionX",@"文本位置 X（px）",@0,@-10000,@10000],
@@ -84,7 +86,9 @@ static void SubPopApplyNativeStyle(NSXMLDocument *doc,NSDictionary *input) {
     }
 }
 // Read only supported static settings; never capture caption text or timing.
-static NSDictionary *SubPopNativeStyleFromTitle(NSXMLElement *title) {
+static NSDictionary *SubPopStyleFromTitle(NSXMLElement *title,BOOL basic) {
+    NSString *glowKey=basic ? SubPopBasicGlowKey : SubPopNativeGlowKey;
+    NSString *positionKey=basic ? SubPopBasicTextPositionKey : SubPopNativeTextPositionKey;
     NSMutableDictionary *s=[NSMutableDictionary new];
     NSXMLElement *text=[title nodesForXPath:@"text-style-def/text-style" error:nil].firstObject;
     for (NSString *key in @[@"font",@"fontFace",@"fontSize",@"kerning",@"lineSpacing"]) {
@@ -124,9 +128,9 @@ static NSDictionary *SubPopNativeStyleFromTitle(NSXMLElement *title) {
     if (shadow) {NSArray *n=numbers(shadow,1,1);if (!n) return nil;s[@"shadowBlur"]=@([n[0] doubleValue]/2);}
     for (NSXMLElement *param in [title elementsForName:@"param"]) {
         NSString *key=[param attributeForName:@"key"].stringValue;
-        if (![key isEqual:SubPopNativeGlowKey] && ![key hasPrefix:[SubPopNativeGlowKey stringByAppendingString:@"/"]]) continue;
+        if (![key isEqual:glowKey] && ![key hasPrefix:[glowKey stringByAppendingString:@"/"]]) continue;
         if ([param elementsForName:@"keyframeAnimation"].count) return nil;
-        NSString *suffix=[key substringFromIndex:SubPopNativeGlowKey.length];
+        NSString *suffix=[key substringFromIndex:glowKey.length];
         if (![@[@"",@"/40",@"/39",@"/43",@"/45",@"/77"] containsObject:suffix]) continue;
         NSArray *n=numbers([param attributeForName:@"value"].stringValue,[suffix isEqual:@"/40"] ? 3 : ([suffix isEqual:@"/77"] ? 2 : 1),[suffix isEqual:@"/40"] ? 4 : ([suffix isEqual:@"/77"] ? 2 : 1));if (!n) return nil;
         if ([suffix isEqual:@""]) s[@"glowEnabled"]=@([n[0] boolValue]);
@@ -137,14 +141,14 @@ static NSDictionary *SubPopNativeStyleFromTitle(NSXMLElement *title) {
         else {if (fabs([n[0] doubleValue]-[n[1] doubleValue])>1e-9) return nil;s[@"glowBlur"]=n[0];}
     }
     for (NSXMLElement *param in [title elementsForName:@"param"]) {
-        if (![[param attributeForName:@"key"].stringValue isEqual:SubPopNativeTextPositionKey]) continue;
+        if (![[param attributeForName:@"key"].stringValue isEqual:positionKey]) continue;
         if ([param elementsForName:@"keyframeAnimation"].count) return nil;
         NSScanner *scan=[NSScanner scannerWithString:[param attributeForName:@"value"].stringValue ?: @""];
         double x,y,z=0;
         if (![scan scanDouble:&x] || ![scan scanDouble:&y] || (!scan.isAtEnd && ![scan scanDouble:&z]) || !scan.isAtEnd || !isfinite(x) || !isfinite(y) || !isfinite(z)) return nil;
         s[@"textPositionX"]=@(x);s[@"textPositionY"]=@(y);s[@"textPositionZ"]=@(z);
     }
-    for (NSArray *f in SubPopNativeBoxFields()) for (NSXMLElement *param in [title elementsForName:@"param"]) {
+    if (!basic) for (NSArray *f in SubPopNativeBoxFields()) for (NSXMLElement *param in [title elementsForName:@"param"]) {
         if (![[param attributeForName:@"key"].stringValue isEqual:f[6]]) continue;
         // A keyframed parameter cannot be represented by one preset value.
         if ([param elementsForName:@"keyframeAnimation"].count) return nil;
@@ -153,8 +157,62 @@ static NSDictionary *SubPopNativeStyleFromTitle(NSXMLElement *title) {
         if ([f[2] isKindOfClass:NSArray.class]) {if ([scan scanDouble:&a] && [scan scanDouble:&b] && [scan scanDouble:&c]) s[f[0]]=@[@(a),@(b),@(c)];}
         else if ([scan scanDouble:&a] && isfinite(a)) s[f[0]]=@(SubPopNativeDecodeNumber(f[0],a));
     }
+    if (basic) {
+        // A single preset cannot reproduce mixed text runs, animation or a
+        // transformed plane. Keep text-inspector XYZ separate from video XY.
+        if (!text || [title nodesForXPath:@".//keyframeAnimation" error:nil].count) return nil;
+        NSArray *visibleRuns=[title nodesForXPath:@"text/text-style" error:nil];
+        NSXMLElement *lastRun=visibleRuns.lastObject;
+        for (NSXMLElement *run in [title nodesForXPath:@"text-style-def/text-style | text/text-style[@font]" error:nil]) {
+            // FCP omits tracking on the final glyph: it has no following gap.
+            // Accept only that exact terminal run, never an interior difference.
+            NSString *styleID=[(NSXMLElement *)run.parent attributeForName:@"id"].stringValue;
+            BOOL terminal=[run isEqual:lastRun] || (styleID.length && [[lastRun attributeForName:@"ref"].stringValue isEqual:styleID]);
+            NSUInteger uses=0;for (NSXMLElement *v in visibleRuns) if ([[v attributeForName:@"ref"].stringValue isEqual:styleID]) uses++;
+            NSString *lastText=lastRun.stringValue ?: @"";
+            BOOL omitFinalTracking=terminal && (run==lastRun || uses==1) && lastText.length && NSEqualRanges([lastText rangeOfComposedCharacterSequenceAtIndex:0],NSMakeRange(0,lastText.length)) && ![run attributeForName:@"kerning"];
+            for (NSXMLNode *attr in run.attributes) if (![[text attributeForName:attr.name].stringValue isEqual:attr.stringValue]) return nil;
+            for (NSXMLNode *attr in text.attributes) {
+                if (omitFinalTracking && [attr.name isEqual:@"kerning"]) continue;
+                if (![[run attributeForName:attr.name].stringValue isEqual:attr.stringValue]) return nil;
+            }
+        }
+        for (NSString *attribute in @[@"fontSize",@"kerning",@"lineSpacing"]) {
+            NSString *value=[text attributeForName:attribute].stringValue;
+            if (value && !numbers(value,1,1)) return nil;
+        }
+        NSString *fontColor=[text attributeForName:@"fontColor"].stringValue;
+        NSArray *rgba=fontColor ? numbers(fontColor,3,4) : nil;
+        if (fontColor && (!rgba || (rgba.count==4 && fabs([rgba[3] doubleValue]-1)>1e-9))) return nil;
+        for (NSNumber *component in rgba) if (component.doubleValue<0 || component.doubleValue>1) return nil;
+        for (NSString *attribute in @[@"baseline",@"underline",@"strikethrough"]) {
+            NSString *value=[text attributeForName:attribute].stringValue;
+            if (value && (!numbers(value,1,1) || fabs(value.doubleValue)>1e-9)) return nil;
+        }
+        NSString *alignment=[text attributeForName:@"alignment"].stringValue;
+        if (alignment && ![alignment isEqual:@"center"]) return nil;
+        NSXMLElement *transform=[title elementsForName:@"adjust-transform"].firstObject;
+        for (NSString *attr in @[@"scale",@"anchor",@"rotation"]) {
+            NSString *value=[transform attributeForName:attr].stringValue;if (!value) continue;
+            NSArray *n=numbers(value,[attr isEqual:@"rotation"] ? 1 : 2,[attr isEqual:@"rotation"] ? 1 : 2);
+            double expected=[attr isEqual:@"scale"] ? 1 : 0;if (!n) return nil;
+            for (NSNumber *v in n) if (fabs(v.doubleValue-expected)>1e-9) return nil;
+        }
+        NSArray *xy=[transform attributeForName:@"position"] ? numbers([transform attributeForName:@"position"].stringValue,2,2) : @[@0,@0];if (!xy) return nil;
+        NSXMLElement *owner=title;NSString *formatID=nil;
+        while (owner && !formatID.length) {formatID=[owner attributeForName:@"format"].stringValue;owner=(NSXMLElement *)owner.parent;if (owner.kind!=NSXMLElementKind) break;}
+        double height=0;
+        for (NSXMLElement *format in [title.rootDocument nodesForXPath:@"/fcpxml/resources/format" error:nil]) if ([[format attributeForName:@"id"].stringValue isEqual:formatID]) height=[format attributeForName:@"height"].stringValue.doubleValue;
+        if (!isfinite(height) || height<=0) return nil;
+        s[@"positionX"]=@([xy[0] doubleValue]*height/100);
+        s[@"positionY"]=@(([xy[1] doubleValue]+40)*height/100);
+        for (NSString *key in @[@"positionX",@"positionY",@"textPositionX",@"textPositionY",@"textPositionZ"]) if (fabs([s[key] doubleValue])>10000) return nil;
+        return SubPopNormalizeBasicStyle(s);
+    }
     return SubPopNormalizeNativeStyle(s);
 }
+static NSDictionary *SubPopNativeStyleFromTitle(NSXMLElement *title) {return SubPopStyleFromTitle(title,NO);}
+static NSDictionary *SubPopBasicStyleFromTitle(NSXMLElement *title) {return SubPopStyleFromTitle(title,YES);}
 
 // Source labels use the current text runs, never a stale clip name. Whitespace
 // between XML elements is formatting, while spaces inside a run are subtitle text.
@@ -187,11 +245,11 @@ static NSString *SubPopNativeSourceTime(double seconds) {
 // Carry each container's source clock into project-relative time. Referenced
 // compounds can occur more than once; cycle protection is scoped to the path.
 // Retime contexts remain selectable for style, without claiming a precise time.
-static NSArray<NSDictionary *> *SubPopNativeProjectSources(NSXMLDocument *doc) {
+static NSArray<NSDictionary *> *SubPopProjectStyleSources(NSXMLDocument *doc,NSString *uid) {
     NSMutableSet *effects=[NSMutableSet new];NSMutableDictionary *media=[NSMutableDictionary new];
     for (NSXMLElement *e in [doc nodesForXPath:@"/fcpxml/resources/effect" error:nil]) {
         NSString *identifier=[e attributeForName:@"id"].stringValue;
-        if (identifier.length && [[e attributeForName:@"uid"].stringValue isEqual:SubPopNativeSubtitleUID]) [effects addObject:identifier];
+        if (identifier.length && [[e attributeForName:@"uid"].stringValue isEqual:uid]) [effects addObject:identifier];
     }
     for (NSXMLElement *m in [doc nodesForXPath:@"/fcpxml/resources/media" error:nil]) {NSString *identifier=[m attributeForName:@"id"].stringValue;if (identifier.length) media[identifier]=m;}
     NSMutableArray *result=[NSMutableArray new];__block NSUInteger budget=5000;
@@ -212,6 +270,8 @@ static NSArray<NSDictionary *> *SubPopNativeProjectSources(NSXMLDocument *doc) {
     for (NSXMLElement *sequence in [doc nodesForXPath:@"//project/sequence" error:nil]) walk(sequence,-SubPopNativeSourceSeconds([sequence attributeForName:@"tcStart"].stringValue),[NSSet set],0);
     visit=nil;return result;
 }
+static NSArray<NSDictionary *> *SubPopNativeProjectSources(NSXMLDocument *doc) {return SubPopProjectStyleSources(doc,SubPopNativeSubtitleUID);}
+static NSArray<NSDictionary *> *SubPopBasicProjectSources(NSXMLDocument *doc) {return SubPopProjectStyleSources(doc,SubPopBasicTitleUID);}
 static NSString *SubPopNativeSourceLabel(NSDictionary *source,NSUInteger index) {
     NSString *text=SubPopNativeSourceText(source[@"title"]);
     if (text.length>32) {NSRange range=[text rangeOfComposedCharacterSequencesForRange:NSMakeRange(0,32)];text=[[text substringWithRange:range] stringByAppendingString:@"…"];}
@@ -222,7 +282,23 @@ static NSString *SubPopNativeSourceLabel(NSDictionary *source,NSUInteger index) 
 static NSDictionary *SubPopNormalizeBasicStyle(id input) {
     NSDictionary *all=SubPopNormalizeTap5aStyle(input);NSMutableDictionary *result=[NSMutableDictionary new];
     for (NSArray *field in [SubPopTextFields() arrayByAddingObjectsFromArray:SubPopEffectFields()]) result[field[0]]=all[field[0]];
+    NSDictionary *position=SubPopNormalizeNativeStyle(input);
+    for (NSArray *f in SubPopNativeTextPositionFields()) result[f[0]]=position[f[0]];
     result[@"textFont"]=all[@"textFont"];result[@"textFace"]=all[@"textFace"];return result;
+}
+
+static void SubPopApplyBasicTextPosition(NSXMLDocument *doc,NSDictionary *input) {
+    NSDictionary *s=SubPopNormalizeBasicStyle(input);
+    for (NSXMLElement *title in [doc nodesForXPath:@"/fcpxml/clip/spine/title" error:nil]) {
+        for (NSXMLElement *old in [title elementsForName:@"param"]) if ([[old attributeForName:@"key"].stringValue isEqual:SubPopBasicTextPositionKey]) [old detach];
+        if (![s[@"textPositionX"] doubleValue] && ![s[@"textPositionY"] doubleValue] && ![s[@"textPositionZ"] doubleValue]) continue;
+        NSXMLElement *param=[NSXMLElement elementWithName:@"param"];
+        [param addAttribute:[NSXMLNode attributeWithName:@"name" stringValue:@"Position"]];
+        [param addAttribute:[NSXMLNode attributeWithName:@"key" stringValue:SubPopBasicTextPositionKey]];
+        NSString *vector=[NSString stringWithFormat:@"%.12g %.12g",[s[@"textPositionX"] doubleValue],[s[@"textPositionY"] doubleValue]];
+        if ([s[@"textPositionZ"] doubleValue]) vector=[vector stringByAppendingFormat:@" %.12g",[s[@"textPositionZ"] doubleValue]];
+        [param addAttribute:[NSXMLNode attributeWithName:@"value" stringValue:vector]];[title insertChild:param atIndex:0];
+    }
 }
 
 @interface SubPopNativePresetStore : NSObject

@@ -71,10 +71,10 @@
 - (void)readNativeProjectStyle:(NSPopUpButton *)sender {
     NSXMLElement *title=sender.selectedItem.representedObject;
     if (![title isKindOfClass:NSXMLElement.class]) return;
-    NSDictionary *style=SubPopNativeStyleFromTitle(title);
-    if (!style) {self.nativePresetNotice.stringValue=@"这条字幕含参数关键帧或无法读取的文字效果／位置，无法保存为静态样式；请选择其他字幕。";return;}
+    NSDictionary *style=self.editingBasicStyle ? SubPopBasicStyleFromTitle(title) : SubPopNativeStyleFromTitle(title);
+    if (!style) {self.nativePresetNotice.stringValue=@"这条字幕含关键帧、混合文字样式或当前无法完整读取的效果／位置；请选择其他字幕。";return;}
     [self.nativePresetPicker selectItemAtIndex:0];self.nativePresetName.stringValue=@"";[self fillNativeStyleControls:style];
-    self.nativePresetNotice.stringValue=@"已读取静态字体、文字效果、文字位置及底框参数。输入名称后可保存预设。";
+    self.nativePresetNotice.stringValue=self.editingBasicStyle ? @"已读取普通字幕的静态字体、文字效果、文本位置及画面位移。输入名称后可保存预设。" : @"已读取静态字体、文字效果、文字位置及底框参数。输入名称后可保存预设。";
 }
 - (void)showNativeStyle:(id)sender {
     if (self.importInProgress || self.tap5aStyleControls || !self.captionRows.count) return;
@@ -87,7 +87,7 @@
     self.basicStyle=self.basicStyle ?: self.basicPresetStore.defaultStyle;
     self.editingNativeStyle=!basic;self.editingBasicStyle=basic;self.tap5aStyleControls=[NSMutableDictionary new];
     NSAlert *alert=[NSAlert new];alert.messageText=basic ? @"普通字幕预览与预设" : @"原生底框样式与预设";
-    alert.informativeText=basic ? @"应用到当前全部字幕，无需重新识别。预设只保存样式；已导入 FCP 的字幕不会自动更新。" : @"应用到当前全部字幕，无需重新识别。FCP 中刚调整的样式需重新拖入项目后读取；已导入的字幕不会自动更新。";
+    alert.informativeText=@"应用到当前全部字幕，无需重新识别。FCP 中刚调整的样式需重新拖入项目后读取；已导入的字幕不会自动更新。";
     [alert addButtonWithTitle:@"应用到全部字幕"];[alert addButtonWithTitle:@"取消"];
     NSRect available=(self.view.window.screen ?: NSScreen.mainScreen).visibleFrame;
     CGFloat previewWidth=MAX(280,MIN(560,available.size.width-724)),previewHeight=previewWidth*9/16;
@@ -121,13 +121,13 @@
         popup.target=self;popup.action=i ? @selector(tap5aPreviewChanged:) : @selector(textFamilyChanged:);[popup setAccessibilityLabel:label.stringValue];[textTab addSubview:popup];self.tap5aStyleControls[key]=popup;
     }
     NSArray *textFields=[SubPopTextEditorFields() subarrayWithRange:NSMakeRange(0,4)];
-    NSArray *fields=basic ? SubPopTextEditorFields() : [[textFields arrayByAddingObjectsFromArray:SubPopNativeBoxFields()] arrayByAddingObjectsFromArray:SubPopNativeTextPositionFields()];
+    NSArray *fields=basic ? [[textFields arrayByAddingObjectsFromArray:SubPopNativeTextPositionFields()] arrayByAddingObjectsFromArray:[SubPopTextEditorFields() subarrayWithRange:NSMakeRange(4,2)]] : [[textFields arrayByAddingObjectsFromArray:SubPopNativeBoxFields()] arrayByAddingObjectsFromArray:SubPopNativeTextPositionFields()];
     for (NSUInteger i=0;i<fields.count;i++) {
         NSArray *f=fields[i];NSString *key=f[0];BOOL position=basic ? i>=4 : i>=15,text=i<4 || position,animation=!basic && i>=12 && i<15;
         NSUInteger index=position ? i-(basic ? 4 : 15) : (text ? i : (animation ? i-12 : i-4));NSUInteger row=animation || text ? index : index%5;
         CGFloat x=(position || (!text && !animation && index>=5)) ? 304 : 12;
         CGFloat y=(text ? 159 : 233)-row*35;NSView *container=text ? textTab : (animation ? animationTab : boxTab);
-        SubPopResetLabel *reset=[[SubPopResetLabel alloc] initWithFrame:NSMakeRect(x,y,142,24)];reset.title=f[1];reset.bordered=NO;reset.alignment=NSTextAlignmentLeft;reset.font=[NSFont systemFontOfSize:12];reset.target=reset;reset.action=@selector(resetClick:);[container addSubview:reset];
+        SubPopResetLabel *reset=[[SubPopResetLabel alloc] initWithFrame:NSMakeRect(x,y,142,24)];reset.title=basic && [key isEqual:@"positionX"] ? @"画面偏移 X（px）" : (basic && [key isEqual:@"positionY"] ? @"画面偏移 Y（px）" : f[1]);reset.bordered=NO;reset.alignment=NSTextAlignmentLeft;reset.font=[NSFont systemFontOfSize:12];reset.target=reset;reset.action=@selector(resetClick:);[container addSubview:reset];
         NSControl *control;
         if ([f[2] isKindOfClass:NSArray.class]) control=[[NSColorWell alloc] initWithFrame:NSMakeRect(x+145,y,110,24)];
         else if ([key isEqual:@"verticalSafe"]) {NSButton *button=[NSButton checkboxWithTitle:@"" target:nil action:nil];button.frame=NSMakeRect(x+145,y,28,24);control=button;}
@@ -139,22 +139,21 @@
         } else {
             SubPopNumberField *number=[[SubPopNumberField alloc] initWithFrame:NSMakeRect(x+145,y,110,24)];number.minimumValue=[f[3] doubleValue];number.maximumValue=[f[4] doubleValue];number.delegate=self;number.toolTip=[NSString stringWithFormat:@"范围 %@–%@；数值与 FCP 检查器一致",f[3],f[4]];reset.numberField=number;reset.defaultValue=[f[2] doubleValue];control=number;
         }
-        control.target=self;control.action=@selector(tap5aPreviewChanged:);[control setAccessibilityLabel:f[1]];[container addSubview:control];self.tap5aStyleControls[key]=control;
+        control.target=self;control.action=@selector(tap5aPreviewChanged:);[control setAccessibilityLabel:reset.title];[container addSubview:control];self.tap5aStyleControls[key]=control;
     }
-    label=[NSTextField wrappingLabelWithString:basic ? @"X 右正，Y 上正；位置单位为项目像素。\n字距使用与 FCP 相同的字号百分比。" : @"对应 FCP「文本」页的位置，\n与模板的位置偏移分别保存。"];
-    label.frame=NSMakeRect(304,20,255,54);label.font=[NSFont systemFontOfSize:11];label.textColor=NSColor.secondaryLabelColor;[textTab addSubview:label];
+    label=[NSTextField wrappingLabelWithString:basic ? @"文本位置对应 FCP「文本」检查器；\n画面偏移为项目像素，字距为字号百分比。" : @"对应 FCP「文本」页的位置，\n与模板的位置偏移分别保存。"];
+    label.frame=basic ? NSMakeRect(12,8,275,54) : NSMakeRect(304,20,255,54);label.font=[NSFont systemFontOfSize:11];label.textColor=NSColor.secondaryLabelColor;[textTab addSubview:label];
     label=[NSTextField wrappingLabelWithString:@"宽高为自适应底框的调整量，0 使用模板默认。\n数值与 FCP 检查器一致；最终画面和动画请在 FCP 中查看。"];
     label.frame=NSMakeRect(12,6,550,40);label.font=[NSFont systemFontOfSize:11];label.textColor=NSColor.secondaryLabelColor;[boxTab addSubview:label];
-    if (!basic) {
     label=[self label:@"读取项目字幕" size:12 weight:NSFontWeightRegular];label.frame=NSMakeRect(0,56,110,24);[settings addSubview:label];
-    NSPopUpButton *source=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(120,54,480,26) pullsDown:NO];[source addItemWithTitle:@"选择已调整好的原生底框字幕…"];
+    NSPopUpButton *source=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(120,54,480,26) pullsDown:NO];[source addItemWithTitle:basic ? @"选择已调整好的普通字幕…" : @"选择已调整好的原生底框字幕…"];
     NSData *xml=self.freshDropURL ? [NSData dataWithContentsOfURL:self.freshDropURL] : nil;
     NSXMLDocument *doc=xml ? [[NSXMLDocument alloc] initWithData:xml options:NSXMLNodeLoadExternalEntitiesNever error:nil] : nil;
-    NSUInteger n=0;for (NSDictionary *entry in SubPopNativeProjectSources(doc)) {
+    self.styleSourceDocument=doc; // Retain format/ancestor context until source selection completes.
+    NSUInteger n=0;for (NSDictionary *entry in (basic ? SubPopBasicProjectSources(doc) : SubPopNativeProjectSources(doc))) {
         [source addItemWithTitle:SubPopNativeSourceLabel(entry,++n)];source.lastItem.representedObject=entry[@"title"];
     }
     source.enabled=n>0;source.target=self;source.action=@selector(readNativeProjectStyle:);[source setAccessibilityLabel:@"读取项目中已有字幕的静态样式"];[settings addSubview:source];
-    }
     self.nativePresetNotice=[NSTextField wrappingLabelWithString:@""];self.nativePresetNotice.frame=NSMakeRect(0,0,600,42);self.nativePresetNotice.font=[NSFont systemFontOfSize:11];self.nativePresetNotice.textColor=NSColor.secondaryLabelColor;[settings addSubview:self.nativePresetNotice];
     CGFloat previewY=475-previewHeight;
     self.tap5aPreview=[[SubPopStylePreview alloc] initWithFrame:NSMakeRect(0,previewY,previewWidth,previewHeight)];self.tap5aPreview.nativeSubtitle=!basic;self.tap5aPreview.basicSubtitle=basic;self.tap5aPreview.wantsLayer=YES;self.tap5aPreview.layer.cornerRadius=10;self.tap5aPreview.layer.masksToBounds=YES;[self.tap5aPreview setAccessibilityLabel:basic ? @"普通字幕静态样式预览" : @"原生自适应底框静态样式预览"];[content addSubview:self.tap5aPreview];
@@ -172,6 +171,6 @@
         }
         for (id control in self.tap5aStyleControls.allValues) if ([control isKindOfClass:NSColorWell.class]) [control deactivate];
         [self.tap5aPreview closeFullscreen:nil];++self.tap5aPreviewGeneration;[self.tap5aImageGenerator cancelAllCGImageGeneration];self.tap5aImageGenerator=nil;self.tap5aPreview=nil;self.tap5aPreviewLabel=nil;
-        self.tap5aStyleControls=nil;self.editingNativeStyle=NO;self.editingBasicStyle=NO;self.nativePresetPicker=nil;self.nativePresetName=nil;self.nativePresetNotice=nil;self.nativePresetDefaultButton=nil;self.nativePresetDeleteButton=nil;
+        self.tap5aStyleControls=nil;self.editingNativeStyle=NO;self.editingBasicStyle=NO;self.nativePresetPicker=nil;self.nativePresetName=nil;self.nativePresetNotice=nil;self.nativePresetDefaultButton=nil;self.nativePresetDeleteButton=nil;self.styleSourceDocument=nil;
     }];
 }
