@@ -12,7 +12,7 @@
             NSScanner *scanner=[NSScanner scannerWithString:[text stringByReplacingOccurrencesOfString:@"," withString:@"."]];double number=0;
             if (text.length && [scanner scanDouble:&number] && scanner.isAtEnd && isfinite(number)) values[key]=@(number);
             else {
-                NSDictionary *fallback=self.tap5aPreview.style ?: (self.editingNativeStyle ? SubPopNormalizeNativeStyle(self.nativeStyle) : SubPopNormalizeTap5aStyle(self.tap5aStyle));
+                NSDictionary *fallback=self.tap5aPreview.style ?: (self.editingNativeStyle ? SubPopNormalizeNativeStyle(self.nativeStyle) : (self.editingBasicStyle ? SubPopNormalizeBasicStyle(self.basicStyle) : SubPopNormalizeTap5aStyle(self.tap5aStyle)));
                 values[key]=@(SubPopTextEditorNumber(fallback,key));
             }
         }
@@ -20,12 +20,7 @@
     // The UI uses the inspector's percentage; XML and legacy presets use points.
     double size=[SubPopNormalizeTap5aStyle(values)[@"textSize"] doubleValue];
     if (values[@"kerning"]) values[@"kerning"]=@([values[@"kerning"] doubleValue]*size/100);
-    if (self.tap5aPreview.basicSubtitle) {
-        // Plain titles edit only text. Keep the shared Tap5a box/effect settings,
-        // already in canonical units, when its hidden fields are not present.
-        NSMutableDictionary *shared=SubPopNormalizeTap5aStyle(self.tap5aStyle).mutableCopy;
-        [shared addEntriesFromDictionary:values];values=shared;
-    }
+    if (self.editingBasicStyle) return SubPopNormalizeBasicStyle(values);
     return self.editingNativeStyle ? SubPopNormalizeNativeStyle(values) : SubPopNormalizeTap5aStyle(values);
 }
 - (void)textFamilyChanged:(NSPopUpButton *)sender {
@@ -35,7 +30,7 @@
     [self tap5aPreviewChanged:nil];
 }
 - (void)tap5aPreviewChanged:(id)sender {
-    if (self.editingNativeStyle) [self updateNativePresetActions];
+    if (self.editingNativeStyle || self.editingBasicStyle) [self updateNativePresetActions];
     self.tap5aPreview.style=[self currentTap5aStyleValues];self.tap5aPreview.needsDisplay=YES;
 }
 - (void)controlTextDidChange:(NSNotification *)notification {
@@ -118,7 +113,7 @@
     note.frame=NSMakeRect(12,0,width-36,38);note.font=[NSFont systemFontOfSize:11];note.textColor=NSColor.secondaryLabelColor;[container addSubview:note];
 }
 - (void)showTap5aStyle:(id)sender {
-    if (self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative) {[self showNativeStyle:sender];return;}
+    if (self.templatePicker.indexOfSelectedItem!=SubPopTitleTemplateTap5a) {[self showNativeStyle:sender];return;}
     if (!self.captionRows.count || self.importInProgress || self.tap5aStyleControls) return;
     BOOL basic=self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateBasic;
     [self.view.window makeFirstResponder:nil];

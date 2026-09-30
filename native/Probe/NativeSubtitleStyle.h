@@ -176,6 +176,13 @@ static NSArray<NSXMLElement *> *SubPopNativeProjectTitles(NSXMLDocument *doc) {
     return result;
 }
 
+// Plain presets contain only text and effects, independently of box templates.
+static NSDictionary *SubPopNormalizeBasicStyle(id input) {
+    NSDictionary *all=SubPopNormalizeTap5aStyle(input);NSMutableDictionary *result=[NSMutableDictionary new];
+    for (NSArray *field in [SubPopTextFields() arrayByAddingObjectsFromArray:SubPopEffectFields()]) result[field[0]]=all[field[0]];
+    result[@"textFont"]=all[@"textFont"];result[@"textFace"]=all[@"textFace"];return result;
+}
+
 @interface SubPopNativePresetStore : NSObject
 @property NSUserDefaults *defaults;
 - (instancetype)initWithDefaults:(NSUserDefaults *)defaults;
@@ -188,19 +195,21 @@ static NSArray<NSXMLElement *> *SubPopNativeProjectTitles(NSXMLDocument *doc) {
 @end
 @implementation SubPopNativePresetStore
 - (instancetype)initWithDefaults:(NSUserDefaults *)defaults {if ((self=[super init])) _defaults=defaults;return self;}
-- (NSDictionary *)library {id value=[self.defaults dictionaryForKey:@"nativeSubtitleStyleLibrary"];return [value isKindOfClass:NSDictionary.class] ? value : @{};}
+- (NSString *)libraryKey {return @"nativeSubtitleStyleLibrary";}
+- (NSDictionary *)normalizeStyle:(id)style {return SubPopNormalizeNativeStyle(style);}
+- (NSDictionary *)library {id value=[self.defaults dictionaryForKey:self.libraryKey];return [value isKindOfClass:NSDictionary.class] ? value : @{};}
 - (NSArray<NSDictionary *> *)presets {
     NSMutableArray *result=[NSMutableArray new];id rows=self.library[@"presets"];
     if ([rows isKindOfClass:NSArray.class]) for (id row in rows) {
         if (![row isKindOfClass:NSDictionary.class] || ![row[@"id"] isKindOfClass:NSString.class] || ![row[@"name"] isKindOfClass:NSString.class] || ![row[@"style"] isKindOfClass:NSDictionary.class]) continue;
         if (![row[@"id"] length] || ![row[@"name"] length]) continue;
-        [result addObject:@{@"id":row[@"id"],@"name":row[@"name"],@"style":SubPopNormalizeNativeStyle(row[@"style"])}];
+        [result addObject:@{@"id":row[@"id"],@"name":row[@"name"],@"style":[self normalizeStyle:row[@"style"]]}];
     }
     return result;
 }
 - (NSString *)defaultID {id value=self.library[@"defaultID"];if ([value isKindOfClass:NSString.class]) for (NSDictionary *p in self.presets) if ([p[@"id"] isEqual:value]) return value;return @"";}
-- (NSDictionary *)defaultStyle {NSString *identifier=self.defaultID;for (NSDictionary *p in self.presets) if ([p[@"id"] isEqual:identifier]) return p[@"style"];return SubPopNormalizeNativeStyle(nil);}
-- (void)writePresets:(NSArray *)presets defaultID:(NSString *)identifier {[self.defaults setObject:@{@"version":@1,@"presets":presets,@"defaultID":identifier ?: @""} forKey:@"nativeSubtitleStyleLibrary"];}
+- (NSDictionary *)defaultStyle {NSString *identifier=self.defaultID;for (NSDictionary *p in self.presets) if ([p[@"id"] isEqual:identifier]) return p[@"style"];return [self normalizeStyle:nil];}
+- (void)writePresets:(NSArray *)presets defaultID:(NSString *)identifier {[self.defaults setObject:@{@"version":@1,@"presets":presets,@"defaultID":identifier ?: @""} forKey:self.libraryKey];}
 - (NSString *)saveStyle:(NSDictionary *)style name:(NSString *)name {
     name=[name stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     if (!name.length || name.length>60 || [name rangeOfCharacterFromSet:NSCharacterSet.controlCharacterSet].location!=NSNotFound) return nil;
@@ -208,7 +217,7 @@ static NSArray<NSXMLElement *> *SubPopNativeProjectTitles(NSXMLDocument *doc) {
     for (NSUInteger i=0;i<presets.count;i++) if ([presets[i][@"name"] localizedCaseInsensitiveCompare:name]==NSOrderedSame) {identifier=presets[i][@"id"];index=i;break;}
     if (index==NSNotFound && presets.count>=100) return nil;
     identifier=identifier ?: NSUUID.UUID.UUIDString;
-    NSDictionary *row=@{@"id":identifier,@"name":name,@"style":SubPopNormalizeNativeStyle(style)};
+    NSDictionary *row=@{@"id":identifier,@"name":name,@"style":[self normalizeStyle:style]};
     if (index==NSNotFound) [presets addObject:row];else presets[index]=row;
     [self writePresets:presets defaultID:self.defaultID];return identifier;
 }
@@ -221,4 +230,11 @@ static NSArray<NSXMLElement *> *SubPopNativeProjectTitles(NSXMLDocument *doc) {
     NSIndexSet *indices=[presets indexesOfObjectsPassingTest:^BOOL(NSDictionary *p,NSUInteger i,BOOL *stop){return [p[@"id"] isEqual:identifier];}];[presets removeObjectsAtIndexes:indices];
     [self writePresets:presets defaultID:[defaultID isEqual:identifier] ? @"" : defaultID];
 }
+@end
+
+@interface SubPopBasicPresetStore : SubPopNativePresetStore
+@end
+@implementation SubPopBasicPresetStore
+- (NSString *)libraryKey {return @"basicSubtitleStyleLibrary";}
+- (NSDictionary *)normalizeStyle:(id)style {return SubPopNormalizeBasicStyle(style);}
 @end

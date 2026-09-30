@@ -121,6 +121,9 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 @property NSPopUpButton *templatePicker;
 @property NSDictionary *tap5aStyle;
 @property NSDictionary *nativeStyle;
+@property NSDictionary *basicStyle;
+@property BOOL editingBasicStyle;
+@property SubPopBasicPresetStore *basicPresetStore;
 @property BOOL editingNativeStyle;
 @property SubPopNativePresetStore *nativePresetStore;
 @property NSPopUpButton *nativePresetPicker;
@@ -323,7 +326,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 }
 - (void)saveDraft {
     if (!self.resultRequestID || !self.titlePayloads || !self.captionRows) return;
-    NSDictionary *draft=@{@"requestID":self.resultRequestID,@"snapshotSHA":self.requestSHA ?: @"",@"modelID":self.requestModelID ?: @"",@"captions":self.captionRows,@"font":self.fontPicker.titleOfSelectedItem,@"fontSize":self.sizePicker.titleOfSelectedItem,@"tap5aStyle":SubPopNormalizeTap5aStyle(self.tap5aStyle),@"nativeStyle":SubPopNormalizeNativeStyle(self.nativeStyle),@"referenceUndoCaptions":self.referenceUndoRows ?: @[],@"referenceUndoWasOriginal":@(self.referenceUndoWasOriginal),@"referenceMessage":self.referenceMessage ?: @"",@"referenceUndone":@(self.referenceUndone),@"dragged":@(self.resultWasDragged),@"referenceSHA256":self.requestReferenceSHA ?: @"",@"templateID":SubPopTitleTemplateID(self.templatePicker.indexOfSelectedItem),@"titleTemplate":@(self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateTap5a)};
+    NSDictionary *draft=@{@"requestID":self.resultRequestID,@"snapshotSHA":self.requestSHA ?: @"",@"modelID":self.requestModelID ?: @"",@"captions":self.captionRows,@"font":self.fontPicker.titleOfSelectedItem,@"fontSize":self.sizePicker.titleOfSelectedItem,@"tap5aStyle":SubPopNormalizeTap5aStyle(self.tap5aStyle),@"nativeStyle":SubPopNormalizeNativeStyle(self.nativeStyle),@"basicStyle":SubPopNormalizeBasicStyle(self.basicStyle),@"referenceUndoCaptions":self.referenceUndoRows ?: @[],@"referenceUndoWasOriginal":@(self.referenceUndoWasOriginal),@"referenceMessage":self.referenceMessage ?: @"",@"referenceUndone":@(self.referenceUndone),@"dragged":@(self.resultWasDragged),@"referenceSHA256":self.requestReferenceSHA ?: @"",@"templateID":SubPopTitleTemplateID(self.templatePicker.indexOfSelectedItem),@"titleTemplate":@(self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateTap5a)};
     NSData *data=[NSJSONSerialization dataWithJSONObject:draft options:0 error:nil];[data writeToURL:[[self evidenceDirectory] URLByAppendingPathComponent:[@"draft-" stringByAppendingString:self.resultRequestID]] atomically:YES];
 }
 - (NSDictionary *)selectedModel {
@@ -472,7 +475,10 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     if (self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative) {
         self.nativePresetStore=self.nativePresetStore ?: [[SubPopNativePresetStore alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];
         self.nativeStyle=self.nativeStyle ?: self.nativePresetStore.defaultStyle;[self syncStyleFontPickers:self.nativeStyle];
-    } else [self syncStyleFontPickers:SubPopNormalizeTap5aStyle(self.tap5aStyle)];
+    } else {
+        if (self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateBasic && !self.basicStyle) {self.basicPresetStore=self.basicPresetStore ?: [[SubPopBasicPresetStore alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];self.basicStyle=self.basicPresetStore.defaultStyle;}
+        [self syncStyleFontPickers:self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateBasic ? self.basicStyle : SubPopNormalizeTap5aStyle(self.tap5aStyle)];
+    }
     [self rebuildTitles];
 }
 - (void)styleChanged:(id)sender {
@@ -482,10 +488,11 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
         if (sender==self.fontPicker) style[@"textFace"]=@"Regular";
         self.nativeStyle=SubPopNormalizeNativeStyle(style);[self rebuildTitles];return;
     }
-    NSMutableDictionary *style=SubPopNormalizeTap5aStyle(self.tap5aStyle).mutableCopy;
+    BOOL basic=self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateBasic;
+    NSMutableDictionary *style=(basic ? SubPopNormalizeBasicStyle(self.basicStyle) : SubPopNormalizeTap5aStyle(self.tap5aStyle)).mutableCopy;
     style[@"textFont"]=self.fontPicker.titleOfSelectedItem;style[@"textSize"]=@(self.sizePicker.titleOfSelectedItem.doubleValue);
     if (sender==self.fontPicker) style[@"textFace"]=@"Regular";
-    self.tap5aStyle=SubPopNormalizeTap5aStyle(style);[self rebuildTitles];
+    if (basic) self.basicStyle=SubPopNormalizeBasicStyle(style);else self.tap5aStyle=SubPopNormalizeTap5aStyle(style);[self rebuildTitles];
 }
 - (void)rebuildTitles {
     if (!self.titlePayloads) return;
@@ -496,7 +503,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
         SubPopSetTitleTemplate(doc,self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateTap5a ? self.tap5aURL : nil);
         if ([self usesFileImport]) SubPopApplyTap5aStyle(doc,self.tap5aStyle);
         if (self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative) {SubPopSetNativeSubtitle(doc);SubPopApplyNativeStyle(doc,self.nativeStyle);}
-        else {SubPopApplyTitlePosition(doc,self.tap5aStyle);if (![self usesFileImport]) SubPopApplyTitleGlow(doc,self.tap5aStyle,SubPopBasicGlowKey);}
+        else {NSDictionary *style=[self usesFileImport] ? self.tap5aStyle : self.basicStyle;SubPopApplyTitlePosition(doc,style);if (![self usesFileImport]) SubPopApplyTitleGlow(doc,style,SubPopBasicGlowKey);}
         NSArray *titles=[doc nodesForXPath:@"/fcpxml/clip/spine/title" error:nil];
         if (titles.count!=self.captionRows.count) return;
         for (NSUInteger i=0;i<titles.count;i++) {
@@ -504,7 +511,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
             [title attributeForName:@"name"].stringValue=text;
             NSXMLNode *node=[title nodesForXPath:@"text/text-style" error:nil].firstObject;node.stringValue=text;
             NSXMLElement *style=[title nodesForXPath:@"text-style-def/text-style" error:nil].firstObject;
-            NSMutableDictionary *textStyle=(self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative ? SubPopNormalizeNativeStyle(self.nativeStyle) : SubPopNormalizeTap5aStyle(self.tap5aStyle)).mutableCopy;
+            NSMutableDictionary *textStyle=(self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative ? SubPopNormalizeNativeStyle(self.nativeStyle) : (self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateBasic ? SubPopNormalizeBasicStyle(self.basicStyle) : SubPopNormalizeTap5aStyle(self.tap5aStyle))).mutableCopy;
             textStyle[@"textFont"]=self.fontPicker.titleOfSelectedItem;textStyle[@"textSize"]=@(self.sizePicker.titleOfSelectedItem.doubleValue);
             SubPopApplyTextStyle(style,textStyle);
         }
@@ -870,7 +877,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
             if (![[self sha256:data] isEqual:response[@"outputs"][name]]) {valid=NO;break;}originals[version]=data;
         }
         if (valid && self.requestReferenceSHA.length && ![response[@"manifest"][@"unreferencedCaptions"] isKindOfClass:NSArray.class]) valid=NO;
-        if (valid && payloads.count==3) { self.snapshotConsumed=YES;self.titlePayloads=payloads;self.resultTimelineChanged=NO; self.resultDate=NSDate.date;self.resultManifest=response[@"manifest"];self.nativePresetStore=self.nativePresetStore ?: [[SubPopNativePresetStore alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];self.nativeStyle=self.nativePresetStore.defaultStyle;self.tap5aStyle=SubPopNormalizeTap5aStyle([NSUserDefaults.standardUserDefaults dictionaryForKey:@"tap5aStylePreset"]);NSString *presetFont=self.tap5aStyle[@"textFont"],*presetSize=[self.tap5aStyle[@"textSize"] stringValue];
+        if (valid && payloads.count==3) { self.snapshotConsumed=YES;self.titlePayloads=payloads;self.resultTimelineChanged=NO; self.resultDate=NSDate.date;self.resultManifest=response[@"manifest"];self.nativePresetStore=self.nativePresetStore ?: [[SubPopNativePresetStore alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];self.nativeStyle=self.nativePresetStore.defaultStyle;self.tap5aStyle=SubPopNormalizeTap5aStyle([NSUserDefaults.standardUserDefaults dictionaryForKey:@"tap5aStylePreset"]);self.basicPresetStore=self.basicPresetStore ?: [[SubPopBasicPresetStore alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];self.basicStyle=self.basicPresetStore.defaultStyle;NSString *presetFont=self.basicStyle[@"textFont"],*presetSize=[self.basicStyle[@"textSize"] stringValue];
             if (![self.fontPicker itemWithTitle:presetFont]) [self.fontPicker addItemWithTitle:presetFont];[self.fontPicker selectItemWithTitle:presetFont];
             if (![self.sizePicker itemWithTitle:presetSize]) [self.sizePicker addItemWithTitle:presetSize];[self.sizePicker selectItemWithTitle:presetSize];[self.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];self.resultRequestID=self.requestID;self.captionRows=[NSMutableArray new];for (NSDictionary *row in response[@"manifest"][@"captions"]) [self.captionRows addObject:row.mutableCopy];
             self.referenceUndone=NO;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
@@ -896,6 +903,8 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
                 // Restore only text and presentation onto fresh, validated timing/payloads.
                 self.tap5aStyle=SubPopNormalizeTap5aStyle(draft[@"tap5aStyle"]);
                 self.nativeStyle=SubPopNormalizeNativeStyle(draft[@"nativeStyle"]);
+                // Older drafts stored plain text parameters in the shared Tap5a style.
+                self.basicStyle=SubPopNormalizeBasicStyle(draft[@"basicStyle"] ?: draft[@"tap5aStyle"]);
                 SubPopTitleTemplate restoredTemplate=SubPopTitleTemplateFromDraft(draft);
                 if (restoredTemplate!=SubPopTitleTemplateTap5a || [self resolveTap5a]) [self.templatePicker selectItemAtIndex:restoredTemplate];
                 for (NSUInteger i=0;i<self.captionRows.count;i++) { id text=draft[@"captions"][i][@"text"];if ([text isKindOfClass:NSString.class] && [text length]>0 && [text length]<=500) self.captionRows[i][@"text"]=text; }

@@ -311,6 +311,7 @@ int main(int argc,const char *argv[]) {
         c.captionRows=[[c.captionRows subarrayWithRange:NSMakeRange(0,plainCount)] mutableCopy];
         NSDictionary *plainBefore=c.titlePayloads,*sharedBefore=c.tap5aStyle;
         [c showTap5aStyle:nil];
+        NSDictionary *basicBefore=c.basicStyle;
         if(c.tap5aStyleControls.count!=23 || !c.tap5aPreview.basicSubtitle || c.tap5aPreview.nativeSubtitle || c.tap5aStyleControls[@"background"] || !window.attachedSheet) return 143;
         [c.tap5aStyleControls[@"textSize"] setDoubleValue:90];[c tap5aPreviewChanged:nil];
         [c fullscreenPreview:nil];SubPopStylePreview *plainFull=(SubPopStylePreview *)c.tap5aPreview.fullscreenWindow.contentView;
@@ -318,14 +319,15 @@ int main(int argc,const char *argv[]) {
         [plainFull cancelOperation:nil];
         [window endSheet:window.attachedSheet returnCode:NSAlertSecondButtonReturn];
         [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.1]];
-        if(c.tap5aPreview || c.tap5aImageGenerator || ![c.titlePayloads isEqual:plainBefore] || ![c.tap5aStyle isEqual:sharedBefore]) return 145;
+        if(c.tap5aPreview || c.tap5aImageGenerator || ![c.titlePayloads isEqual:plainBefore] || ![c.tap5aStyle isEqual:sharedBefore] || ![c.basicStyle isEqual:basicBefore]) return 145;
         [c showTap5aStyle:nil];
         [c.tap5aStyleControls[@"glowColor"] setColor:[NSColor colorWithSRGBRed:0 green:1 blue:0 alpha:1]];
+        [c.tap5aStyleControls[@"glowEnabled"] setState:NSControlStateValueOn];
         [c.tap5aStyleControls[@"textSize"] setDoubleValue:90];[c.tap5aStyleControls[@"kerning"] setDoubleValue:12];
         [c.tap5aStyleControls[@"positionX"] setDoubleValue:120];[c.tap5aStyleControls[@"positionY"] setDoubleValue:-60];[c tap5aPreviewChanged:nil];
         [window endSheet:window.attachedSheet returnCode:NSAlertFirstButtonReturn];
         [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.1]];
-        if(c.tap5aPreview || [c.titlePayloads isEqual:plainBefore] || fabs([c.tap5aStyle[@"kerning"] doubleValue]-10.8)>1e-9 || [c.tap5aStyle[@"top"] doubleValue]!=25 || [c.tap5aStyle[@"roundness"] doubleValue]!=30 || ![c.tap5aStyle[@"glowEnabled"] boolValue] || ![c.tap5aStyle[@"glowColor"] isEqual:@[@0,@1,@0]] || [NSUserDefaults.standardUserDefaults dictionaryForKey:@"tap5aStylePreset"]) return 146;
+        if(c.tap5aPreview || [c.titlePayloads isEqual:plainBefore] || fabs([c.basicStyle[@"kerning"] doubleValue]-10.8)>1e-9 || ![c.tap5aStyle isEqual:sharedBefore] || ![c.basicStyle[@"glowEnabled"] boolValue] || ![c.basicStyle[@"glowColor"] isEqual:@[@0,@1,@0]] || c.basicStyle[@"top"] || [NSUserDefaults.standardUserDefaults dictionaryForKey:@"tap5aStylePreset"]) return 146;
         NSXMLDocument *plainDoc=[[NSXMLDocument alloc] initWithData:c.titlePayloads[@"1.14"] options:NSXMLNodeLoadExternalEntitiesNever error:nil];
         NSXMLElement *plainText=[plainDoc nodesForXPath:@"//title/text-style-def/text-style" error:nil].firstObject;
         NSXMLElement *plainTransform=[plainDoc nodesForXPath:@"//title/adjust-transform" error:nil].firstObject;

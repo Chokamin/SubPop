@@ -184,6 +184,7 @@ int main(int argc,const char *argv[]) {
             if (SubPopTitleImportXML([bad dataUsingEncoding:NSUTF8StringEncoding],@"Test",1,&error) || !error) return 38;
         }
         puts("Tap5a file import: all versions preserve titles and timing; no project/library writes; invalid results rejected.");
+        controller.basicStyle=SubPopNormalizeBasicStyle(controller.tap5aStyle);
         [controller.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];[controller rebuildTitles];
         for (NSString *v in basic) {
             NSXMLDocument *after=[[NSXMLDocument alloc] initWithData:controller.titlePayloads[v] options:0 error:nil];
