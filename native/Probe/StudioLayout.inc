@@ -74,15 +74,15 @@
     self.fallbackAudioButton.toolTip=@"仅在直接读取项目音频失败时使用。请从 Final Cut Pro 导出当前完整项目的音频；备用音频会按原项目时间轴识别。";
     self.fallbackAudioButton.hidden=YES;
     self.statusCard=[self surface:@[statusLine,self.statusDetail,self.fallbackAudioButton,self.activity,self.jobBar]];[stack addArrangedSubview:self.statusCard];
-    self.captionCount=[self label:@"字幕预览" size:13 weight:NSFontWeightSemibold];self.reviewToggle=[self toolbarButton:@"展开预览与样式 ▾" symbol:@"text.alignleft" action:@selector(toggleReview:)];
+    self.captionCount=[self label:@"已识别 0 条字幕" size:13 weight:NSFontWeightSemibold];self.reviewToggle=[self toolbarButton:@"查看字幕 ▾" symbol:@"text.alignleft" action:@selector(toggleReview:)];
     self.reviewHeader=[NSStackView stackViewWithViews:@[self.captionCount,[NSView new],self.reviewToggle]];[stack addArrangedSubview:self.reviewHeader];self.reviewHeader.hidden=YES;
     self.captionTable=[NSTableView new];self.captionTable.rowHeight=36;self.captionTable.intercellSpacing=NSMakeSize(10,4);self.captionTable.usesAlternatingRowBackgroundColors=NO;self.captionTable.backgroundColor=[NSColor colorWithCalibratedWhite:.09 alpha:1];self.captionTable.dataSource=self;self.captionTable.delegate=self;
     NSTableColumn *time=[[NSTableColumn alloc] initWithIdentifier:@"time"];time.title=@"时间";time.width=82;time.minWidth=82;time.maxWidth=82;time.editable=NO;[self.captionTable addTableColumn:time];
     NSTableColumn *text=[[NSTableColumn alloc] initWithIdentifier:@"text"];text.title=@"字幕";text.width=460;text.editable=YES;[self.captionTable addTableColumn:text];self.captionTable.columnAutoresizingStyle=NSTableViewLastColumnOnlyAutoresizingStyle;
     self.captionScroll=[NSScrollView new];self.captionScroll.documentView=self.captionTable;self.captionScroll.hasVerticalScroller=YES;self.captionScroll.verticalScroller.alphaValue=0;self.captionScroll.borderType=NSNoBorder;self.captionScroll.wantsLayer=YES;self.captionScroll.layer.cornerRadius=12;self.captionScroll.layer.masksToBounds=YES;[self.captionScroll.heightAnchor constraintEqualToConstant:220].active=YES;[stack addArrangedSubview:self.captionScroll];self.captionScroll.hidden=YES;
+    // Keep legacy draft/font adapters offscreen; all visible styling lives in the style sheet.
     self.fontPicker=[[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];[self.fontPicker addItemsWithTitles:@[@"Helvetica",@"PingFang SC",@"Arial"]];self.fontPicker.target=self;self.fontPicker.action=@selector(styleChanged:);[self.fontPicker setAccessibilityLabel:@"字幕字体"];
     self.sizePicker=[[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];[self.sizePicker addItemsWithTitles:@[@"28",@"36",@"48",@"64",@"72",@"80",@"96",@"120"]];self.sizePicker.target=self;self.sizePicker.action=@selector(styleChanged:);[self.sizePicker setAccessibilityLabel:@"字幕字号"];
-    self.editorControls=[NSStackView stackViewWithViews:@[[self label:@"字体" size:11 weight:NSFontWeightMedium],self.fontPicker,[self label:@"字号" size:11 weight:NSFontWeightMedium],self.sizePicker,[NSView new]]];self.editorControls.spacing=10;[stack addArrangedSubview:self.editorControls];self.editorControls.hidden=YES;
 
     self.cancelButton=[self toolbarButton:@"取消" symbol:@"xmark" action:@selector(cancelJob:)];
     self.clearResultButton=[self toolbarButton:@"清空本次字幕" symbol:@"arrow.counterclockwise" action:@selector(clearResult:)];

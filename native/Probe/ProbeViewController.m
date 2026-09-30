@@ -153,7 +153,6 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 @property NSButton *cancelButton;
 @property NSTableView *captionTable;
 @property NSScrollView *captionScroll;
-@property NSStackView *editorControls;
 @property NSMutableArray *captionRows;
 @property NSDictionary *resultManifest;
 @property NSString *visibleError;
@@ -606,15 +605,15 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     self.templateControls.hidden=!hasRows;
     BOOL newlyReady=hasRows && self.resultView.hidden;
     if (newlyReady || !hasRows) self.reviewExpanded=NO;
-    self.captionScroll.hidden=!hasRows || !self.reviewExpanded;self.editorControls.hidden=!hasRows || !self.reviewExpanded;self.resultView.hidden=!hasRows;self.reviewHeader.hidden=!hasRows;
+    self.captionScroll.hidden=!hasRows || !self.reviewExpanded;self.resultView.hidden=!hasRows;self.reviewHeader.hidden=!hasRows;
     self.exportActions.hidden=!hasRows;
     self.clearResultButton.hidden=!hasRows;
     self.clearResultButton.enabled=hasRows && !busy && !self.importInProgress && !self.exportInProgress;
     self.srtExportButton.enabled=hasRows && !self.exportInProgress;
     self.fcpxmlExportButton.enabled=hasRows && !self.exportInProgress;
     self.exportStatus.hidden=!hasRows || !self.exportStatus.stringValue.length;
-    self.captionCount.stringValue=[NSString stringWithFormat:@"字幕预览  ·  %lu 条",(unsigned long)self.captionRows.count];
-    self.reviewToggle.title=self.reviewExpanded ? @"收起预览与样式 ▴" : @"展开预览与样式 ▾";
+    self.captionCount.stringValue=[NSString stringWithFormat:@"已识别 %lu 条字幕",(unsigned long)self.captionRows.count];
+    self.reviewToggle.title=self.reviewExpanded ? @"收起字幕 ▴" : @"查看字幕 ▾";
     self.jobBar.hidden=!(busy && [state isEqual:@"recognize"] && self.jobProgress);
     if (!self.jobBar.hidden) self.jobBar.doubleValue=self.jobProgress.doubleValue;
     [self.signal setWorking:managing && !busy && !preparing];

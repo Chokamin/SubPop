@@ -150,7 +150,7 @@ int main(int argc,const char *argv[]) {
             CGFloat collapsedWidth=c.pageScroll.contentView.bounds.size.width;
             NSRect collapsedModel=[c.modelPicker convertRect:c.modelPicker.bounds toView:c.view];
             if (c.pageScroll.hasVerticalScroller) return 123;
-            [c toggleReview:nil];if (c.captionScroll.hidden || c.editorControls.hidden) return 8;
+            [c toggleReview:nil];if (c.captionScroll.hidden || ![c.reviewToggle.title isEqual:@"收起字幕 ▴"] || c.fontPicker.superview || c.sizePicker.superview) return 8;
             [c.view layoutSubtreeIfNeeded];
             if (!c.captionScroll.hasVerticalScroller || c.captionScroll.verticalScroller.alphaValue>.05) return 123;
             if (width.intValue==840) {
@@ -162,7 +162,7 @@ int main(int argc,const char *argv[]) {
                 }
             }
             NSRect beforeScroll=c.pageScroll.documentVisibleRect;
-            [c.editorControls scrollRectToVisible:c.editorControls.bounds];
+            [c.captionScroll scrollRectToVisible:c.captionScroll.bounds];
             NSRect afterScroll=c.pageScroll.documentVisibleRect;
             if (width.intValue==840 && fabs(NSMinY(afterScroll)-NSMinY(beforeScroll))<1) {
                 NSLog(@"Review should scroll without a visible bar: %@ -> %@",NSStringFromRect(beforeScroll),NSStringFromRect(afterScroll));return 124;
@@ -178,7 +178,7 @@ int main(int argc,const char *argv[]) {
                 if(!NSContainsRect(c.view.bounds,[control convertRect:control.bounds toView:c.view])) return 121;
             }
             [c.pageScroll.documentView scrollPoint:NSZeroPoint];
-            [c toggleReview:nil];if (!c.captionScroll.hidden || !c.editorControls.hidden) return 9;
+            [c toggleReview:nil];if (!c.captionScroll.hidden || ![c.reviewToggle.title isEqual:@"查看字幕 ▾"] || ![c.captionCount.stringValue isEqual:[NSString stringWithFormat:@"已识别 %lu 条字幕",(unsigned long)[m[@"captions"] count]]]) return 9;
             [c.templatePicker selectItemAtIndex:SubPopTitleTemplateTap5a];[c updateInterface];
             if (![c usesFileImport] || ![c.resultView.accessibilityRole isEqual:NSAccessibilityButtonRole] || ![c.resultView.accessibilityLabel isEqual:@"导入字幕到 Final Cut Pro"] || !c.resultView.enabled) return 13;
             c.importInvocationCount=0;
