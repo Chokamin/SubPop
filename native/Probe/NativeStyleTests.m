@@ -18,7 +18,7 @@ int main(int argc,const char *argv[]) {
         NSUserDefaults *defaults=[[NSUserDefaults alloc] initWithSuiteName:suite];
         SubPopNativePresetStore *store=[[SubPopNativePresetStore alloc] initWithDefaults:defaults];
         check(store.presets.count==0 && !store.defaultID.length,@"first installation has no saved presets");
-        NSDictionary *style=SubPopNormalizeNativeStyle(@{@"textFont":@"Helvetica",@"textFace":@"Bold",@"textSize":@72,@"opacity":@95,@"roundness":@20,@"boxHeight":@-8,@"boxWidth":@15,@"positionX":@-300,@"positionY":@200,@"animationStyle":@4,@"animateBy":@2,@"fillColor":@[@1,@0.5,@0],@"verticalSafe":@1});
+        NSDictionary *style=SubPopNormalizeNativeStyle(@{@"textFont":@"Helvetica",@"textFace":@"Bold",@"textSize":@72,@"opacity":@95,@"roundness":@20,@"boxHeight":@-8,@"boxWidth":@15,@"positionX":@-300,@"positionY":@200,@"textPositionX":@37,@"textPositionY":@-125.457,@"textPositionZ":@12,@"animationStyle":@4,@"animateBy":@2,@"fillColor":@[@1,@0.5,@0],@"verticalSafe":@1});
         NSString *first=[store saveStyle:style name:@"黑底白字"];
         NSString *second=[store saveStyle:@{@"opacity":@50} name:@"浅底框"];
         [store setDefaultID:first];
@@ -37,9 +37,22 @@ int main(int argc,const char *argv[]) {
         NSString *offset=[title attributeForName:@"offset"].stringValue,*duration=[title attributeForName:@"duration"].stringValue;
         NSString *caption=[title nodesForXPath:@"text" error:nil].firstObject.XMLString;
         SubPopSetNativeSubtitle(doc);SubPopApplyNativeStyle(doc,style);SubPopApplyNativeStyle(doc,style);
-        check([title elementsForName:@"param"].count==11,@"idempotent published parameters");
+        check([title elementsForName:@"param"].count==12,@"idempotent published parameters and text position");
         SubPopApplyTextStyle([title nodesForXPath:@"text-style-def/text-style" error:nil].firstObject,style);
         check([SubPopNativeStyleFromTitle(title) isEqual:style],@"published values and text style round-trip");
+        NSXMLElement *position=[title nodesForXPath:@"param[@name='Position']" error:nil].firstObject;
+        [position attributeForName:@"name"].stringValue=@"位置";
+        [position attributeForName:@"value"].stringValue=@"0 -125.457";
+        NSDictionary *readPosition=SubPopNativeStyleFromTitle(title);
+        check([readPosition[@"textPositionY"] doubleValue]==-125.457 && [readPosition[@"textPositionZ"] doubleValue]==0 && [readPosition[@"positionY"] doubleValue]==200,@"localized FCP two-component position stays independent of rig offset");
+        for (NSString *bad in @[@"0",@"0 -125 trailing",@"0 -125 12 99"]) {
+            [position attributeForName:@"value"].stringValue=bad;check(SubPopNativeStyleFromTitle(title)==nil,@"invalid position cannot silently become a zero-position preset");
+        }
+        [position attributeForName:@"value"].stringValue=@"37 -125.457 12";
+        NSXMLElement *positionAnimation=[NSXMLElement elementWithName:@"keyframeAnimation"];[position addChild:positionAnimation];
+        check(SubPopNativeStyleFromTitle(title)==nil,@"animated text position is not flattened");[positionAnimation detach];
+        [position detach];check([SubPopNativeStyleFromTitle(title)[@"textPositionY"] doubleValue]==0,@"old presets and default titles use zero text position");
+        SubPopApplyNativeStyle(doc,style);
         NSXMLElement *textStyle=[title nodesForXPath:@"text-style-def/text-style" error:nil].firstObject;
         [textStyle removeAttributeForName:@"fontFace"];[textStyle addAttribute:[NSXMLNode attributeWithName:@"bold" stringValue:@"1"]];
         check([SubPopNativeStyleFromTitle(title)[@"textFace"] isEqual:@"Bold"],@"legacy bold attribute preserves font weight");
@@ -63,7 +76,7 @@ int main(int argc,const char *argv[]) {
         NSWindow *window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,840,850) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];window.contentView=c.view;[window orderFront:nil];
         NSDictionary *before=c.titlePayloads.copy,*oldStyle=c.nativeStyle.copy;
         [c showTap5aStyle:nil];spin();
-        check(c.editingNativeStyle && c.tap5aStyleControls.count==17 && window.attachedSheet!=nil,@"native editor opens with all supported controls");
+        check(c.editingNativeStyle && c.tap5aStyleControls.count==20 && window.attachedSheet!=nil,@"native editor opens with all supported controls");
         [c fillNativeStyleControls:style];check([[c currentTap5aStyleValues] isEqual:style],@"editor preserves all published units including negative height and animation tags");
         c.nativePresetName.stringValue=@"测试默认";[c saveNativePreset:nil];[c defaultNativePreset:nil];
         check([store.defaultStyle isEqual:style] && store.presets.count==1,@"save and default actions persist editor settings");
@@ -82,6 +95,7 @@ int main(int argc,const char *argv[]) {
         check([c.nativeStyle isEqual:style] && ![c.titlePayloads isEqual:before],@"apply loads saved native style onto current captions");
         NSXMLDocument *applied=[[NSXMLDocument alloc] initWithData:c.titlePayloads[@"1.14"] options:0 error:nil];
         check([[applied nodesForXPath:@"//title/param[@name='Background Height']/@value" error:nil].firstObject.stringValue isEqual:@"0.46"],@"applied payload contains native published height");
+        check([[applied nodesForXPath:@"//title/param[@name='Position']/@value" error:nil].firstObject.stringValue isEqual:@"37 -125.457 12"],@"saved preset restores the text inspector position into every generated title");
         c.nativeStyle=nil;[c templateChanged:nil];check([c.nativeStyle isEqual:style],@"new result selecting native uses saved default");
         [c.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];[c templateChanged:nil];
         check(![c.templatePicker.titleOfSelectedItem containsString:@"自适应"],@"plain subtitle remains independently selectable");

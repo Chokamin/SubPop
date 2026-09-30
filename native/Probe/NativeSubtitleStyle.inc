@@ -71,9 +71,9 @@
     NSXMLElement *title=sender.selectedItem.representedObject;
     if (![title isKindOfClass:NSXMLElement.class]) return;
     NSDictionary *style=SubPopNativeStyleFromTitle(title);
-    if (!style) {self.nativePresetNotice.stringValue=@"这条字幕含参数关键帧，无法保存为静态样式；请选择其他字幕。";return;}
+    if (!style) {self.nativePresetNotice.stringValue=@"这条字幕含参数关键帧或无法读取的位置，无法保存为静态样式；请选择其他字幕。";return;}
     [self.nativePresetPicker selectItemAtIndex:0];self.nativePresetName.stringValue=@"";[self fillNativeStyleControls:style];
-    self.nativePresetNotice.stringValue=@"已读取这条字幕的静态字体及底框参数。输入名称后可保存预设。";
+    self.nativePresetNotice.stringValue=@"已读取静态字体、文字位置及底框参数。输入名称后可保存预设。";
 }
 - (void)showNativeStyle:(id)sender {
     if (self.importInProgress || self.tap5aStyleControls || !self.captionRows.count) return;
@@ -113,11 +113,11 @@
         popup.target=self;popup.action=i ? @selector(tap5aPreviewChanged:) : @selector(textFamilyChanged:);[popup setAccessibilityLabel:label.stringValue];[textTab addSubview:popup];self.tap5aStyleControls[key]=popup;
     }
     NSArray *textFields=[SubPopTextFields() subarrayWithRange:NSMakeRange(0,4)];
-    NSArray *fields=[textFields arrayByAddingObjectsFromArray:SubPopNativeBoxFields()];
+    NSArray *fields=[[textFields arrayByAddingObjectsFromArray:SubPopNativeBoxFields()] arrayByAddingObjectsFromArray:SubPopNativeTextPositionFields()];
     for (NSUInteger i=0;i<fields.count;i++) {
-        NSArray *f=fields[i];NSString *key=f[0];BOOL text=i<4,animation=i>=12;
-        NSUInteger index=text ? i : (animation ? i-12 : i-4);NSUInteger row=animation || text ? index : index%5;
-        CGFloat x=(!text && !animation && index>=5) ? 304 : 12;
+        NSArray *f=fields[i];NSString *key=f[0];BOOL position=i>=15,text=i<4 || position,animation=i>=12 && i<15;
+        NSUInteger index=position ? i-15 : (text ? i : (animation ? i-12 : i-4));NSUInteger row=animation || text ? index : index%5;
+        CGFloat x=(position || (!text && !animation && index>=5)) ? 304 : 12;
         CGFloat y=(text ? 159 : 233)-row*35;NSView *container=text ? textTab : (animation ? animationTab : boxTab);
         SubPopResetLabel *reset=[[SubPopResetLabel alloc] initWithFrame:NSMakeRect(x,y,142,24)];reset.title=f[1];reset.bordered=NO;reset.alignment=NSTextAlignmentLeft;reset.font=[NSFont systemFontOfSize:12];reset.target=reset;reset.action=@selector(resetClick:);[container addSubview:reset];
         NSControl *control;
@@ -133,6 +133,8 @@
         }
         control.target=self;control.action=@selector(tap5aPreviewChanged:);[control setAccessibilityLabel:f[1]];[container addSubview:control];self.tap5aStyleControls[key]=control;
     }
+    label=[NSTextField wrappingLabelWithString:@"对应 FCP「文本」页的位置，\n与模板的位置偏移分别保存。"];
+    label.frame=NSMakeRect(304,20,255,54);label.font=[NSFont systemFontOfSize:11];label.textColor=NSColor.secondaryLabelColor;[textTab addSubview:label];
     label=[NSTextField wrappingLabelWithString:@"宽高为自适应底框的调整量，0 使用模板默认。\n数值与 FCP 检查器一致；最终画面和动画请在 FCP 中查看。"];
     label.frame=NSMakeRect(12,6,550,40);label.font=[NSFont systemFontOfSize:11];label.textColor=NSColor.secondaryLabelColor;[boxTab addSubview:label];
     label=[self label:@"读取项目字幕" size:12 weight:NSFontWeightRegular];label.frame=NSMakeRect(0,56,110,24);[content addSubview:label];

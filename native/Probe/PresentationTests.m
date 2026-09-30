@@ -195,7 +195,7 @@ int main(int argc,const char *argv[]) {
         [controller.templatePicker selectItemAtIndex:SubPopTitleTemplateNative];[controller rebuildTitles];
         for (NSString *v in basic) {
             NSXMLDocument *native=[[NSXMLDocument alloc] initWithData:controller.titlePayloads[v] options:0 error:nil];
-            if (![[[native nodesForXPath:@"/fcpxml/resources/effect/@uid" error:nil] firstObject].stringValue isEqual:SubPopNativeSubtitleUID] || [native nodesForXPath:@"//title/adjust-transform" error:nil].count || [native nodesForXPath:@"//title/param" error:nil].count!=controller.captionRows.count*SubPopNativeBoxFields().count) return 86;
+            if (![[[native nodesForXPath:@"/fcpxml/resources/effect/@uid" error:nil] firstObject].stringValue isEqual:SubPopNativeSubtitleUID] || [native nodesForXPath:@"//title/adjust-transform" error:nil].count || [native nodesForXPath:@"//title/param" error:nil].count!=controller.captionRows.count*(SubPopNativeBoxFields().count+1)) return 86;
             NSXMLDocument *exported=[[NSXMLDocument alloc] initWithData:SubPopTitleExportXML(controller.titlePayloads[v],@"测试",5,nil) options:0 error:nil];
             if (![[[exported nodesForXPath:@"/fcpxml/resources/effect/@uid" error:nil] firstObject].stringValue isEqual:SubPopNativeSubtitleUID]) return 92;
             if ([native nodesForXPath:@"//title[@start='3600s']" error:nil].count!=controller.captionRows.count) return 87;

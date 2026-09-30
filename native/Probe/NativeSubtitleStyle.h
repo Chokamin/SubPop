@@ -1,5 +1,13 @@
 #import "Tap5aStyle.h"
 
+// Text inspector position is separate from the template's published rig offsets.
+static NSString *const SubPopNativeTextPositionKey=@"9999/3336674837/3336674846/1/100/101";
+static NSArray *SubPopNativeTextPositionFields(void) {
+    return @[@[@"textPositionX",@"文本位置 X（px）",@0,@-10000,@10000],
+             @[@"textPositionY",@"文本位置 Y（px）",@0,@-10000,@10000],
+             @[@"textPositionZ",@"文本位置 Z（px）",@0,@-10000,@10000]];
+}
+
 // Native Subtitle's published rig sliders are normalized 0..1 in FCPXML.
 // These values stay in the units displayed in the FCP Title inspector.
 static NSArray *SubPopNativeBoxFields(void) {
@@ -21,7 +29,7 @@ static NSDictionary *SubPopNormalizeNativeStyle(id input) {
     NSDictionary *source=[input isKindOfClass:NSDictionary.class] ? input : @{};
     // Reuse the font resolver, but never clamp native geometry to Tap5a ranges.
     NSMutableDictionary *result=[SubPopNormalizeTap5aStyle(source) mutableCopy];
-    for (NSArray *f in SubPopNativeBoxFields()) {
+    for (NSArray *f in [SubPopNativeBoxFields() arrayByAddingObjectsFromArray:SubPopNativeTextPositionFields()]) {
         id value=source[f[0]];
         if ([f[2] isKindOfClass:NSArray.class]) {
             BOOL valid=[value isKindOfClass:NSArray.class] && [value count]==3;
@@ -54,6 +62,14 @@ static double SubPopNativeDecodeNumber(NSString *key,double value) {
 static void SubPopApplyNativeStyle(NSXMLDocument *doc,NSDictionary *input) {
     NSDictionary *s=SubPopNormalizeNativeStyle(input);
     for (NSXMLElement *title in [doc nodesForXPath:@"/fcpxml/clip/spine/title" error:nil]) {
+        for (NSXMLElement *old in [title elementsForName:@"param"]) if ([[old attributeForName:@"key"].stringValue isEqual:SubPopNativeTextPositionKey]) [old detach];
+        NSXMLElement *position=[NSXMLElement elementWithName:@"param"];
+        [position addAttribute:[NSXMLNode attributeWithName:@"name" stringValue:@"Position"]];
+        [position addAttribute:[NSXMLNode attributeWithName:@"key" stringValue:SubPopNativeTextPositionKey]];
+        NSString *vector=[NSString stringWithFormat:@"%.12g %.12g",[s[@"textPositionX"] doubleValue],[s[@"textPositionY"] doubleValue]];
+        if ([s[@"textPositionZ"] doubleValue]!=0) vector=[vector stringByAppendingFormat:@" %.12g",[s[@"textPositionZ"] doubleValue]];
+        [position addAttribute:[NSXMLNode attributeWithName:@"value" stringValue:vector]];
+        [title insertChild:position atIndex:0];
         for (NSArray *f in SubPopNativeBoxFields()) {
             for (NSXMLElement *old in [title elementsForName:@"param"]) if ([[old attributeForName:@"key"].stringValue isEqual:f[6]]) [old detach];
             id value=s[f[0]];
@@ -86,6 +102,14 @@ static NSDictionary *SubPopNativeStyleFromTitle(NSXMLElement *title) {
     }
     NSString *rgb=[text attributeForName:@"fontColor"].stringValue;
     if (rgb) {NSScanner *scan=[NSScanner scannerWithString:rgb];double a,b,c;if ([scan scanDouble:&a] && [scan scanDouble:&b] && [scan scanDouble:&c]) s[@"textColor"]=@[@(a),@(b),@(c)];}
+    for (NSXMLElement *param in [title elementsForName:@"param"]) {
+        if (![[param attributeForName:@"key"].stringValue isEqual:SubPopNativeTextPositionKey]) continue;
+        if ([param elementsForName:@"keyframeAnimation"].count) return nil;
+        NSScanner *scan=[NSScanner scannerWithString:[param attributeForName:@"value"].stringValue ?: @""];
+        double x,y,z=0;
+        if (![scan scanDouble:&x] || ![scan scanDouble:&y] || (!scan.isAtEnd && ![scan scanDouble:&z]) || !scan.isAtEnd || !isfinite(x) || !isfinite(y) || !isfinite(z)) return nil;
+        s[@"textPositionX"]=@(x);s[@"textPositionY"]=@(y);s[@"textPositionZ"]=@(z);
+    }
     for (NSArray *f in SubPopNativeBoxFields()) for (NSXMLElement *param in [title elementsForName:@"param"]) {
         if (![[param attributeForName:@"key"].stringValue isEqual:f[6]]) continue;
         // A keyframed parameter cannot be represented by one preset value.
