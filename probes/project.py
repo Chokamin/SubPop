@@ -204,6 +204,37 @@ def audio_selection(node, asset, audio_mode, effects):
     return bool(selected),','.join(dict.fromkeys(roles)) or role,effect_count,next(iter(gains),1.0)
 
 
+def split_audio_edit(node):
+    """Separate a composite J/L edit's picture and source-clock audio window.
+
+    Connected items stay with the original anchor; only contained media belongs
+    to the separate audio window. No original project XML is modified.
+    """
+    if node.tag not in ('asset-clip','clip','ref-clip'):
+        raise ValueError('此片段类型不能使用分离音频起止')
+    start=seconds(node.get('start','0s'))
+    length=seconds(node.get('duration','0s'))
+    audio_start=seconds(node.get('audioStart',str(start)+'s'))
+    audio_length=seconds(node.get('audioDuration',str(length)+'s'))
+    if audio_length<0:raise ValueError('音频片段时长不能为负数')
+    if node.get('srcEnable','all') not in ('all','audio','video'):
+        raise ValueError('无效的音频启用状态')
+    picture=deepcopy(node)
+    for key in ('audioStart','audioDuration'):picture.attrib.pop(key,None)
+    if audio_start==start and audio_length==length:return (picture,)
+    audio=deepcopy(picture)
+    picture.set('srcEnable','video')
+    if not audio_length or node.get('srcEnable','all')=='video':return (picture,)
+    if node.find('timeMap') is not None:
+        raise ValueError('暂不支持分离音频起止与变速同时使用；可导入整条时间线音频')
+    audio.set('srcEnable','audio')
+    audio.set('start',str(audio_start)+'s');audio.set('duration',str(audio_length)+'s')
+    audio.set('offset',str(seconds(node.get('offset','0s'))+audio_start-start)+'s')
+    for child in list(audio):
+        if child.tag in STORY_TAGS and child.get('lane','0')!='0':audio.remove(child)
+    return picture,audio
+
+
 def inspect(path, audio_mode='dialogue'):
     if audio_mode not in ('dialogue','all'):raise ValueError('Unknown audio mode')
     data=path.read_bytes()
@@ -241,6 +272,18 @@ def inspect(path, audio_mode='dialogue'):
         count+=1
         if count>5000 or depth>128:raise ValueError('项目片段过多或嵌套过深')
         if node.tag not in STORY_TAGS:raise ValueError('暂不支持此多机位或同步片段结构')
+        if 'audioStart' in node.attrib or 'audioDuration' in node.attrib:
+            # Resolve implied source starts/durations before splitting the edit.
+            resolved=deepcopy(node)
+            resource=assets.get(node.get('ref')) if node.tag=='asset-clip' else medias.get(node.get('ref')) if node.tag=='ref-clip' else None
+            sequence=resource.find('sequence') if resource is not None and node.tag=='ref-clip' else None
+            if 'start' not in resolved.attrib:
+                resolved.set('start',sequence.get('tcStart','0s') if sequence is not None else resource.get('start','0s') if resource is not None else '0s')
+            if 'duration' not in resolved.attrib and resource is not None:
+                resolved.set('duration',resource.get('duration','0s'))
+            for part in split_audio_edit(resolved):
+                walk(part,parent_origin,parent_start,bounds,inherited,parent_gain,depth,media_stack)
+            return
         asset=assets.get(node.get('ref')) if node.tag in ('asset-clip','audio') else None
         media=medias.get(node.get('ref')) if node.tag=='ref-clip' else None
         media_seq=media.find('sequence') if media is not None else None
@@ -254,7 +297,7 @@ def inspect(path, audio_mode='dialogue'):
         visible=(max(bounds[0],origin),min(bounds[1],origin+length))
         if visible[1]>visible[0]:timeline_end=max(timeline_end,visible[1])
         allowed=CLIP_ATTRS | ({'role','srcCh','srcID','outCh'} if node.tag=='audio' else {'role','srcID'} if node.tag=='video' else {'useAudioSubroles'} if node.tag=='ref-clip' else set())
-        if set(node.attrib)-allowed:raise ValueError('暂不支持分离的 J/L 音频或未知片段属性')
+        if set(node.attrib)-allowed:raise ValueError('暂不支持此片段的未知属性')
         if node.tag=='ref-clip' and node.get('useAudioSubroles','0') not in ('0','1'):
             raise ValueError('复合片段音频子角色设置无效')
         enabled=inherited and flag(node,'enabled')
@@ -319,17 +362,29 @@ def inspect(path, audio_mode='dialogue'):
                 for audio_asset in audio_assets:
                     source_format=root.find(f"resources/format[@id='{audio_asset.get('format')}']") if audio_asset is not None else None
                     source_frames.append(seconds(source_format.get('frameDuration','0s')) if source_format is not None else None)
-                # FCP-exported clips explicitly retain the 60 fps source
-                # format. Their audio stays on the project clock even though
-                # conform-rate changes video sampling (verified against FCP
-                # WAV exports with and without audio effects). A bare imported
-                # clip without that format plays its audio at 2x instead.
-                if (node.tag not in ('asset-clip','clip') or media_stack or frame!=Fraction(1001,30000)
-                        or c.get('srcFrameRate')!='60' or not source_frames
-                        or any(rate!=Fraction(1,60) for rate in source_frames)):
-                    raise ValueError('暂不支持此有声片段的速度缩放帧率适配')
-                if not node.get('format') or any(node.get('format')!=audio_asset.get('format') for audio_asset in audio_assets):
+                source_rate=c.get('srcFrameRate')
+                known_frame={'60':Fraction(1,60),'59.94':Fraction(1001,60000)}.get(source_rate)
+                clip_format=root.find(f"resources/format[@id='{node.get('format')}']")
+                clip_frame=seconds(clip_format.get('frameDuration','0s')) if clip_format is not None else None
+                explicit_source=(node.tag in ('asset-clip','clip') and known_frame is not None
+                    and source_frames and all(rate==known_frame for rate in source_frames)
+                    and clip_frame==known_frame)
+                # Explicit FCP source format retains its real audio clock;
+                # conform-rate then changes video sampling, not source PCM.
+                if explicit_source:
+                    conform_speed=Fraction(1)
+                elif (node.tag in ('asset-clip','clip') and source_rate=='59.94'
+                      and source_frames and all(rate==known_frame for rate in source_frames)
+                      and clip_frame is None and not node.get('format')):
+                    # FCP 12.3 round-trips these 59.94 sources at 1x in
+                    # 25/29.97/59.94 projects, dropping redundant conform-rate.
+                    conform_speed=Fraction(1)
+                elif (node.tag in ('asset-clip','clip') and not media_stack and source_rate=='60'
+                      and source_frames and all(rate==known_frame for rate in source_frames)
+                      and frame==Fraction(1001,30000)):
                     conform_speed=Fraction(2)
+                else:
+                    raise ValueError('暂不支持此有声片段的速度缩放帧率适配')
         # A video-only reverse or smooth retime does not change independently
         # scheduled dialogue. Its visual timing need not be reconstructed.
         has_time_map=node.find('timeMap') is not None
@@ -485,7 +540,11 @@ def render(xml,directory,binary,expected_uid,audio_mode='dialogue'):
         source_xml=directory/'decode-segment.fcpxml';source_xml.write_bytes(ET.tostring(doc,encoding='utf-8'))
         result=subprocess.run([str(binary),str(source_xml),expected_uid,str(directory)],capture_output=True,text=True,check=True,timeout=60)
         decoded=json.loads(result.stdout)
-        if decoded.get('status')!='decoded':raise ValueError('无法读取媒体，请检查文件是否在线及目录访问权限：'+decoded.get('stage','unknown'))
+        if decoded.get('status')!='decoded':
+            stage=decoded.get('stage','unknown')
+            if stage in ('incomplete-project-audio','decode'):
+                raise ValueError('源媒体音轨未能完整读取；请检查媒体，或导入整条时间线音频：'+stage)
+            raise ValueError('无法读取媒体，请检查文件是否在线及目录访问权限：'+stage)
         name=decoded.get('pcmFile','')
         if not name or Path(name).name!=name:raise ValueError('Invalid decoder output')
         values=array('f');values.frombytes((directory/name).read_bytes());(directory/name).unlink()

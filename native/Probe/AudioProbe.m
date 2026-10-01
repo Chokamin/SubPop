@@ -103,17 +103,47 @@ NSDictionary *SubPopProbeAudio(NSData *xml, NSString *expectedUID, NSURL *output
         [avasset loadTracksWithMediaType:AVMediaTypeAudio completionHandler:^(NSArray<AVAssetTrack *> *loaded, NSError *err) { tracks=loaded; loadError=err; dispatch_semaphore_signal(ready); }];
         if (dispatch_semaphore_wait(ready,dispatch_time(DISPATCH_TIME_NOW,15*NSEC_PER_SEC))) { [result addEntriesFromDictionary:Failure(@"audio-track-timeout",nil)]; return result; }
         if (tracks.count!=1) { [result addEntriesFromDictionary:Failure(@"single-audio-track-required",loadError)]; return result; }
+        // Only silence outside a verified audio track, within the real media
+        // container, is padding. A truncated/missing media range still fails.
+        dispatch_semaphore_t durationReady=dispatch_semaphore_create(0);
+        __block CMTime containerDuration=kCMTimeInvalid;
+        [avasset loadValuesAsynchronouslyForKeys:@[@"duration"] completionHandler:^{
+            NSError *durationError=nil;
+            if ([avasset statusOfValueForKey:@"duration" error:&durationError]==AVKeyValueStatusLoaded) containerDuration=avasset.duration;
+            dispatch_semaphore_signal(durationReady);
+        }];
+        if (dispatch_semaphore_wait(durationReady,dispatch_time(DISPATCH_TIME_NOW,15*NSEC_PER_SEC))) { [result addEntriesFromDictionary:Failure(@"duration-timeout",nil)];return result; }
+        CMTimeRange trackRange=tracks[0].timeRange;
+        CMTime requestedEnd=CMTimeAdd(sourceStart,duration);
+        if (!CMTIME_IS_NUMERIC(containerDuration) || !CMTIMERANGE_IS_VALID(trackRange)
+            || !CMTIME_IS_NUMERIC(trackRange.start) || !CMTIME_IS_NUMERIC(trackRange.duration)
+            || CMTimeCompare(trackRange.start,kCMTimeZero)<0 || CMTimeCompare(trackRange.duration,kCMTimeZero)<0
+            || CMTimeCompare(requestedEnd,CMTimeAdd(containerDuration,CMTimeMake(1,20)))>0) {
+            [result addEntriesFromDictionary:Failure(@"incomplete-project-audio",nil)];return result;
+        }
+        // AAC metadata may omit its last compressed packet (observed 22ms).
+        // That is not proof of silence: decode the requested range and still
+        // require all PCM. Only a track gap inside a longer container is padded.
+        BOOL verifiedGap=CMTimeCompare(requestedEnd,containerDuration)<=0
+            && (CMTimeCompare(trackRange.start,kCMTimeZero)>0
+                || CMTimeCompare(CMTimeRangeGetEnd(trackRange),containerDuration)<0);
+        CMTimeRange audioRange=verifiedGap ? CMTimeRangeGetIntersection(CMTimeRangeMake(sourceStart,duration),trackRange) : CMTimeRangeMake(sourceStart,duration);
+        BOOL hasAudio=CMTIMERANGE_IS_VALID(audioRange) && CMTimeCompare(audioRange.duration,kCMTimeZero)>0;
+        CMTime decodeStart=hasAudio ? audioRange.start : sourceStart;
+        CMTime decodeDuration=hasAudio ? audioRange.duration : kCMTimeZero;
+        result[@"sourceAudioStartSeconds"]=@(CMTimeGetSeconds(trackRange.start));
+        result[@"sourceAudioDurationSeconds"]=@(CMTimeGetSeconds(trackRange.duration));
         error=nil;
         AVAssetReader *reader=[[AVAssetReader alloc] initWithAsset:avasset error:&error];
         if (!reader) { [result addEntriesFromDictionary:Failure(@"reader-init",error)]; return result; }
-        reader.timeRange=CMTimeRangeMake(sourceStart,duration);
+        reader.timeRange=CMTimeRangeMake(decodeStart,decodeDuration);
         AVAssetReaderTrackOutput *out=[[AVAssetReaderTrackOutput alloc] initWithTrack:tracks[0] outputSettings:@{AVFormatIDKey:@(kAudioFormatLinearPCM),AVSampleRateKey:@16000,AVNumberOfChannelsKey:@1,AVLinearPCMBitDepthKey:@32,AVLinearPCMIsFloatKey:@YES,AVLinearPCMIsNonInterleaved:@NO,AVLinearPCMIsBigEndianKey:@NO}];
         if (![reader canAddOutput:out]) { [result addEntriesFromDictionary:Failure(@"reader-output",nil)]; return result; }
         [reader addOutput:out];
-        if (![reader startReading]) { [result addEntriesFromDictionary:Failure(@"reader-start",reader.error)]; return result; }
+        if (hasAudio && ![reader startReading]) { [result addEntriesFromDictionary:Failure(@"reader-start",reader.error)]; return result; }
         NSMutableData *pcm=[NSMutableData new];
         CFAbsoluteTime deadline=CFAbsoluteTimeGetCurrent()+20;
-        while (reader.status==AVAssetReaderStatusReading) {
+        while (hasAudio && reader.status==AVAssetReaderStatusReading) {
             if (CFAbsoluteTimeGetCurrent()>deadline || pcm.length>30*16000*4) { [reader cancelReading]; break; }
             CMSampleBufferRef sample=[out copyNextSampleBuffer];
             if (!sample) break;
@@ -128,22 +158,31 @@ NSDictionary *SubPopProbeAudio(NSData *xml, NSString *expectedUID, NSURL *output
             // 48 extra samples at a 30s boundary). Crop by output timestamps,
             // rather than treating a complete packet as project audio.
             if (!CMTIME_IS_NUMERIC(presentation) || length%4) { [reader cancelReading]; break; }
-            int64_t first=CMTimeConvertScale(CMTimeSubtract(sourceStart,presentation),16000,kCMTimeRoundingMethod_RoundHalfAwayFromZero).value;
-            int64_t last=CMTimeConvertScale(CMTimeSubtract(CMTimeAdd(sourceStart,duration),presentation),16000,kCMTimeRoundingMethod_RoundHalfAwayFromZero).value;
+            int64_t first=CMTimeConvertScale(CMTimeSubtract(decodeStart,presentation),16000,kCMTimeRoundingMethod_RoundHalfAwayFromZero).value;
+            int64_t last=CMTimeConvertScale(CMTimeSubtract(CMTimeAdd(decodeStart,decodeDuration),presentation),16000,kCMTimeRoundingMethod_RoundHalfAwayFromZero).value;
             first=MAX(0,first);last=MIN((int64_t)(length/4),last);
             if (last>first) [pcm appendBytes:(const char *)chunk.bytes+first*4 length:(NSUInteger)(last-first)*4];
         }
-        if (reader.status!=AVAssetReaderStatusCompleted || !pcm.length || pcm.length%4) { [result addEntriesFromDictionary:Failure(@"decode",reader.error)]; result[@"readerStatus"]=@(reader.status);result[@"decodedSamples"]=@(pcm.length/4); return result; }
+        if (hasAudio && (reader.status!=AVAssetReaderStatusCompleted || !pcm.length || pcm.length%4)) { [result addEntriesFromDictionary:Failure(@"decode",reader.error)]; result[@"readerStatus"]=@(reader.status);result[@"decodedSamples"]=@(pcm.length/4); return result; }
         int64_t expectedSamples=CMTimeConvertScale(duration,16000,kCMTimeRoundingMethod_RoundHalfAwayFromZero).value;
-        int64_t sampleDelta=expectedSamples-(int64_t)(pcm.length/4);
-        // AVFoundation's sample-rate converter can omit a few tail samples
-        // (observed: five at 48kHz stereo WAV -> 16kHz mono). Bound this to
-        // one millisecond; larger shortages still mean incomplete media.
+        int64_t prefix=hasAudio ? CMTimeConvertScale(CMTimeSubtract(decodeStart,sourceStart),16000,kCMTimeRoundingMethod_RoundHalfAwayFromZero).value : 0;
+        int64_t end=hasAudio ? CMTimeConvertScale(CMTimeSubtract(CMTimeAdd(decodeStart,decodeDuration),sourceStart),16000,kCMTimeRoundingMethod_RoundHalfAwayFromZero).value : 0;
+        prefix=MAX(0,MIN(expectedSamples,prefix));end=MAX(prefix,MIN(expectedSamples,end));
+        int64_t audibleSamples=end-prefix;
+        int64_t sampleDelta=audibleSamples-(int64_t)(pcm.length/4);
+        // Keep the existing 1ms converter-tail allowance inside the verified
+        // audible range. Larger shortages never become invented silence.
         if (sampleDelta && llabs(sampleDelta)<=16) {
             result[@"resampleTailAdjustmentSamples"]=@(sampleDelta);
-            [pcm setLength:(NSUInteger)expectedSamples*4];
+            [pcm setLength:(NSUInteger)audibleSamples*4];
         }
-        if ((int64_t)(pcm.length/4)!=expectedSamples) { [result addEntriesFromDictionary:Failure(@"incomplete-project-audio",nil)]; result[@"sampleCount"]=@(pcm.length/4); result[@"expectedSampleCount"]=@(expectedSamples); return result; }
+        if ((int64_t)(pcm.length/4)!=audibleSamples) { [result addEntriesFromDictionary:Failure(@"incomplete-project-audio",nil)]; result[@"sampleCount"]=@(pcm.length/4); result[@"expectedSampleCount"]=@(audibleSamples); return result; }
+        if (audibleSamples!=expectedSamples) {
+            NSMutableData *timeline=[NSMutableData dataWithLength:(NSUInteger)expectedSamples*4];
+            if (pcm.length) memcpy((char *)timeline.mutableBytes+prefix*4,pcm.bytes,pcm.length);
+            result[@"verifiedSilenceSamples"]=@(expectedSamples-audibleSamples);
+            pcm=timeline;
+        }
         NSString *name=[NSString stringWithFormat:@"audio-%@.f32le",NSUUID.UUID.UUIDString];
         error=nil;
         if (![pcm writeToURL:[outputDirectory URLByAppendingPathComponent:name] options:NSDataWritingAtomic error:&error]) { [result addEntriesFromDictionary:Failure(@"pcm-save",error)]; return result; }

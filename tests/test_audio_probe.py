@@ -106,6 +106,49 @@ class AudioProbeTests(unittest.TestCase):
             tree.find('.//asset-clip').set('duration','9s')
         self.assertEqual(self.probe(longer_project)['stage'],'incomplete-project-audio')
 
+    def test_short_audio_track_uses_verified_silence_without_losing_position(self):
+        from array import array
+        media=self.directory/'short-audio-5994.mp4'
+        subprocess.run(['/opt/homebrew/bin/ffmpeg','-v','error','-nostdin','-y',
+            '-f','lavfi','-t','4.004','-i','color=c=black:size=160x90:rate=60000/1001',
+            '-f','lavfi','-t','2','-i','sine=frequency=440:sample_rate=48000',
+            '-c:v','mpeg4','-c:a','aac','-ac','1',str(media)],check=True)
+        for start,duration,audible in ((0,4,2),(1,3,1),(3,1,0)):
+            def mutate(tree):
+                tree.find('.//media-rep').set('src',media.as_uri())
+                tree.find('.//sequence').set('duration',f'{duration}s')
+                clip=tree.find('.//asset-clip');clip.set('start',f'{start}s');clip.set('duration',f'{duration}s')
+            result=self.probe(mutate)
+            self.assertEqual(result['status'],'decoded',result)
+            self.assertEqual(result['sampleCount'],duration*16000)
+            pcm=array('f');pcm.frombytes((self.directory/result['pcmFile']).read_bytes())
+            if audible:self.assertGreater(max(abs(v) for v in pcm[:audible*16000]),0.05)
+            self.assertTrue(all(v==0 for v in pcm[audible*16000:]))
+            self.assertEqual(result['verifiedSilenceSamples'],(duration-audible)*16000)
+
+    def test_requested_range_after_container_end_still_fails(self):
+        def mutate(tree):
+            tree.find('.//sequence').set('duration','1s')
+            clip=tree.find('.//asset-clip');clip.set('start','9s');clip.set('duration','1s')
+        self.assertEqual(self.probe(mutate)['stage'],'incomplete-project-audio')
+
+    def test_delayed_audio_track_keeps_leading_silence(self):
+        from array import array
+        media=self.directory/'delayed-audio.mp4'
+        subprocess.run(['/opt/homebrew/bin/ffmpeg','-v','error','-nostdin','-y',
+            '-f','lavfi','-t','4','-i','color=c=black:size=160x90:rate=25',
+            '-itsoffset','1','-f','lavfi','-t','2','-i','sine=frequency=440:sample_rate=48000',
+            '-c:v','mpeg4','-c:a','aac','-ac','1',str(media)],check=True)
+        def mutate(tree):
+            tree.find('.//media-rep').set('src',media.as_uri())
+            tree.find('.//sequence').set('duration','4s');tree.find('.//asset-clip').set('duration','4s')
+        result=self.probe(mutate);self.assertEqual(result['status'],'decoded',result)
+        pcm=array('f');pcm.frombytes((self.directory/result['pcmFile']).read_bytes())
+        self.assertEqual(len(pcm),64000)
+        self.assertEqual(max(abs(v) for v in pcm[:15000]),0)
+        self.assertGreater(max(abs(v) for v in pcm[18000:46000]),0.05)
+        self.assertEqual(max(abs(v) for v in pcm[50000:]),0)
+
     def test_decode_whole_fixture(self):
         result = self.probe()
         self.assertEqual(result['status'],'decoded',result)

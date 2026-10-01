@@ -445,11 +445,10 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(self.inspect(root)['segments'][1]['startSample'],32000)
         clip.set('enabled','0');plan=self.inspect(root);self.assertEqual(len(plan['segments']),1);self.assertEqual(plan['segments'][0]['startSample'],32000)
 
-    def test_audio_effect_retime_and_jl_are_rejected(self):
-        for change in ('timeMap','filter-audio','audioDuration'):
+    def test_unknown_audio_effect_and_retime_are_rejected(self):
+        for change in ('timeMap','filter-audio'):
             root,p,seq,clip=basic()
-            if change=='audioDuration':clip.set(change,'1s')
-            else:ET.SubElement(clip,change)
+            ET.SubElement(clip,change)
             with self.assertRaises(ValueError):self.inspect(root)
 
     def test_dialogue_filters_and_builtin_enhancements_use_source_audio(self):
