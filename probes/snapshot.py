@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 from .title_fixture import EFFECT
 from .readback import seconds
 from .project import UnsupportedAudioRetime,inverse_retime_ranges,linear_time_map
+from .source_clips import conform_audio_speed,multicam_sources
 
 NATIVE_SUBTITLE_EFFECT='.../Titles.localized/Subtitles.localized/Subtitle.localized/Subtitle.moti'
 SILENT_TITLE_EFFECTS={EFFECT,NATIVE_SUBTITLE_EFFECT}
@@ -52,7 +53,7 @@ def prepare(data, generic=False):
     projects=root.findall('.//project')
     if len(projects)!=1:raise ValueError('One project required')
     seq=projects[0].find('sequence');spine=seq.find('spine') if seq is not None else None
-    story_tags=('asset-clip','gap','clip','audio','video','ref-clip') if generic else ('asset-clip','gap')
+    story_tags=('asset-clip','gap','clip','audio','video','ref-clip','sync-clip','mc-clip','spine') if generic else ('asset-clip','gap')
     root_tags=(*story_tags,'title') if generic else story_tags
     if spine is None or not 1<=len(spine)<=(5000 if generic else 64):
         raise ValueError('暂不支持此时间线结构' if generic else 'Consecutive clips/gaps required')
@@ -91,15 +92,20 @@ def prepare(data, generic=False):
     unsupported={c.tag for c in spine if c.tag not in root_tags}
     if unsupported:
         if not generic:raise ValueError('Consecutive clips/gaps required')
-        if unsupported & {'mc-clip','sync-clip','audition'}:
-            raise ValueError('暂不支持多机位或同步片段；可导入整条时间线音频继续识别')
+        if 'audition' in unsupported:
+            raise ValueError('暂不支持试演片段；可导入整条时间线音频继续识别')
         raise ValueError('暂不支持此时间线结构；可导入整条时间线音频继续识别')
     effects={e.get('id'):e.get('uid') for e in root.findall('resources/effect')}
     duration=seconds(seq.get('duration','0s'));existing=[]
     fmt=root.find(f"resources/format[@id='{seq.get('format')}']")
     fps=1/seconds(fmt.get('frameDuration','1/25s')) if generic and fmt is not None else Fraction(25)
-    def titles(nodes,origin,parent_start,parent,bounds,media_stack=(),warps=(),unmapped=False):
+    title_budget=0
+    def titles(nodes,origin,parent_start,parent,bounds,media_stack=(),warps=(),unmapped=False,clock_frame=None):
+        nonlocal title_budget
+        if clock_frame is None:clock_frame=1/fps
         for clip in nodes:
+            title_budget+=1
+            if title_budget>20000 or len(media_stack)>128:raise ValueError('项目片段过多或嵌套过深')
             if clip.tag=='title':
                 begin=origin+seconds(clip.get('offset','0s'))-parent_start
                 end=begin+seconds(clip.get('duration','0s'))
@@ -113,9 +119,11 @@ def prepare(data, generic=False):
                 continue
             if clip.tag not in story_tags:continue
             asset=resources.get(clip.get('ref')) if clip.tag in ('asset-clip','audio') else None
-            media=resources.get(clip.get('ref')) if clip.tag=='ref-clip' else None
+            media=resources.get(clip.get('ref')) if clip.tag in ('ref-clip','mc-clip') else None
             media_seq=media.find('sequence') if media is not None and media.tag=='media' else None
-            if clip.tag=='ref-clip' and (media_seq is None or clip.get('ref') in media_stack):
+            selected_angles=[]
+            if clip.tag=='mc-clip':media_seq,selected_angles=multicam_sources(clip,resources)
+            if clip.tag in ('ref-clip','mc-clip') and (media_seq is None or clip.get('ref') in media_stack):
                 raise ValueError('复合片段引用缺失或形成循环')
             default_start=asset.get('start','0s') if asset is not None else media_seq.get('tcStart','0s') if media_seq is not None else '0s'
             start=seconds(clip.get('start',default_start))
@@ -132,28 +140,46 @@ def prepare(data, generic=False):
                 # Strip silent titles as usual, but do not invent their output
                 # clock or report an inaccurate collision interval.
                 retime=None;unsupported=True
+            rate=Fraction(1)
+            if has_nested_titles and clip.find('conform-rate') is not None:
+                try:rate=conform_audio_speed(clip,root,resources,clock_frame,media_seq,nested=bool(media_stack))
+                except ValueError:unsupported=True
+                if rate!=1 and retime:unsupported=True
+                elif rate!=1:retime=([(Fraction(0),length,start,start+length*rate)],False)
+            clip_format=resources.get(clip.get('format'))
+            child_frame=seconds(clip_format.get('frameDuration','0s')) if clip_format is not None and clip_format.tag=='format' else clock_frame
             children=list(clip) if generic else [c for c in clip if c.tag=='title']
             if retime:
                 mapping,_=retime
                 local_bounds=(mapping[0][2],mapping[-1][3])
                 output_bounds=(max(bounds[0],position),min(bounds[1],position+length))
-                yield from titles(children,Fraction(0),Fraction(0),clip,local_bounds,media_stack,
-                                  ((mapping,position,output_bounds),*warps),unmapped)
+                separate_anchors=clip.tag=='sync-clip' and rate!=1
+                inner_children=[child for child in children if not separate_anchors or child.get('lane','0')=='0']
+                anchors=[child for child in children if separate_anchors and child.get('lane','0')!='0']
+                yield from titles(inner_children,Fraction(0),Fraction(0),clip,local_bounds,media_stack,
+                                  ((mapping,position,output_bounds),*warps),unmapped or unsupported,child_frame)
+                yield from titles(anchors,position,start/rate if clip.tag=='sync-clip' else start,clip,bounds,
+                                  media_stack,warps,unmapped or unsupported,clock_frame)
             else:
-                yield from titles(children,position,start,clip,bounds,media_stack,warps,unmapped or unsupported)
+                yield from titles(children,position,start,clip,bounds,media_stack,warps,unmapped or unsupported,child_frame)
             if media_seq is not None:
                 inner_spine=media_seq.find('spine')
-                if inner_spine is None or len(media_seq.findall('spine'))!=1:
+                if clip.tag!='mc-clip' and (inner_spine is None or len(media_seq.findall('spine'))!=1):
                     raise ValueError('复合片段缺少完整内部时间线')
                 inner_bounds=max(bounds[0],position),min(bounds[1],position+length)
-                if retime:
-                    mapping,_=retime
-                    yield from titles(list(inner_spine),Fraction(0),Fraction(0),inner_spine,
-                                      (mapping[0][2],mapping[-1][3]),(*media_stack,clip.get('ref')),
-                                      ((mapping,position,inner_bounds),*warps),unmapped)
-                else:
-                    yield from titles(list(inner_spine),position,start,inner_spine,inner_bounds,
-                                      (*media_stack,clip.get('ref')),warps,unmapped or unsupported)
+                media_format=resources.get(media_seq.get('format'))
+                media_frame=seconds(media_format.get('frameDuration','0s')) if media_format is not None else child_frame
+                branches=[(inner_spine,None)] if clip.tag!='mc-clip' else selected_angles
+                for branch,source in branches:
+                    audio_only=source is not None and source.get('srcEnable','all')=='audio'
+                    if retime:
+                        mapping,_=retime
+                        yield from titles(list(branch),Fraction(0),Fraction(0),branch,
+                                          (mapping[0][2],mapping[-1][3]),(*media_stack,clip.get('ref')),
+                                          ((mapping,position,inner_bounds),*warps),unmapped or unsupported or audio_only,media_frame)
+                    else:
+                        yield from titles(list(branch),position,start,branch,inner_bounds,
+                                          (*media_stack,clip.get('ref')),warps,unmapped or unsupported or audio_only,media_frame)
     stripped={}
     for title,visible,parent,retimed in titles(spine,Fraction(0),seconds(seq.get('tcStart','0s')),spine,(Fraction(0),duration)):
         effect=effects.get(title.get('ref'))

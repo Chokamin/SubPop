@@ -17,13 +17,14 @@ from urllib.parse import unquote, urlparse
 import xml.etree.ElementTree as ET
 from .readback import seconds
 from .timeline_audio import flag
+from .source_clips import conform_audio_speed,multicam_sources,synchronized_sources
 
 RATE=16000
 
 def sample(value):
     return (value*RATE + Fraction(1,2)).__floor__()
 
-STORY_TAGS={'asset-clip','gap','clip','audio','video','ref-clip'}
+STORY_TAGS={'asset-clip','gap','clip','audio','video','ref-clip','sync-clip','mc-clip','spine'}
 CLIP_ATTRS={'ref','offset','name','start','duration','enabled','tcFormat','audioRole','videoRole','srcEnable','format','tcStart','modDate','lane'}
 AUDIO_ENHANCEMENTS={
     'adjust-loudness':{'amount','uniformity'},
@@ -170,7 +171,7 @@ def volume_gain(node):
     return 10**(db/20)
 
 
-def audio_selection(node, asset, audio_mode, effects):
+def audio_selection(node, asset, audio_mode, effects, role_sources=()):
     """Only downmix the full source when all its channels have equal audibility.
 
     Two mono components are a normal stereo layout, not two source tracks.
@@ -182,16 +183,30 @@ def audio_selection(node, asset, audio_mode, effects):
     if asset.get('audioChannels') not in ('1','2') or asset.get('audioSources','1')!='1':raise ValueError('暂不支持多通道媒体')
     expected=set(range(1,int(asset.get('audioChannels'))+1));seen=set();selected=set();roles=[];effect_count=0;gains=set()
     if not components:
-        components=[ET.Element('audio-channel-source',srcCh=node.get('srcCh',', '.join(map(str,sorted(expected)))),role=role)]
+        components=[ET.Element('audio-channel-source',srcCh=node.get('srcCh',', '.join(map(str,sorted(expected)))),role=node.get('audioRole',node.get('role','dialogue')))]
     for component in components:
-        component_role=component.get('role',role).split('.')[0]
+        full_role=component.get('role',node.get('audioRole',node.get('role','dialogue')))
+        component_role=full_role.split('.')[0]
         active=flag(component,'active') and flag(component,'enabled') and not excluded_role(component_role,audio_mode)
+        matched=[]
+        for group in role_sources:
+            candidates=[source for source in group if full_role==source.get('role') or full_role.startswith(source.get('role','')+'.')]
+            if candidates:
+                source=max(candidates,key=lambda source:len(source.get('role')))
+                active=active and flag(source,'active') and flag(source,'enabled')
+                matched.append(source)
         if set(component.attrib)-{'srcCh','role','active','enabled'}:
             raise ValueError('暂不支持音频组件的通道重映射或裁剪')
         if active:
             volumes=component.findall('adjust-volume')
             if len(volumes)>1:raise ValueError('音量结构无效')
-            gains.add(volume_gain(volumes[0]) if volumes else 1.0)
+            component_gain=volume_gain(volumes[0]) if volumes else 1.0
+            for source in matched:
+                adjustments=source.findall('adjust-volume')
+                if len(adjustments)>1:raise ValueError('音量结构无效')
+                if adjustments:component_gain*=volume_gain(adjustments[0])
+                effect_count+=bypassed_audio_processors((child for child in source if child.tag!='adjust-volume'),effects)
+            gains.add(component_gain)
             effect_count+=bypassed_audio_processors((child for child in component if child.tag!='adjust-volume'),effects)
         text=component.get('srcCh','')
         if not re.fullmatch(r'\s*[1-9]\d*(?:\s*,\s*[1-9]\d*)*\s*',text):raise ValueError('音频通道配置无效')
@@ -204,13 +219,24 @@ def audio_selection(node, asset, audio_mode, effects):
     return bool(selected),','.join(dict.fromkeys(roles)) or role,effect_count,next(iter(gains),1.0)
 
 
+def validate_role_sources(sources):
+    seen=set()
+    for source in sources:
+        role=source.get('role')
+        if not role or role in seen or set(source.attrib)-{'role','active','enabled'}:
+            raise ValueError('暂不支持音频角色组件裁剪或未知设置；可导入整条时间线音频')
+        flag(source,'active');flag(source,'enabled');seen.add(role)
+        if any(child.tag not in (*AUDIO_ENHANCEMENTS,'adjust-volume','filter-audio') for child in source):
+            raise ValueError('暂不支持音频角色组件的静音区间或未知处理')
+
+
 def split_audio_edit(node):
     """Separate a composite J/L edit's picture and source-clock audio window.
 
     Connected items stay with the original anchor; only contained media belongs
     to the separate audio window. No original project XML is modified.
     """
-    if node.tag not in ('asset-clip','clip','ref-clip'):
+    if node.tag not in ('asset-clip','clip','ref-clip','sync-clip','mc-clip'):
         raise ValueError('此片段类型不能使用分离音频起止')
     start=seconds(node.get('start','0s'))
     length=seconds(node.get('duration','0s'))
@@ -231,7 +257,7 @@ def split_audio_edit(node):
     audio.set('start',str(audio_start)+'s');audio.set('duration',str(audio_length)+'s')
     audio.set('offset',str(seconds(node.get('offset','0s'))+audio_start-start)+'s')
     for child in list(audio):
-        if child.tag in STORY_TAGS and child.get('lane','0')!='0':audio.remove(child)
+        if child.tag in STORY_TAGS and child.get('lane','0')!='0' and node.tag!='sync-clip':audio.remove(child)
     return picture,audio
 
 
@@ -257,6 +283,7 @@ def inspect(path, audio_mode='dialogue'):
     segments=[];skipped=[];ignored=0;count=0;timeline_end=Fraction(0);bypassed_effects=0
 
     def possible_media_audio(sequence,visited=()):
+        if len(visited)>128:raise ValueError('项目片段嵌套过深')
         for clip in sequence.iter():
             if clip.tag in ('asset-clip','audio') and flag(clip,'enabled') and clip.get('srcEnable')!='video':
                 asset=assets.get(clip.get('ref'))
@@ -265,13 +292,24 @@ def inspect(path, audio_mode='dialogue'):
                 nested=medias.get(clip.get('ref'))
                 inner=nested.find('sequence') if nested is not None else None
                 if inner is not None and possible_media_audio(inner,(*visited,clip.get('ref'))):return True
+            if clip.tag=='mc-clip' and clip.get('ref') not in visited:
+                _,sources=multicam_sources(clip,medias)
+                if any(source.get('srcEnable','all') in ('all','audio') and possible_media_audio(angle,(*visited,clip.get('ref')))
+                       for angle,source in sources):return True
         return False
 
-    def walk(node,parent_origin,parent_start,bounds,inherited=True,parent_gain=1.0,depth=0,media_stack=()):
+    def walk(node,parent_origin,parent_start,bounds,inherited=True,parent_gain=1.0,depth=0,media_stack=(),role_sources=(),clock_frame=None):
         nonlocal ignored,count,timeline_end,segments,skipped,bypassed_effects
         count+=1
+        if clock_frame is None:clock_frame=frame
         if count>5000 or depth>128:raise ValueError('项目片段过多或嵌套过深')
-        if node.tag not in STORY_TAGS:raise ValueError('暂不支持此多机位或同步片段结构')
+        if node.tag not in STORY_TAGS:raise ValueError('暂不支持此片段结构；可导入整条时间线音频')
+        if node.tag=='spine':
+            if set(node.attrib)-{'offset','lane','name','format'}:raise ValueError('嵌套故事情节属性无效')
+            spine_origin=parent_origin+seconds(node.get('offset','0s'))-parent_start
+            for child in node:
+                walk(child,spine_origin,Fraction(0),bounds,inherited,parent_gain,depth+1,media_stack,role_sources,clock_frame)
+            return
         if 'audioStart' in node.attrib or 'audioDuration' in node.attrib:
             # Resolve implied source starts/durations before splitting the edit.
             resolved=deepcopy(node)
@@ -282,12 +320,19 @@ def inspect(path, audio_mode='dialogue'):
             if 'duration' not in resolved.attrib and resource is not None:
                 resolved.set('duration',resource.get('duration','0s'))
             for part in split_audio_edit(resolved):
-                walk(part,parent_origin,parent_start,bounds,inherited,parent_gain,depth,media_stack)
+                walk(part,parent_origin,parent_start,bounds,inherited,parent_gain,depth,media_stack,role_sources,clock_frame)
             return
         asset=assets.get(node.get('ref')) if node.tag in ('asset-clip','audio') else None
-        media=medias.get(node.get('ref')) if node.tag=='ref-clip' else None
+        media=medias.get(node.get('ref')) if node.tag in ('ref-clip','mc-clip') else None
         media_seq=media.find('sequence') if media is not None else None
-        if node.tag=='ref-clip' and (media_seq is None or node.get('ref') in media_stack):
+        selected_angles=[]
+        container_format=root.find(f"resources/format[@id='{node.get('format')}']")
+        container_frame=seconds(container_format.get('frameDuration','0s')) if container_format is not None else clock_frame
+        if node.tag=='mc-clip':media_seq,selected_angles=multicam_sources(node,medias)
+        sync_settings=synchronized_sources(node) if node.tag=='sync-clip' else {}
+        for sources in sync_settings.values():validate_role_sources(sources)
+        for _,source in selected_angles:validate_role_sources(source.findall('audio-role-source'))
+        if node.tag in ('ref-clip','mc-clip') and (media_seq is None or node.get('ref') in media_stack):
             raise ValueError('复合片段引用缺失或形成循环')
         default_start=asset.get('start','0s') if asset is not None else media_seq.get('tcStart','0s') if media_seq is not None else '0s'
         start=seconds(node.get('start',default_start))
@@ -310,7 +355,7 @@ def inspect(path, audio_mode='dialogue'):
             if asset is None:raise ValueError('媒体资源缺失')
             audible=audible and asset.get('hasAudio')=='1'
             if audible:
-                selected,role,effect_count,component_gain=audio_selection(node,asset,audio_mode,effects)
+                selected,role,effect_count,component_gain=audio_selection(node,asset,audio_mode,effects,role_sources)
                 if not selected:ignored+=1
                 audible=selected
             if audible and (node.get('srcID','1')!='1' or 'outCh' in node.attrib):raise ValueError('暂不支持音频通道重映射')
@@ -330,6 +375,8 @@ def inspect(path, audio_mode='dialogue'):
             effect_count+=component_effects
         if media_seq is not None and audible and not possible_media_audio(media_seq,(node.get('ref'),)):
             audible=False
+        if node.tag=='mc-clip' and audible and not any(source.get('srcEnable','all') in ('all','audio')
+                and possible_media_audio(angle,(node.get('ref'),)) for angle,source in selected_angles):audible=False
         if media_seq is not None and excluded_role(role,audio_mode):audible=False
         if node.tag=='ref-clip':
             role_gains=set()
@@ -349,42 +396,7 @@ def inspect(path, audio_mode='dialogue'):
         if volumes and audible:
             gain*=volume_gain(volumes[0])
         conform=node.findall('conform-rate')
-        if len(conform)>1:raise ValueError('帧率适配结构无效')
-        conform_speed=Fraction(1)
-        if conform:
-            c=conform[0]
-            if len(c) or set(c.attrib)-{'scaleEnabled','srcFrameRate','frameSampling'}:raise ValueError('帧率适配结构无效')
-            scale=c.get('scaleEnabled','1') # FCPXML DTD default.
-            if scale not in ('0','1'):raise ValueError('帧率适配结构无效')
-            if scale=='1' and audible:
-                audio_assets=[asset] if asset is not None else [assets.get(child.get('ref')) for child in node.iter() if child.tag in ('asset-clip','audio')]
-                source_frames=[]
-                for audio_asset in audio_assets:
-                    source_format=root.find(f"resources/format[@id='{audio_asset.get('format')}']") if audio_asset is not None else None
-                    source_frames.append(seconds(source_format.get('frameDuration','0s')) if source_format is not None else None)
-                source_rate=c.get('srcFrameRate')
-                known_frame={'60':Fraction(1,60),'59.94':Fraction(1001,60000)}.get(source_rate)
-                clip_format=root.find(f"resources/format[@id='{node.get('format')}']")
-                clip_frame=seconds(clip_format.get('frameDuration','0s')) if clip_format is not None else None
-                explicit_source=(node.tag in ('asset-clip','clip') and known_frame is not None
-                    and source_frames and all(rate==known_frame for rate in source_frames)
-                    and clip_frame==known_frame)
-                # Explicit FCP source format retains its real audio clock;
-                # conform-rate then changes video sampling, not source PCM.
-                if explicit_source:
-                    conform_speed=Fraction(1)
-                elif (node.tag in ('asset-clip','clip') and source_rate=='59.94'
-                      and source_frames and all(rate==known_frame for rate in source_frames)
-                      and clip_frame is None and not node.get('format')):
-                    # FCP 12.3 round-trips these 59.94 sources at 1x in
-                    # 25/29.97/59.94 projects, dropping redundant conform-rate.
-                    conform_speed=Fraction(1)
-                elif (node.tag in ('asset-clip','clip') and not media_stack and source_rate=='60'
-                      and source_frames and all(rate==known_frame for rate in source_frames)
-                      and frame==Fraction(1001,30000)):
-                    conform_speed=Fraction(2)
-                else:
-                    raise ValueError('暂不支持此有声片段的速度缩放帧率适配')
+        conform_speed=conform_audio_speed(node,root,assets,clock_frame,media_seq,audible,bool(media_stack))
         # A video-only reverse or smooth retime does not change independently
         # scheduled dialogue. Its visual timing need not be reconstructed.
         has_time_map=node.find('timeMap') is not None
@@ -395,17 +407,22 @@ def inspect(path, audio_mode='dialogue'):
             retime=linear_time_map(node,length) if has_time_map and audible else None
         except UnsupportedAudioRetime as error:
             retime=None;unsupported_retime=error.reason
-        if retime and node.tag not in ('asset-clip','audio','ref-clip'):
+        if retime and node.tag not in ('asset-clip','audio','ref-clip','mc-clip'):
             raise ValueError('暂不支持此容器音频变速')
         if media_seq is not None:
             media_start=seconds(media_seq.get('tcStart','0s'))
             media_duration=seconds(media_seq.get('duration','0s'))
+            if node.tag=='mc-clip' and not media_seq.get('duration'):
+                media_duration=max((seconds(child.get('offset','0s'))+seconds(child.get('duration','0s'))-media_start
+                                    for angle,_ in selected_angles for child in angle),default=Fraction(0))
             source_min=min((part[2] for part in retime[0]),default=start) if retime else start
-            source_max=max((part[3] for part in retime[0]),default=start+length) if retime else start+length
-            if not (has_time_map and (not audible or unsupported_retime)) and (source_min<media_start or source_max>media_start+media_duration):
+            source_max=max((part[3] for part in retime[0]),default=start+length*conform_speed) if retime else start+length*conform_speed
+            if not (node.tag=='mc-clip' and not audible or has_time_map and (not audible or unsupported_retime)) and (source_min<media_start or source_max>media_start+media_duration):
                 raise ValueError('复合片段引用范围超出内部时间线')
         harmless={'conform-rate','caption','adjust-volume','audio-channel-source','adjust-transform','adjust-crop','adjust-conform','adjust-blend','filter-video','filter-video-mask','metadata','marker','chapter-marker','keyword','rating','note'}
         if node.tag=='ref-clip':harmless.add('audio-role-source')
+        if node.tag=='sync-clip':harmless.add('sync-source')
+        if node.tag=='mc-clip':harmless.add('mc-source')
         if has_time_map:harmless.add('timeMap')
         harmless.add('filter-audio')
         if node.tag=='video':harmless.update(('param','reserved'))
@@ -452,17 +469,19 @@ def inspect(path, audio_mode='dialogue'):
                 source_end=source+(visible[1]-visible[0])*conform_speed
                 add_segment(visible[0],visible[1],source,source_end,
                             False if conform_speed!=1 else None)
-        if conform_speed!=1 and node.tag=='clip':
+        if conform_speed!=1 and node.tag in ('clip','sync-clip'):
             # A rate-conformed plain clip can wrap source audio in a gap. Plan
-            # its children in source time, then invert the verified 2x map.
+            # its children in source time, then invert the verified rate map.
             intervals=[(Fraction(0),length,start,start+length*conform_speed)]
             source_bounds=(start,start+length*conform_speed)
             outer_segments,outer_skipped,outer_end=segments,skipped,timeline_end
             segments=[];skipped=[]
             try:
                 for child in children:
+                    if node.tag=='sync-clip' and child.get('lane','0')!='0':continue
+                    groups=(*role_sources,sync_settings.get('storyline',())) if node.tag=='sync-clip' else role_sources
                     walk(child,Fraction(0),Fraction(0),source_bounds,
-                         enabled and source_enable!='video',gain,depth+1,media_stack)
+                         enabled and source_enable!='video',gain,depth+1,media_stack,groups,container_frame)
                 inner_segments,inner_skipped=segments,skipped
             finally:
                 segments=outer_segments;skipped=outer_skipped;timeline_end=outer_end
@@ -471,29 +490,43 @@ def inspect(path, audio_mode='dialogue'):
             for begin,end,reason in inner_skipped:
                 for _,_,out_begin,out_end in inverse_retime_ranges(begin,end,intervals,origin,visible):
                     skipped.append((out_begin,out_end,reason))
+            if node.tag=='sync-clip':
+                for child in children:
+                    if child.get('lane','0')!='0':
+                        walk(child,origin,start/conform_speed,bounds,enabled and source_enable!='video',gain,depth+1,media_stack,
+                             (*role_sources,sync_settings.get('connected',())),clock_frame)
         else:
             for child in children:
                 # Contained media is trimmed/muted by its container. Connected
                 # items share its timeline and may outlast the anchor.
                 contained=child.get('lane','0')=='0'
+                groups=(*role_sources,sync_settings.get('storyline' if contained else 'connected',())) if node.tag=='sync-clip' else role_sources
                 walk(child,origin,start,visible if contained else bounds,
-                     enabled and source_enable!='video' if contained else inherited,
-                     gain if contained else parent_gain,depth+1,media_stack)
+                     enabled and source_enable!='video' if contained or node.tag=='sync-clip' else inherited,
+                     gain if contained or node.tag=='sync-clip' else parent_gain,depth+1,media_stack,groups,container_frame)
         if media_seq is not None:
+            media_format=root.find(f"resources/format[@id='{media_seq.get('format')}']")
+            media_frame=seconds(media_format.get('frameDuration','0s')) if media_format is not None else container_frame
             media_spine=media_seq.find('spine')
-            if media_spine is None or len(media_seq.findall('spine'))!=1:
+            if node.tag!='mc-clip' and (media_spine is None or len(media_seq.findall('spine'))!=1):
                 raise ValueError('复合片段缺少完整内部时间线')
             next_stack=(*media_stack,node.get('ref'))
-            if retime:
-                intervals,preserve_pitch=retime
+            branches=[(media_spine,None)] if node.tag!='mc-clip' else selected_angles
+            def walk_media(branch_origin,branch_start,branch_bounds):
+                for branch,source in branches:
+                    active=source is None or source.get('srcEnable','all') in ('all','audio')
+                    groups=role_sources if source is None else (*role_sources,tuple(source.findall('audio-role-source')))
+                    for child in branch:
+                        walk(child,branch_origin,branch_start,branch_bounds,
+                             enabled and source_enable!='video' and not excluded_role(role,audio_mode) and active,
+                             gain,depth+1,next_stack,groups,media_frame)
+            if retime or conform_speed!=1:
+                intervals,preserve_pitch=retime if retime else ([(Fraction(0),length,start,start+length*conform_speed)],False)
                 source_bounds=(intervals[0][2],intervals[-1][3])
                 outer_segments,outer_skipped,outer_end=segments,skipped,timeline_end
                 segments=[];skipped=[]
                 try:
-                    for child in media_spine:
-                        walk(child,Fraction(0),Fraction(0),source_bounds,
-                             enabled and source_enable!='video' and not excluded_role(role,audio_mode),
-                             gain,depth+1,next_stack)
+                    walk_media(Fraction(0),Fraction(0),source_bounds)
                     inner_segments,inner_skipped=segments,skipped
                 finally:
                     segments=outer_segments;skipped=outer_skipped
@@ -505,9 +538,7 @@ def inspect(path, audio_mode='dialogue'):
                     for _,_,out_begin,out_end in inverse_retime_ranges(begin,end,intervals,origin,visible):
                         skipped.append((out_begin,out_end,reason))
             else:
-                for child in media_spine:
-                    walk(child,origin,start,visible,enabled and source_enable!='video' and not excluded_role(role,audio_mode),
-                         gain,depth+1,next_stack)
+                walk_media(origin,start,visible)
 
     cursor=Fraction(0)
     for node in spine:

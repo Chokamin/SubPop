@@ -1,0 +1,94 @@
+<?xml version='1.0' encoding='utf-8'?>
+<fcpxml version="1.14">
+  <resources>
+    <format id="r1" frameDuration="1/30s" width="640" height="360" colorSpace="1-1-1 (Rec. 709)" />
+    <asset id="r2" name="camera-2997.mov" start="0s" duration="11979/1000s" hasVideo="1" format="r3" hasAudio="1" videoSources="1" audioSources="1" audioChannels="1" audioRate="48000">
+      <media-rep kind="original-media" src="file:///TEST_MEDIA/camera-2997.mov" />
+    </asset>
+    <format id="r3" name="FFVideoFormat640x360p2997" frameDuration="1001/30000s" width="640" height="360" colorSpace="6-1-6 (Rec. 601 (NTSC))" />
+    <format id="r4" name="FFVideoFormat640x360p2997" frameDuration="1001/30000s" width="640" height="360" colorSpace="1-1-1 (Rec. 709)" />
+    <asset id="r5" name="external.wav" start="0s" duration="12s" hasAudio="1" audioSources="1" audioChannels="1" audioRate="48000">
+      <media-rep kind="original-media" src="file:///TEST_MEDIA/external.wav" />
+    </asset>
+    <media id="r6" name="SubPop134 two angles">
+      <multicam format="r4" tcStart="0s">
+        <mc-angle name="a1" angleID="a1">
+          <asset-clip ref="r2" offset="0s" duration="360360/30000s" tcFormat="NDF" audioRole="dialogue" />
+        </mc-angle>
+        <mc-angle name="a2" angleID="a2">
+          <asset-clip ref="r5" offset="0s" duration="12s" audioRole="dialogue" />
+        </mc-angle>
+      </multicam>
+    </media>
+  </resources>
+  <library location="file:///TEST_LIBRARY.fcpbundle/">
+    <event name="2026-10-2">
+      <project name="SubPop134 Sync Rate Audio Check" uid="SUBPOP134-ROUNDTRIP">
+        <sequence format="r1" duration="845/30s" tcStart="0s" audioLayout="stereo" audioRate="48k">
+          <spine>
+            <asset-clip ref="r2" offset="0s" start="2s" duration="4s" tcFormat="NDF" audioRole="dialogue" />
+            <asset-clip ref="r2" offset="4s" start="59059/30000s" duration="4s" format="r4" tcFormat="NDF" audioRole="dialogue">
+              <conform-rate srcFrameRate="29.97" />
+            </asset-clip>
+            <asset-clip ref="r2" offset="8s" start="2s" duration="4s" format="r4" tcFormat="NDF" audioRole="dialogue">
+              <conform-rate scaleEnabled="0" srcFrameRate="29.97" />
+            </asset-clip>
+            <sync-clip offset="12s" name="External synchronized audio" start="59059/30000s" duration="4s" format="r4">
+              <conform-rate srcFrameRate="29.97" />
+              <asset-clip ref="r2" offset="0s" duration="360360/30000s" tcFormat="NDF" audioRole="dialogue" />
+              <asset-clip ref="r5" lane="-1" offset="0s" duration="12s" audioRole="dialogue" />
+            </sync-clip>
+            <mc-clip ref="r6" offset="16s" name="SubPop134 two angles" start="59059/30000s" duration="4s">
+              <conform-rate srcFrameRate="29.97" />
+              <mc-source angleID="a1" srcEnable="video" />
+              <mc-source angleID="a2" srcEnable="audio" />
+            </mc-clip>
+            <mc-clip ref="r6" offset="20s" name="SubPop134 two angles" start="59059/30000s" duration="4s">
+              <conform-rate srcFrameRate="29.97" />
+              <mc-source angleID="a1" srcEnable="all" />
+            </mc-clip>
+            <mc-clip ref="r6" offset="24s" name="SubPop134 two angles" start="59059/30000s" duration="121/30s">
+              <conform-rate srcFrameRate="29.97" />
+              <mc-source angleID="a2" srcEnable="all" />
+            </mc-clip>
+            <mc-clip ref="r6" offset="841/30s" name="SubPop134 two angles" start="179179/30000s" duration="1/30s">
+              <conform-rate srcFrameRate="29.97" />
+              <mc-source angleID="a1" srcEnable="all" />
+            </mc-clip>
+            <mc-clip ref="r6" offset="842/30s" name="SubPop134 two angles" start="179179/30000s" duration="1/30s">
+              <conform-rate srcFrameRate="29.97" />
+              <mc-source angleID="a1" srcEnable="video" />
+              <mc-source angleID="a2" srcEnable="audio" />
+            </mc-clip>
+            <sync-clip offset="843/30s" name="External synchronized audio" start="179179/30000s" duration="1/30s" format="r4">
+              <conform-rate srcFrameRate="29.97" />
+              <asset-clip ref="r2" offset="0s" duration="360360/30000s" tcFormat="NDF" audioRole="dialogue" />
+            </sync-clip>
+            <asset-clip ref="r2" offset="844/30s" start="179179/30000s" duration="1/30s" format="r4" tcFormat="NDF" audioRole="dialogue">
+              <conform-rate srcFrameRate="29.97" />
+            </asset-clip>
+          </spine>
+        </sequence>
+      </project>
+    </event>
+    <smart-collection name="项目" match="all">
+      <match-clip rule="is" type="project" />
+    </smart-collection>
+    <smart-collection name="所有视频" match="any">
+      <match-media rule="is" type="videoOnly" />
+      <match-media rule="is" type="videoWithAudio" />
+    </smart-collection>
+    <smart-collection name="仅音频" match="all">
+      <match-media rule="is" type="audioOnly" />
+    </smart-collection>
+    <smart-collection name="静止图像" match="all">
+      <match-media rule="is" type="stills" />
+    </smart-collection>
+    <smart-collection name="个人收藏" match="all">
+      <match-ratings value="favorites" />
+    </smart-collection>
+    <smart-collection name="缺少分析" match="all">
+      <match-analysis-type rule="isMissing" value="any" />
+    </smart-collection>
+  </library>
+</fcpxml>
