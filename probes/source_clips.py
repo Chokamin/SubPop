@@ -7,6 +7,19 @@ from fractions import Fraction
 from .readback import seconds
 
 
+# FCPXML 1.14 intrinsic-params-video plus video filters. These only affect
+# pictures; audio planning must keep the clip's original timing and routing.
+# Share this explicit set across clips and multicam sources so new visual
+# settings cannot be mistaken for unsupported audio or time-map operations.
+VIDEO_ONLY_CHILDREN=frozenset({
+    'object-tracker','adjust-crop','adjust-corners','adjust-conform',
+    'adjust-transform','adjust-blend','adjust-stabilization',
+    'adjust-rollingShutter','adjust-360-transform','adjust-reorient',
+    'adjust-orientation','adjust-cinematic','adjust-colorConform',
+    'adjust-stereo-3D','filter-video','filter-video-mask',
+})
+
+
 def synchronized_sources(node):
     sources={}
     for source in node.findall('sync-source'):
@@ -34,9 +47,7 @@ def multicam_sources(node, medias):
         key=source.get('angleID');mode=source.get('srcEnable','all')
         if key not in angles or key in seen or mode not in ('all','audio','video','none') or set(source.attrib)-{'angleID','srcEnable'}:
             raise ValueError('多机位选中来源无效')
-        if any(child.tag not in ('audio-role-source','adjust-transform','adjust-crop','adjust-conform',
-                                 'adjust-blend','adjust-corners','adjust-360-transform',
-                                 'adjust-colorConform','adjust-stereo-3D','filter-video','filter-video-mask') for child in source):
+        if any(child.tag not in VIDEO_ONLY_CHILDREN and child.tag!='audio-role-source' for child in source):
             raise ValueError('多机位来源包含未知设置')
         seen.add(key)
         if mode!='none':sources.append((angles[key],source))

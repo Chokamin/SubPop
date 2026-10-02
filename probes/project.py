@@ -17,7 +17,7 @@ from urllib.parse import unquote, urlparse
 import xml.etree.ElementTree as ET
 from .readback import seconds
 from .timeline_audio import flag
-from .source_clips import conform_audio_speed,multicam_sources,synchronized_sources
+from .source_clips import VIDEO_ONLY_CHILDREN,conform_audio_speed,multicam_sources,synchronized_sources
 
 RATE=16000
 
@@ -571,7 +571,7 @@ def inspect(path, audio_mode='dialogue'):
             source_max=max((part[3] for part in retime[0]),default=start+length*conform_speed) if retime else start+length*conform_speed
             if not (node.tag=='mc-clip' and not audible or has_time_map and (not audible or unsupported_retime)) and (source_min<media_start or source_max>media_start+media_duration):
                 raise ValueError('复合片段引用范围超出内部时间线')
-        harmless={'conform-rate','caption','adjust-volume','audio-channel-source','adjust-transform','adjust-crop','adjust-conform','adjust-blend','filter-video','filter-video-mask','metadata','marker','chapter-marker','keyword','rating','note'}
+        harmless=set(VIDEO_ONLY_CHILDREN) | {'conform-rate','caption','adjust-volume','audio-channel-source','metadata','marker','chapter-marker','keyword','rating','note'}
         if node.tag=='ref-clip':harmless.add('audio-role-source')
         if node.tag=='sync-clip':harmless.add('sync-source')
         if node.tag=='mc-clip':harmless.add('mc-source')
@@ -581,7 +581,7 @@ def inspect(path, audio_mode='dialogue'):
         children=[]
         for child in node:
             if child.tag in STORY_TAGS:children.append(child)
-            elif child.tag not in harmless:raise ValueError('暂不支持音频效果、变速或嵌套模板：'+child.tag)
+            elif child.tag not in harmless:raise ValueError('暂不支持此片段设置：'+child.tag+'；可导入整条时间线音频')
         def child_channels(child):
             primary=source_audio_child(node,child) or child.get('lane','0')=='0'
             if not primary:return ()
