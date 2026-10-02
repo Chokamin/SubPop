@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 使用说明
+    url: https://github.com/Chokamin/SubPop#readme
+    about: 查看安装、识别、字幕样式和当前支持范围。
+  - name: 下载最新版本
+    url: https://github.com/Chokamin/SubPop/releases/latest
+    about: 查看最新安装包和更新说明。

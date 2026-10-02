@@ -28,7 +28,8 @@
     self.referenceButton=[self toolbarButton:@"参考脚本" symbol:@"doc.text" action:@selector(showReferenceScript:)];[self.referenceButton setAccessibilityLabel:@"参考脚本"];
     self.modelsButton=[self toolbarButton:@"模型" symbol:@"square.stack.3d.up" action:@selector(showModels:)];[self.modelsButton setAccessibilityLabel:@"模型管理"];
     NSButton *updates=[self toolbarButton:@"" symbol:@"arrow.triangle.2.circlepath" action:@selector(checkForUpdates:)];updates.toolTip=@"检查更新";[updates setAccessibilityLabel:@"检查更新"];
-    NSStackView *header=[NSStackView stackViewWithViews:@[self.signal,identity,spacer,self.vocabularyButton,self.referenceButton,self.modelsButton,updates]];header.spacing=10;header.alignment=NSLayoutAttributeCenterY;[stack addArrangedSubview:header];
+    self.feedbackButton=[self toolbarButton:@"" symbol:@"bubble.left" action:@selector(showFeedback:)];self.feedbackButton.toolTip=@"问题反馈";[self.feedbackButton setAccessibilityLabel:@"问题反馈"];
+    NSStackView *header=[NSStackView stackViewWithViews:@[self.signal,identity,spacer,self.vocabularyButton,self.referenceButton,self.modelsButton,updates,self.feedbackButton]];header.spacing=10;header.alignment=NSLayoutAttributeCenterY;[stack addArrangedSubview:header];
     self.resultView=[[SubPopTitleDragView alloc] initWithFrame:NSMakeRect(0,0,600,120)];self.resultView.controller=self;self.resultView.target=self;self.resultView.action=@selector(importTitlesToFCP:);[self.resultView setAccessibilityElement:YES];[self.resultView setAccessibilityRole:NSAccessibilityGroupRole];[stack addArrangedSubview:self.resultView];[self.resultView.heightAnchor constraintEqualToConstant:120].active=YES;self.resultView.hidden=YES;
     self.srtExportButton=[self toolbarButton:@"下载 SRT 文件…" symbol:@"text.page" action:@selector(downloadSRT:)];
     self.fcpxmlExportButton=[self toolbarButton:@"下载 FCPXML 文件…" symbol:@"film.stack" action:@selector(downloadFCPXML:)];

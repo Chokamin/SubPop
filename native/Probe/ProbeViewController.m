@@ -8,6 +8,7 @@
 #import "StudioChrome.h"
 #import "RuntimePaths.h"
 #import "UpdatePanel.h"
+#import "FeedbackPanel.h"
 #import "TitleDragProvider.h"
 #import "TitleTemplates.h"
 #import "Tap5aInstaller.h"
@@ -169,6 +170,8 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 @property NSButton *vocabularyButton;
 @property NSButton *modelsButton;
 @property SubPopUpdatePanel *updatesPanel;
+@property SubPopFeedbackPanel *feedbackPanel;
+@property NSButton *feedbackButton;
 @property NSArray *requestVocabulary;
 @property NSAlert *modelAlert;
 @property NSMutableDictionary *modelRows;
@@ -282,6 +285,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 @end
 @implementation SubPopProbeViewController
 #include "Updates.inc"
+#include "Feedback.inc"
 #include "TitleImport.inc"
 #include "CaptionExport.inc"
 - (NSURL *)evidenceDirectory {
@@ -1034,6 +1038,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     self.validatingDrop=NO;self.resultRevalidationURL=nil;self.recoveredResultNeedsRevalidation=NO;
     [self clearPendingRecognition];
     [self.updatesPanel close];
+    [self.feedbackPanel close];
     [self.activity.wave setWorking:NO];
     if (self.tap5aScoped) [self.tap5aURL stopAccessingSecurityScopedResource];self.tap5aScoped=NO;self.tap5aURL=nil;
     [self.bridgeTimer invalidate]; self.bridgeTimer=nil;

@@ -9,7 +9,7 @@
 为 Final Cut Pro 制作的本机中文字幕插件。<br>
 拖入项目，识别语音，校对与调整样式，再把字幕放回时间线。
 
-**[下载 SubPop 1.4.10](https://github.com/Chokamin/SubPop/releases/download/v1.4.10/SubPop-1.4.10-arm64.pkg)** · [所有版本](https://github.com/Chokamin/SubPop/releases) · [反馈问题](https://github.com/Chokamin/SubPop/issues)
+**[下载 SubPop 1.4.10](https://github.com/Chokamin/SubPop/releases/download/v1.4.10/SubPop-1.4.10-arm64.pkg)** · [所有版本](https://github.com/Chokamin/SubPop/releases) · [反馈问题](https://github.com/Chokamin/SubPop/issues/new/choose)
 
 Apple Silicon · macOS 15+ · PKG 约 210 MB<br>
 Developer ID 签名 · Apple 公证
@@ -257,7 +257,11 @@ X 正值向右，Y 正值向上；偏移以项目像素为单位，支持正负�
 
 从 1.2.1 起支持在线更新：点击「立即更新」，在 SubPop 更新窗口内完成下载、验证、安装和重启，无需另存安装包或打开安装向导。需要管理员权限时由 macOS 提示授权。更新期间暂停接收新任务；已有识别、脚本整理或模型下载完成后才能开始更新。安装前保存字幕草稿并关闭 SubPop 扩展，完成后从 FCP 扩展菜单重新打开即可。正式版 1.2.0 及更早版本仍使用原来的下载安装包方式。更新源只接收公开的版本查询和文件下载请求，不会收到项目、音频、参考脚本或 API Key。各版本的改动和校验文件见 [Releases](https://github.com/Chokamin/SubPop/releases)。
 
-遇到问题可提交 [GitHub Issue](https://github.com/Chokamin/SubPop/issues)，附上 macOS、FCP、SubPop 版本，使用的模型、复现步骤和错误提示即可，无需上传私人视频。
+1.4.11 起，可点击插件顶部的对话气泡图标「问题反馈」，填写问题后在 GitHub 网页确认提交。插件会预填 SubPop 版本、Build、macOS 和处理器类型；不会自动附加项目、字幕、音视频、日志或凭证。较长的内容可以复制后粘贴到网页，也可单独复制反馈内容。
+
+也可打开 [反馈页面](https://github.com/Chokamin/SubPop/issues/new/choose)，选择「问题反馈」或「功能建议」。问题反馈请填写复现步骤、预期与实际结果，以及 macOS、FCP、SubPop 版本；报错文字和截图可补充提交。音频读取或字幕错位问题，还可说明项目与素材帧率、相关时间段及片段结构。
+
+反馈通过 GitHub 提交，需要登录 GitHub 账号；提交前可自行检查内容，提交后可在对应 Issue 查看处理进展和修复版本。Issue 内容会公开显示，请先遮盖截图、报错中的个人信息，不要提交 API Key、私人音视频、完整项目或资源库。
 
 仓库公开 SubPop 源码与模型清单；模型权重和 Tap5a 模板不随源码或安装包分发。模型、模板与第三方依赖遵循各自的使用条款。
 

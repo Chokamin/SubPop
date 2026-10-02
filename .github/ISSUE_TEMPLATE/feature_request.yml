@@ -1,0 +1,32 @@
+name: 功能建议
+description: 告诉我们你希望改进的操作体验或新增功能。
+title: "[建议] "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请说明你想完成的事情和当前遇到的困难。反馈会公开显示在 GitHub，请勿提交 API Key、私人音视频或完整项目。
+        如果是功能报错或无法使用，请改用「问题反馈」表单。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你想解决什么问题？
+      description: 描述使用场景和现在的操作方式。
+      placeholder: 例如：每次换项目都需要重新设置……
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: 希望怎样改进？
+      description: 说明你期望的操作和结果。
+    validations:
+      required: true
+  - type: textarea
+    id: additional
+    attributes:
+      label: 补充说明或截图（可选）
+      description: 可以补充替代方案，或拖入已遮盖个人信息的界面截图。
+    validations:
+      required: false
