@@ -1,0 +1,48 @@
+<?xml version='1.0' encoding='utf-8'?>
+<fcpxml version="1.14">
+  <resources>
+    <format id="r1" frameDuration="1/30s" width="640" height="360" colorSpace="1-1-1 (Rec. 709)" />
+    <asset id="r2" name="four.wav" start="0s" duration="8s" hasAudio="1" audioSources="1" audioChannels="4" audioRate="48000">
+      <media-rep kind="original-media" src="file:///synthetic/four.wav" />
+    </asset>
+    <asset id="r3" name="two-stereo.mov" start="0s" duration="8s" hasVideo="1" format="r4" hasAudio="1" videoSources="1" audioSources="2" audioChannels="2" audioRate="48000">
+      <media-rep kind="original-media" src="file:///synthetic/two-stereo.mov" />
+    </asset>
+    <format id="r4" frameDuration="512/15360s" width="640" height="360" colorSpace="6-1-6 (Rec. 601 (NTSC))" />
+  </resources>
+  <library>
+    <event name="FCP channel regression">
+      <project name="FCP channel roundtrip" uid="FCP-CHANNEL-ROUNDTRIP">
+        <sequence format="r1" duration="12s" tcStart="0s" audioLayout="stereo" audioRate="48k">
+          <spine>
+            <clip offset="0s" start="2s" duration="4s">
+              <audio ref="r2" offset="0s" name="four.wav - a1-1" duration="8s" role="dialogue.dialogue-1" srcCh="1">
+                <audio ref="r2" lane="-3" offset="0s" name="four.wav - a1-4" duration="8s" role="dialogue.dialogue-2" srcCh="4" />
+                <audio ref="r2" lane="-2" offset="0s" name="four.wav - a1-3" duration="8s" role="dialogue.dialogue-3" srcCh="3" />
+                <audio ref="r2" lane="-1" offset="0s" name="four.wav - a1-2" duration="8s" role="dialogue.dialogue-4" srcCh="2" />
+              </audio>
+              <audio-channel-source srcCh="1" role="dialogue.dialogue-1" />
+              <audio-channel-source srcCh="2" role="dialogue.dialogue-1" active="0" />
+              <audio-channel-source srcCh="3" role="dialogue.dialogue-1">
+                <adjust-volume amount="-6dB" />
+              </audio-channel-source>
+              <audio-channel-source srcCh="4" role="dialogue.dialogue-1" active="0" />
+            </clip>
+            <asset-clip ref="r3" offset="4s" start="2s" duration="4s" tcFormat="NDF" audioRole="dialogue">
+              <audio-channel-source srcCh="1" role="dialogue.dialogue-1" />
+              <audio-channel-source srcCh="2" role="dialogue.dialogue-1" active="0" />
+              <audio-channel-source srcCh="3" role="dialogue.dialogue-1">
+                <adjust-volume amount="-6dB" />
+              </audio-channel-source>
+              <audio-channel-source srcCh="4" role="dialogue.dialogue-1" active="0" />
+            </asset-clip>
+            <asset-clip ref="r3" offset="8s" start="2s" duration="4s" tcFormat="NDF" audioRole="dialogue">
+              <audio-channel-source srcCh="1, 2" role="dialogue.dialogue-1" />
+              <audio-channel-source srcCh="3, 4" role="dialogue.dialogue-2" active="0" />
+            </asset-clip>
+          </spine>
+        </sequence>
+      </project>
+    </event>
+  </library>
+</fcpxml>

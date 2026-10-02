@@ -172,18 +172,18 @@ def volume_gain(node):
 
 
 def audio_selection(node, asset, audio_mode, effects, role_sources=()):
-    """Only downmix the full source when all its channels have equal audibility.
+    """Plan enabled source components before asking the decoder about media.
 
-    Two mono components are a normal stereo layout, not two source tracks.
-    Never mix an unselected/muted channel back in to accommodate that layout.
+    Channel numbers describe a source's layout, not timeline audio layers.
+    Missing optional asset metadata is checked against real media by the native
+    decoder; excluded and disabled components never require that metadata.
     """
     role=node.get('audioRole',node.get('role','dialogue')).split('.')[0]
     components=node.findall('audio-channel-source')
-    if not components and excluded_role(role,audio_mode):return False,role,0,1.0
-    if asset.get('audioChannels') not in ('1','2') or asset.get('audioSources','1')!='1':raise ValueError('暂不支持多通道媒体')
-    expected=set(range(1,int(asset.get('audioChannels'))+1));seen=set();selected=set();roles=[];effect_count=0;gains=set()
+    seen=set();roles=[];effect_count=0;selected=[];channel_roles={};consumed_groups=[]
     if not components:
-        components=[ET.Element('audio-channel-source',srcCh=node.get('srcCh',', '.join(map(str,sorted(expected)))),role=node.get('audioRole',node.get('role','dialogue')))]
+        components=[ET.Element('audio-channel-source',role=node.get('audioRole',node.get('role','dialogue')))]
+        if 'srcCh' in node.attrib:components[0].set('srcCh',node.get('srcCh'))
     for component in components:
         full_role=component.get('role',node.get('audioRole',node.get('role','dialogue')))
         component_role=full_role.split('.')[0]
@@ -192,31 +192,162 @@ def audio_selection(node, asset, audio_mode, effects, role_sources=()):
         for group in role_sources:
             candidates=[source for source in group if full_role==source.get('role') or full_role.startswith(source.get('role','')+'.')]
             if candidates:
+                if not any(group is previous for previous in consumed_groups):consumed_groups.append(group)
                 source=max(candidates,key=lambda source:len(source.get('role')))
                 active=active and flag(source,'active') and flag(source,'enabled')
                 matched.append(source)
+        if not active:continue
         if set(component.attrib)-{'srcCh','role','active','enabled'}:
             raise ValueError('暂不支持音频组件的通道重映射或裁剪')
-        if active:
-            volumes=component.findall('adjust-volume')
-            if len(volumes)>1:raise ValueError('音量结构无效')
-            component_gain=volume_gain(volumes[0]) if volumes else 1.0
-            for source in matched:
+        volumes=component.findall('adjust-volume')
+        if len(volumes)>1:raise ValueError('音量结构无效')
+        component_gain=volume_gain(volumes[0]) if volumes else 1.0
+        for source in matched:
+            adjustments=source.findall('adjust-volume')
+            if len(adjustments)>1:raise ValueError('音量结构无效')
+            if adjustments:component_gain*=volume_gain(adjustments[0])
+            effect_count+=bypassed_audio_processors((child for child in source if child.tag!='adjust-volume'),effects)
+        effect_count+=bypassed_audio_processors((child for child in component if child.tag!='adjust-volume'),effects)
+        channels=None
+        if 'srcCh' in component.attrib:
+            text=component.get('srcCh','')
+            if not re.fullmatch(r'\s*[1-9]\d*(?:\s*,\s*[1-9]\d*)*\s*',text):raise ValueError('音频通道配置无效')
+            channels=[int(x) for x in text.split(',')]
+            if len(channels)>64 or max(channels)>64 or len(set(channels))!=len(channels) or seen.intersection(channels):
+                raise ValueError('音频通道配置重复或超出媒体范围')
+            seen.update(channels)
+            channel_roles.update({channel:full_role for channel in channels})
+        elif node.findall('audio-channel-source'):
+            raise ValueError('音频组件缺少通道选择；请检查片段的音频配置')
+        selected.append({'channels':channels,'gain':component_gain});roles.append(component_role)
+    # A silent or role-excluded source does not need to be opened or inspected.
+    empty=dict(components=[],sourceID=None,expectedChannels=None,expectedSources=None,_roleSources=tuple(consumed_groups),_channelRoles={})
+    if not selected:return False,role,effect_count,empty
+    def metadata_count(key,limit):
+        text=asset.get(key)
+        if text is None:return None
+        if not re.fullmatch(r'[1-9]\d*',text) or int(text)>limit:
+            raise ValueError('媒体音频通道信息无效；请检查源媒体，或导入整条时间线音频')
+        return int(text)
+    channels=metadata_count('audioChannels',64);sources=metadata_count('audioSources',32)
+    source_id=node.get('srcID','1') if node.tag=='audio' else None
+    if source_id is not None and (not re.fullmatch(r'[1-9]\d*',source_id) or int(source_id)>32):
+        raise ValueError('媒体音频源编号无效；请检查片段音频配置，或导入整条时间线音频')
+    if 'outCh' in node.attrib:raise ValueError('暂不支持音频通道重映射')
+    explicit=any(component['channels'] is not None for component in selected)
+    if source_id is not None and sources is not None and int(source_id)>sources:
+        raise ValueError('媒体音频源编号超出范围；请检查片段音频配置，或导入整条时间线音频')
+    expected=channels if source_id is not None else channels*sources if channels is not None and sources is not None else None
+    if channels is not None and sources is not None and channels*sources>64:
+        raise ValueError('媒体音频通道信息无效；请检查源媒体，或导入整条时间线音频')
+    if expected is not None and any(channel>expected for channel in seen):
+        raise ValueError('音频通道配置重复或超出媒体范围')
+    if not explicit:
+        # Keep the ordinary clip gain outside native default downmixing.
+        selection=dict(components=None,sourceID=source_id,expectedChannels=channels,expectedSources=sources,defaultGain=selected[0]['gain'])
+    else:selection=dict(components=selected,sourceID=source_id,expectedChannels=channels,expectedSources=sources)
+    selection.update(_roleSources=tuple(consumed_groups),_channelRoles=channel_roles)
+    return True,','.join(dict.fromkeys(roles)) or role,effect_count,selection
+
+
+def segment_channels(selection):
+    """Keep implicit default downmixing; every explicit group uses its weights."""
+    components=selection['components'];channels=selection['expectedChannels'];sources=selection['expectedSources']
+    gain=selection.get('defaultGain',1.0) if components is None else 1.0
+    if components is None:
+        mix=None if channels in (1,2) and sources==1 else selection
+    else:mix=selection
+    if mix is not None:mix={key:value for key,value in mix.items() if key!='defaultGain' and not key.startswith('_')}
+    return gain,mix
+
+
+def intersect_channels(outer,inner):
+    """Apply a container's layout once, intersecting child audibility/gains."""
+    if outer['components']==[] or inner['components']==[]:
+        return dict(inner,components=[])
+    if outer['components'] is None:return inner
+    outer_components=outer['components'];offset=0
+    if outer['sourceID'] is None and inner['sourceID'] is not None:
+        source=int(inner['sourceID']);channels=inner['expectedChannels']
+        if channels is None and (source>1 or inner['expectedSources']!=1):
+            raise ValueError('缺少音轨声道信息，无法准确映射容器的通道选择；可导入整条时间线音频')
+        offset=(source-1)*(channels or 0)
+        # A container numbers all sources together; an audio node numbers only
+        # its chosen source. Preserve the outer group divisor across tracks.
+        outer_components=[dict(component,channels=[channel-offset for channel in component['channels']
+                          if channel>offset and (channels is None or channel<=offset+channels)],
+                          divisor=component.get('divisor',len(component['channels']))) for component in outer_components]
+        outer_components=[component for component in outer_components if component['channels']]
+    roles={channel:outer.get('_channelRoles',{}).get(channel+offset,inner.get('_channelRoles',{}).get(channel,'dialogue'))
+           for component in outer_components for channel in component['channels']}
+    if inner['components'] is None:
+        default_gain=inner.get('defaultGain',1.0)
+        components=[];channel_gains={}
+        for component in outer_components:
+            channel_gains.update({channel:component['gain']*default_gain for channel in component['channels']})
+            if component.get('divisor',len(component['channels']))==len(component['channels']):
+                components.append({'channels':component['channels'],'gain':component['gain']*default_gain})
+            else:
+                components.extend({'channels':[channel],'gain':component['gain']*default_gain/component['divisor']}
+                                  for channel in component['channels'])
+        return dict(inner,components=components,_channelGains=channel_gains,_coefficients=True,_channelRoles=roles)
+    gains=inner.get('_channelGains') or {channel:component['gain'] for component in inner['components'] for channel in component['channels']}
+    components=[];channel_gains={}
+    for component in outer_components:
+        # Expand to scalar channel weights. Averaging the outer group happens
+        # once, even when the leaf also declares a stereo component.
+        for channel in component['channels']:
+            if channel in gains:
+                channel_gains[channel]=component['gain']*gains[channel]
+                components.append({'channels':[channel],'gain':channel_gains[channel]/component.get('divisor',len(component['channels']))})
+    return dict(inner,components=components,_coefficients=True,_channelGains=channel_gains,
+                _channelRoles={channel:roles[channel] for channel in channel_gains})
+
+
+def channel_role_sources(selection,groups,effects):
+    """Apply remaining role controls to the final component output roles."""
+    if not groups or not selection['components']:return selection,0
+    components=[];channel_gains={};roles={};effect_count=0
+    for component in selection['components']:
+        role_groups={}
+        for channel in component['channels']:
+            full_role=selection.get('_channelRoles',{}).get(channel,'dialogue')
+            role_groups.setdefault(full_role,[]).append(channel)
+        for full_role,channels in role_groups.items():
+            active=True;gain=1.0
+            for group in groups:
+                matched=[source for source in group if full_role==source.get('role') or full_role.startswith(source.get('role','')+'.')]
+                if not matched:continue
+                source=max(matched,key=lambda source:len(source.get('role')))
+                active=active and flag(source,'active') and flag(source,'enabled')
+                if not active:break
                 adjustments=source.findall('adjust-volume')
                 if len(adjustments)>1:raise ValueError('音量结构无效')
-                if adjustments:component_gain*=volume_gain(adjustments[0])
+                if adjustments:gain*=volume_gain(adjustments[0])
                 effect_count+=bypassed_audio_processors((child for child in source if child.tag!='adjust-volume'),effects)
-            gains.add(component_gain)
-            effect_count+=bypassed_audio_processors((child for child in component if child.tag!='adjust-volume'),effects)
-        text=component.get('srcCh','')
-        if not re.fullmatch(r'\s*[1-9]\d*(?:\s*,\s*[1-9]\d*)*\s*',text):raise ValueError('音频通道配置无效')
-        channels=[int(x) for x in text.split(',')]
-        if len(set(channels))!=len(channels) or not set(channels)<=expected or seen.intersection(channels):raise ValueError('音频通道配置重复或超出媒体范围')
-        seen.update(channels)
-        if active:selected.update(channels);roles.append(component_role)
-    if selected and selected!=expected:raise ValueError('暂不支持只启用部分音频通道；请将此片段设为完整单声道或立体声')
-    if len(gains)>1:raise ValueError('暂不支持立体声左右通道使用不同的音量')
-    return bool(selected),','.join(dict.fromkeys(roles)) or role,effect_count,next(iter(gains),1.0)
+            if active:
+                for channel in channels:
+                    weight=component['gain']*gain/len(component['channels'])
+                    components.append({'channels':[channel],'gain':weight});roles[channel]=full_role
+                    channel_gains[channel]=selection.get('_channelGains',{}).get(channel,component['gain'])*gain
+    return dict(selection,components=components,_coefficients=True,_channelGains=channel_gains,_channelRoles=roles),effect_count
+
+
+def primary_audio_sources(node):
+    """Find the source layout without treating independent connections as it."""
+    sources=[]
+    for child in node:
+        if source_audio_child(node,child) or child.tag=='asset-clip' and child.get('lane','0')=='0':
+            sources.append(child)
+            if child.tag=='audio':sources.extend(primary_audio_sources(child))
+        elif child.tag in ('clip','gap') and child.get('lane','0')=='0':sources.extend(primary_audio_sources(child))
+    return sources
+
+
+def source_audio_child(parent,child):
+    """FCP nests one source's channel fragments below its first audio node."""
+    return child.tag=='audio' and (child.get('lane','0')=='0' or parent.tag=='gap'
+           or parent.tag=='audio' and child.get('ref')==parent.get('ref') and 'srcCh' in child.attrib)
 
 
 def validate_role_sources(sources):
@@ -298,7 +429,7 @@ def inspect(path, audio_mode='dialogue'):
                        for angle,source in sources):return True
         return False
 
-    def walk(node,parent_origin,parent_start,bounds,inherited=True,parent_gain=1.0,depth=0,media_stack=(),role_sources=(),clock_frame=None):
+    def walk(node,parent_origin,parent_start,bounds,inherited=True,parent_gain=1.0,depth=0,media_stack=(),role_sources=(),clock_frame=None,channel_layers=()):
         nonlocal ignored,count,timeline_end,segments,skipped,bypassed_effects
         count+=1
         if clock_frame is None:clock_frame=frame
@@ -308,7 +439,7 @@ def inspect(path, audio_mode='dialogue'):
             if set(node.attrib)-{'offset','lane','name','format'}:raise ValueError('嵌套故事情节属性无效')
             spine_origin=parent_origin+seconds(node.get('offset','0s'))-parent_start
             for child in node:
-                walk(child,spine_origin,Fraction(0),bounds,inherited,parent_gain,depth+1,media_stack,role_sources,clock_frame)
+                walk(child,spine_origin,Fraction(0),bounds,inherited,parent_gain,depth+1,media_stack,role_sources,clock_frame,channel_layers)
             return
         if 'audioStart' in node.attrib or 'audioDuration' in node.attrib:
             # Resolve implied source starts/durations before splitting the edit.
@@ -320,7 +451,7 @@ def inspect(path, audio_mode='dialogue'):
             if 'duration' not in resolved.attrib and resource is not None:
                 resolved.set('duration',resource.get('duration','0s'))
             for part in split_audio_edit(resolved):
-                walk(part,parent_origin,parent_start,bounds,inherited,parent_gain,depth,media_stack,role_sources,clock_frame)
+                walk(part,parent_origin,parent_start,bounds,inherited,parent_gain,depth,media_stack,role_sources,clock_frame,channel_layers)
             return
         asset=assets.get(node.get('ref')) if node.tag in ('asset-clip','audio') else None
         media=medias.get(node.get('ref')) if node.tag in ('ref-clip','mc-clip') else None
@@ -350,29 +481,50 @@ def inspect(path, audio_mode='dialogue'):
         if source_enable not in ('all','audio','video'):raise ValueError('无效的音频启用状态')
         audible=enabled and source_enable!='video' and visible[1]>visible[0]
         role=node.get('audioRole',node.get('role','dialogue')).split('.')[0]
-        effect_count=0;component_gain=1.0
+        effect_count=0;component_gain=1.0;channel_mix=None;container_channels=None
+        consumed={id(group) for _,selection in channel_layers for group in selection.get('_roleSources',())}
+        remaining_roles=tuple(group for group in role_sources if id(group) not in consumed)
         if node.tag in ('asset-clip','audio'):
             if asset is None:raise ValueError('媒体资源缺失')
             audible=audible and asset.get('hasAudio')=='1'
+            layers=[selection for ref,selection in channel_layers if ref is None or ref==node.get('ref')]
+            if audible and any(selection['components']==[] for selection in layers):
+                ignored+=1;audible=False
             if audible:
-                selected,role,effect_count,component_gain=audio_selection(node,asset,audio_mode,effects,role_sources)
+                selected,role,effect_count,selection=audio_selection(node,asset,'all' if layers else audio_mode,effects,
+                                                                   () if layers else role_sources)
+                for layer in reversed(layers):selection=intersect_channels(layer,selection)
+                if layers:
+                    selection,role_effects=channel_role_sources(selection,remaining_roles,effects)
+                    effect_count+=role_effects
+                    role=','.join(dict.fromkeys(full_role.split('.')[0] for full_role in selection.get('_channelRoles',{}).values())) or role
+                selected=selected and selection['components']!=[]
                 if not selected:ignored+=1
                 audible=selected
-            if audible and (node.get('srcID','1')!='1' or 'outCh' in node.attrib):raise ValueError('暂不支持音频通道重映射')
+                if audible:component_gain,channel_mix=segment_channels(selection)
         elif node.tag in ('video','gap'):audible=False
         elif node.tag=='clip' and not any(child.tag in ('asset-clip','audio','ref-clip') for child in node.iter()):
             # FCP also wraps visual-only material in a plain clip. Its own
             # conform/timeMap must not retime unrelated dialogue below it.
             audible=False
-        elif node.findall('audio-channel-source'):
-            # A plain FCP clip can wrap one audio source in a gap. Accept its
-            # normal complete mono/stereo component layout, but no remapping.
-            refs={child.get('ref') for child in node.iter() if child.tag in ('asset-clip','audio')}
-            if node.tag!='clip' or len(refs)!=1 or next(iter(refs)) not in assets:
+        elif node.findall('audio-channel-source') and audible:
+            # A plain clip's components describe its primary source layout,
+            # not independent connected clips, even if those reuse its asset.
+            if node.tag!='clip':
                 raise ValueError('暂不支持容器片段的音频通道重映射')
-            selected,_,component_effects,component_gain=audio_selection(node,assets[next(iter(refs))],audio_mode,effects)
-            if not selected:raise ValueError('暂不支持容器片段的部分音频通道')
-            effect_count+=component_effects
+            selected,_,_,selection=audio_selection(node,ET.Element('asset'),'all' if channel_layers else audio_mode,effects,
+                                                 () if channel_layers else role_sources)
+            if not selected:
+                container_channels=(None,selection);audible=False
+            else:
+                refs={child.get('ref') for child in primary_audio_sources(node)}
+                if len(refs)!=1 or next(iter(refs)) not in assets:
+                    raise ValueError('暂不支持容器片段的音频通道重映射')
+                ref=next(iter(refs))
+                _,_,component_effects,selection=audio_selection(node,assets[ref],'all' if channel_layers else audio_mode,effects,
+                                                             () if channel_layers else role_sources)
+                container_channels=(ref,selection)
+                effect_count+=component_effects
         if media_seq is not None and audible and not possible_media_audio(media_seq,(node.get('ref'),)):
             audible=False
         if node.tag=='mc-clip' and audible and not any(source.get('srcEnable','all') in ('all','audio')
@@ -430,6 +582,10 @@ def inspect(path, audio_mode='dialogue'):
         for child in node:
             if child.tag in STORY_TAGS:children.append(child)
             elif child.tag not in harmless:raise ValueError('暂不支持音频效果、变速或嵌套模板：'+child.tag)
+        def child_channels(child):
+            primary=source_audio_child(node,child) or child.get('lane','0')=='0'
+            if not primary:return ()
+            return (*channel_layers,container_channels) if container_channels is not None else channel_layers
         if has_time_map and any(any(desc.tag in ('asset-clip','audio','ref-clip') for desc in child.iter()) for child in children):
             raise ValueError('变速片段带有连接素材，暂不能准确映射时间')
         if unsupported_retime:
@@ -452,6 +608,7 @@ def inspect(path, audio_mode='dialogue'):
                 if source_begin<0 or source_end>asset_duration or source_end<=source_begin:
                     raise ValueError('源音频范围无效')
                 segment=dict(assetRef=node.get('ref'),media=str(Path(unquote(url.path))),offset=str(out_begin),duration=str(out_end-out_begin),source_start=str(source_begin),startSample=sample(out_begin),sampleCount=sample(out_end)-sample(out_begin),gain=gain,role=role)
+                if channel_mix is not None:segment['channelMix']=channel_mix
                 if preserve_pitch is not None:
                     segment.update(source_duration=str(source_end-source_begin),preservesPitch=preserve_pitch)
                 segments.append(segment)
@@ -481,7 +638,7 @@ def inspect(path, audio_mode='dialogue'):
                     if node.tag=='sync-clip' and child.get('lane','0')!='0':continue
                     groups=(*role_sources,sync_settings.get('storyline',())) if node.tag=='sync-clip' else role_sources
                     walk(child,Fraction(0),Fraction(0),source_bounds,
-                         enabled and source_enable!='video',gain,depth+1,media_stack,groups,container_frame)
+                         enabled and source_enable!='video',gain,depth+1,media_stack,groups,container_frame,child_channels(child))
                 inner_segments,inner_skipped=segments,skipped
             finally:
                 segments=outer_segments;skipped=outer_skipped;timeline_end=outer_end
@@ -494,16 +651,16 @@ def inspect(path, audio_mode='dialogue'):
                 for child in children:
                     if child.get('lane','0')!='0':
                         walk(child,origin,start/conform_speed,bounds,enabled and source_enable!='video',gain,depth+1,media_stack,
-                             (*role_sources,sync_settings.get('connected',())),clock_frame)
+                             (*role_sources,sync_settings.get('connected',())),clock_frame,child_channels(child))
         else:
             for child in children:
                 # Contained media is trimmed/muted by its container. Connected
                 # items share its timeline and may outlast the anchor.
                 contained=child.get('lane','0')=='0'
                 groups=(*role_sources,sync_settings.get('storyline' if contained else 'connected',())) if node.tag=='sync-clip' else role_sources
-                walk(child,origin,start,visible if contained else bounds,
+                walk(child,origin,start,visible if contained or source_audio_child(node,child) else bounds,
                      enabled and source_enable!='video' if contained or node.tag=='sync-clip' else inherited,
-                     gain if contained or node.tag=='sync-clip' else parent_gain,depth+1,media_stack,groups,container_frame)
+                     gain if contained or node.tag=='sync-clip' else parent_gain,depth+1,media_stack,groups,container_frame,child_channels(child))
         if media_seq is not None:
             media_format=root.find(f"resources/format[@id='{media_seq.get('format')}']")
             media_frame=seconds(media_format.get('frameDuration','0s')) if media_format is not None else container_frame
@@ -519,7 +676,7 @@ def inspect(path, audio_mode='dialogue'):
                     for child in branch:
                         walk(child,branch_origin,branch_start,branch_bounds,
                              enabled and source_enable!='video' and not excluded_role(role,audio_mode) and active,
-                             gain,depth+1,next_stack,groups,media_frame)
+                             gain,depth+1,next_stack,groups,media_frame,channel_layers)
             if retime or conform_speed!=1:
                 intervals,preserve_pitch=retime if retime else ([(Fraction(0),length,start,start+length*conform_speed)],False)
                 source_bounds=(intervals[0][2],intervals[-1][3])
@@ -569,12 +726,19 @@ def render(xml,directory,binary,expected_uid,audio_mode='dialogue'):
         start=seconds(asset.get('start','0s'))+Fraction(first,RATE)
         ET.SubElement(spine,'asset-clip',ref=segment['assetRef'],offset='0s',start=str(start)+'s',duration=str(length)+'s',audioRole='dialogue')
         source_xml=directory/'decode-segment.fcpxml';source_xml.write_bytes(ET.tostring(doc,encoding='utf-8'))
-        result=subprocess.run([str(binary),str(source_xml),expected_uid,str(directory)],capture_output=True,text=True,check=True,timeout=60)
+        command=[str(binary),str(source_xml),expected_uid,str(directory)]
+        if segment.get('channelMix') is not None:command.append(json.dumps(segment['channelMix'],separators=(',',':'),allow_nan=False))
+        result=subprocess.run(command,capture_output=True,text=True,check=True,timeout=60)
         decoded=json.loads(result.stdout)
         if decoded.get('status')!='decoded':
             stage=decoded.get('stage','unknown')
-            if stage in ('incomplete-project-audio','decode'):
+            if stage in ('incomplete-project-audio','decode','resample'):
                 raise ValueError('源媒体音轨未能完整读取；请检查媒体，或导入整条时间线音频：'+stage)
+            if stage in ('audio-layout-mismatch','audio-channel-range','audio-source-selection','ambiguous-audio-channel-selection',
+                         'audio-layout-conflict','invalid-channel-selection','unverified-audio-source-id',
+                         'ambiguous-audio-tracks','unverified-multitrack-channel-selection',
+                         'unsupported-channel-layout','audio-format-required'):
+                raise ValueError('源媒体音频通道与项目配置不一致或无法准确映射；请检查片段音频配置，或导入整条时间线音频：'+stage)
             raise ValueError('无法读取媒体，请检查文件是否在线及目录访问权限：'+stage)
         name=decoded.get('pcmFile','')
         if not name or Path(name).name!=name:raise ValueError('Invalid decoder output')

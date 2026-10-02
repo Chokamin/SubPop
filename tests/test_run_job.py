@@ -37,7 +37,10 @@ class JobTests(unittest.TestCase):
         root.findall('.//audio-channel-source')[1].set('role','music.music-1')
         with tempfile.TemporaryDirectory() as temp:
             xml=Path(temp)/'input.fcpxml';xml.write_bytes(ET.tostring(root))
-            with self.assertRaises(ValueError):run_job.preflight(xml,None,None)
+            dialogue=run_job.preflight(xml,None,None)
+            self.assertEqual(dialogue['audioMode'],'dialogue')
+            self.assertEqual(len(dialogue['segments']),3)
+            self.assertEqual(dialogue['segments'][0]['channelMix']['components'],[{'channels':[1],'gain':1.0}])
             snapshot=run_job.preflight(xml,None,None,'all')
             self.assertEqual(snapshot['audioMode'],'all')
             self.assertEqual(len(snapshot['segments']),3)

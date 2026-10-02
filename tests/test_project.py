@@ -151,7 +151,9 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual((segment['source_start'],segment['source_duration'],segment['duration']),('0','8','4'))
         self.assertFalse(segment['preservesPitch'])
         wrapper.find('audio-channel-source').set('enabled','0')
-        with self.assertRaises(ValueError):self.inspect(root)
+        selected=self.inspect(root)['segments'][0]
+        self.assertEqual(selected['channelMix']['components'],[{'channels':[2],'gain':1.0}])
+        self.assertEqual((selected['source_start'],selected['source_duration'],selected['duration']),('0','8','4'))
 
     def test_fcp_exported_rate_conform_wrapper_keeps_nested_audio_clock(self):
         root,p,seq,clip=basic();asset=root.find('resources/asset')
@@ -462,7 +464,8 @@ class ProjectTests(unittest.TestCase):
         param=ET.SubElement(filter_node,'param',name='Threshold',value='-18')
         ET.SubElement(ET.SubElement(param,'keyframeAnimation'),'keyframe',time='0s',value='-18')
         processed=self.inspect(root)
-        self.assertEqual(processed['segments'],original)
+        self.assertEqual([{key:value for key,value in segment.items() if key!='channelMix'} for segment in processed['segments']],original)
+        self.assertEqual(processed['segments'][0]['channelMix']['components'],[{'channels':[1],'gain':1.0}])
         self.assertEqual(processed['bypassedAudioEffects'],3)
         dtd=Path(__file__).resolve().parents[1]/'.subloom/verification/FCPXMLv1_14.dtd'
         with tempfile.TemporaryDirectory() as temp:
@@ -474,7 +477,7 @@ class ProjectTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'音频效果引用'):self.inspect(root)
         filter_node.set('ref',effect.get('id'))
         ET.SubElement(component,'adjust-volume',amount='-6dB')
-        self.assertAlmostEqual(self.inspect(root)['segments'][0]['gain'],10**(-6/20))
+        self.assertAlmostEqual(self.inspect(root)['segments'][0]['channelMix']['components'][0]['gain'],10**(-6/20))
         ET.SubElement(component,'mute',start='0s',duration='1s')
         with self.assertRaisesRegex(ValueError,'静音'):self.inspect(root)
 
@@ -555,7 +558,12 @@ class ProjectTests(unittest.TestCase):
         for c in root.findall('.//audio-channel-source'):c.set('role','music.music-1')
         self.assertEqual(self.inspect(root)['segments'],[])
         self.assertEqual(len(self.inspect(root,'all')['segments']),3)
-        for key,value in (('enabled','0'),('active','0'),('role','music.music-1'),('srcCh','2'),('outCh','R')):
+        for key,value in (('enabled','0'),('active','0'),('role','music.music-1')):
+            root=self.components();root.find('.//audio-channel-source').set(key,value)
+            with self.subTest(key=key):
+                selected=self.inspect(root)['segments'][0]['channelMix']
+                self.assertEqual(selected['components'],[{'channels':[2],'gain':1.0}])
+        for key,value in (('srcCh','2'),('outCh','R')):
             root=self.components();root.find('.//audio-channel-source').set(key,value)
             with self.subTest(key=key):
                 with self.assertRaises(ValueError):self.inspect(root)
@@ -590,7 +598,8 @@ class ProjectTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             directory=Path(temp);media=directory/'voice.wav'
             # A different constant per source second exposes wrong source
-            # offsets; the two source channels differ to exercise the downmix.
+            # offsets; independent mono components are summed, rather than
+            # treating them as a single default stereo downmix group.
             with wave.open(str(media),'wb') as out:
                 out.setparams((2,2,16000,0,'NONE','not compressed'))
                 for second in range(60):out.writeframes(array('h',[100+second*90,200+second*70]).tobytes()*16000)
@@ -599,6 +608,13 @@ class ProjectTests(unittest.TestCase):
             binary=FIXTURE.parents[2]/'.subloom/build/SubPopAudioProbeCLI'
             mixed=project.render(xml,directory,binary,'COMPONENT-PROJECT')
             actual=(directory/mixed['pcmFile']).read_bytes()
+            # Independent physical mono reference: sum the two source channels
+            # before importing, with no channel layout left for the planner.
+            reference=directory/'sum.wav'
+            with wave.open(str(reference),'wb') as out:
+                out.setparams((1,2,16000,0,'NONE','not compressed'))
+                for second in range(60):out.writeframes(array('h',[300+second*160]).tobytes()*16000)
+            asset=root.find("resources/asset[@id='voice']");asset.set('audioChannels','1');asset.find('media-rep').set('src',reference.as_uri())
             seq=root.find('.//sequence');seq.set('duration','60s');spine=seq.find('spine');spine.clear()
             ET.SubElement(spine,'asset-clip',ref='voice',offset='0s',start='0s',duration='60s',audioRole='dialogue')
             xml.write_bytes(ET.tostring(root));whole=project.render(xml,directory,binary,'COMPONENT-PROJECT')
