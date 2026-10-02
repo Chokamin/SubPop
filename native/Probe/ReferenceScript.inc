@@ -71,11 +71,11 @@
     [self.view.window makeFirstResponder:nil];
     NSString *identifier=NSUUID.UUID.UUIDString.lowercaseString;NSURL *directory=[self.bridgeURL URLByAppendingPathComponent:identifier];
     NSError *error=nil;BOOL ok=[NSFileManager.defaultManager createDirectoryAtURL:directory withIntermediateDirectories:NO attributes:nil error:&error];
-    NSArray *rows=[[NSArray alloc] initWithArray:self.captionRows copyItems:YES];
+    NSArray *rows=[[NSArray alloc] initWithArray:self.captionSourceRows ?: self.captionRows copyItems:YES];
     NSDictionary *request=@{@"kind":@"reference",@"requestID":identifier,@"projectUID":self.dropUID,@"referenceScript":script,@"vocabulary":[self effectiveVocabulary],@"captions":rows};
     if (ok) ok=[[NSJSONSerialization dataWithJSONObject:request options:0 error:&error] writeToURL:[directory URLByAppendingPathComponent:@"request.json"] options:NSDataWritingAtomic error:&error];
     if (!ok) {self.referenceMessage=@"脚本整理未开始，请重试。";[self updateInterface];return;}
-    self.referenceRequestID=identifier;self.referenceSourceRows=rows;self.referenceSourceResultID=self.resultRequestID;
+    self.referenceRequestID=identifier;self.referenceSourceRows=rows;self.referenceSourceOutputRows=[[NSArray alloc] initWithArray:self.captionRows copyItems:YES];self.referenceSourceResultID=self.resultRequestID;
     self.referenceGeneration=self.dropGeneration;self.referenceProcessingSHA=[self referenceHash:script];self.referenceStarted=NSDate.date;
     self.referenceMessage=nil;self.cancelButton.enabled=YES;[self updateInterface];
 }
@@ -94,24 +94,32 @@
         self.referenceMessage=@"脚本整理未完成，当前字幕保持原样。";
     } else {
         NSArray *rows=response[@"captions"];
-        BOOL valid=[response[@"requestID"] isEqual:self.referenceRequestID] && [response[@"status"] isEqual:@"ready"] && [response[@"projectUID"] isEqual:self.dropUID] && [response[@"referenceSHA256"] isEqual:self.referenceProcessingSHA] && self.referenceGeneration==self.dropGeneration && [self.resultRequestID isEqual:self.referenceSourceResultID] && [self.captionRows isEqual:self.referenceSourceRows] && [rows isKindOfClass:NSArray.class] && rows.count==self.captionRows.count;
+        NSArray *source=self.captionSourceRows ?: self.captionRows;
+        BOOL valid=[response[@"requestID"] isEqual:self.referenceRequestID] && [response[@"status"] isEqual:@"ready"] && [response[@"projectUID"] isEqual:self.dropUID] && [response[@"referenceSHA256"] isEqual:self.referenceProcessingSHA] && self.referenceGeneration==self.dropGeneration && [self.resultRequestID isEqual:self.referenceSourceResultID] && [source isEqual:self.referenceSourceRows] && [self.captionRows isEqual:self.referenceSourceOutputRows] && [rows isKindOfClass:NSArray.class] && rows.count==source.count;
         if (valid) for (NSUInteger i=0;i<rows.count;i++) {
             if (![rows[i] isKindOfClass:NSDictionary.class] || ![rows[i][@"text"] isKindOfClass:NSString.class] || ![rows[i][@"text"] length] || [rows[i][@"text"] length]>500) {valid=NO;break;}
-            NSMutableDictionary *unchanged=[rows[i] mutableCopy];unchanged[@"text"]=self.captionRows[i][@"text"];
-            if (![unchanged isEqual:self.captionRows[i]]) {valid=NO;break;}
+            NSMutableDictionary *unchanged=[rows[i] mutableCopy];unchanged[@"text"]=source[i][@"text"];
+            if (![unchanged isEqual:source[i]]) {valid=NO;break;}
         }
         if (valid) {
+            NSArray *previousUndoRows=self.referenceUndoRows;NSDictionary *previousUndoPayloads=self.referenceUndoPayloads;BOOL previousUndoWasOriginal=self.referenceUndoWasOriginal;
             self.referenceUndoRows=self.referenceSourceRows;self.referenceUndoPayloads=self.titlePayloads;self.referenceUndoWasOriginal=self.referenceUndone;
-            for (NSUInteger i=0;i<rows.count;i++) self.captionRows[i][@"text"]=rows[i][@"text"];
-            self.referenceMessage=[self referenceSummary:response[@"referenceReview"]];[self rebuildTitles];[self.captionTable reloadData];
+            NSMutableArray *previous=self.captionSourceRows;self.captionSourceRows=SubPopMutableCaptionRows(rows);
+            if ([self applyChineseTextMode:self.chineseTextMode]) self.referenceMessage=[self referenceSummary:response[@"referenceReview"]];
+            else {self.captionSourceRows=previous;self.referenceUndoRows=previousUndoRows;self.referenceUndoPayloads=previousUndoPayloads;self.referenceUndoWasOriginal=previousUndoWasOriginal;self.referenceMessage=@"整理后的字幕未能更新，当前字幕保持原样。";}
+            [self saveDraft];[self.captionTable reloadData];
         } else self.referenceMessage=[response[@"status"] isEqual:@"cancelled"] ? @"已取消脚本整理，字幕保持原样。" : @"脚本整理未应用，字幕保持原样；请重试。";
     }
-    self.referenceRequestID=nil;self.referenceSourceRows=nil;self.referenceStarted=nil;[self updateInterface];
+    self.referenceRequestID=nil;self.referenceSourceRows=nil;self.referenceSourceOutputRows=nil;self.referenceStarted=nil;[self updateInterface];
 }
 - (void)undoReferenceRefinement:(id)sender {
     if (self.requestID || self.referenceRequestID || !self.referenceUndoRows || !self.referenceUndoPayloads) return;
-    self.captionRows=[NSMutableArray new];for (NSDictionary *row in self.referenceUndoRows) [self.captionRows addObject:row.mutableCopy];
-    self.titlePayloads=self.referenceUndoPayloads;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceUndone=self.referenceUndoWasOriginal;
+    NSMutableArray *previousSource=self.captionSourceRows,*previousRows=self.captionRows;NSDictionary *previousPayloads=self.titlePayloads;
+    // Initial recognition may use the script to change caption boundaries.
+    // Restore its matching original XML as well as text before converting.
+    self.captionRows=SubPopMutableCaptionRows(self.referenceUndoRows);self.captionSourceRows=SubPopMutableCaptionRows(self.referenceUndoRows);self.titlePayloads=self.referenceUndoPayloads;
+    if (![self applyChineseTextMode:self.chineseTextMode]) {self.captionSourceRows=previousSource;self.captionRows=previousRows;self.titlePayloads=previousPayloads;[self updateInterface];return;}
+    self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceUndone=self.referenceUndoWasOriginal;
     self.referenceMessage=@"已撤销本次脚本整理";[self rebuildTitles];[self.captionTable reloadData];[self updateInterface];
 }
 - (void)updateReferenceInterface {

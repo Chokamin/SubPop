@@ -1,0 +1,20 @@
+SubPop offline Chinese text conversion
+
+OpenCC 1.4.2
+Copyright 2010-2026 Carbo Kuo and contributors
+Apache License 2.0; LICENSE reproduced in OpenCC.txt.
+Source: https://github.com/BYVoid/OpenCC/releases/tag/ver.1.4.2
+Archive: opencc-1.4.2-opencc-src.tar.xz
+SHA-256: a1862de88b38bb825ce73b4852be4159668b83a1a0821249c749769df79b5018
+
+SubPop statically links the unmodified OpenCC C API and bundles only the upstream
+standard s2t/t2s configurations and their required dictionaries. Regional
+vocabulary conversion and the Jieba plugin are not enabled. Conversion happens
+locally and needs no network or recognition model.
+
+Bundled library dependencies used by OpenCC:
+- Marisa 0.3.1, Copyright 2010-2025 Susumu Yata; BSD-2-Clause license option.
+- Darts-clone 0.32h, Copyright 2008-2014 Susumu Yata; BSD-2-Clause.
+- RapidJSON 1.1.0, Copyright 2015 THL A29 Limited and Milo Yip; MIT.
+Their notices are reproduced in the accompanying OpenCC-*.txt files.
+Build-only CLI dependency TCLAP is not linked or distributed in SubPop.

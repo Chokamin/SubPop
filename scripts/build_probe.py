@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 from sparkle_dependency import prepare, PUBLIC_KEY, FEED
+from opencc_dependency import prepare as prepare_opencc
 
 ROOT=Path(__file__).resolve().parents[1]
 SDK=ROOT/'.subloom/sdk-expanded/WorkflowExtensionsSDK.pkg/Payload/Library/Developer/SDKs/WorkflowExtensionSDK.sdk'
@@ -54,28 +55,34 @@ def build():
     run('codesign','--force','--sign',identity,*signing_options,ROOT/'.venv/lib/libpython3.12.dylib')
     run('codesign','--force','--sign',identity,*signing_options,'--entitlements',launcher_entitlements,launcher)
     sparkle=prepare()
+    opencc=prepare_opencc()
     frameworks=APP/'Contents/Frameworks'
     frameworks.mkdir(parents=True,exist_ok=True)
     destination=frameworks/'Sparkle.framework'
     if destination.exists():shutil.rmtree(destination)
     shutil.copytree(sparkle/'Sparkle.framework',destination,symlinks=True)
     for bundle in (APP,EXT):(bundle/'Contents/MacOS').mkdir(parents=True,exist_ok=True)
-    base=dict(CFBundleVersion='134',CFBundleShortVersionString='1.4.5',LSMinimumSystemVersion='13.0',SubPopUpdateRepository='Chokamin/SubPop')
+    base=dict(CFBundleVersion='135',CFBundleShortVersionString='1.4.6',LSMinimumSystemVersion='13.0',SubPopUpdateRepository='Chokamin/SubPop')
     plist(APP/'Contents/Info.plist',dict(base,CFBundleDevelopmentRegion='zh_CN',CFBundleLocalizations=['zh_CN'],SUFeedURL=FEED,SUPublicEDKey=PUBLIC_KEY,SUEnableAutomaticChecks=False,SUAllowsAutomaticUpdates=False,SUVerifyUpdateBeforeExtraction=True,SURequireSignedFeed=True,SUSignedFeedFailureExpirationInterval=0,SUShowReleaseNotes=False,SUEnableSystemProfiling=False,LSUIElement=True,CFBundleURLTypes=[dict(CFBundleURLName='com.chokamin.SubPopProbe.start',CFBundleURLSchemes=['subpop-probe'])],SubPopWorkspace=str(ROOT),CFBundleIdentifier='com.chokamin.SubPopProbe',CFBundleName='SubPop',CFBundleIconFile='SubPop',CFBundleIconName='SubPop',CFBundleExecutable='SubPopProbe',CFBundlePackageType='APPL',NSPrincipalClass='NSApplication',NSAppleEventsUsageDescription='SubPop 需要读取 Final Cut Pro 的当前项目和时间线信息。'))
     plist(EXT/'Contents/Info.plist',dict(base,SubPopWorkspace=str(ROOT),CFBundleIdentifier='com.chokamin.SubPopProbe.Extension',CFBundleName='SubPop',CFBundleIconFile='SubPop',CFBundleIconName='SubPop',CFBundleDisplayName='SubPop',CFBundleExecutable='SubPopProbeExtension',CFBundlePackageType='XPC!',NSAppleEventsUsageDescription='SubPop 需要读取 Final Cut Pro 的当前项目和时间线信息。',NSExtension=dict(NSExtensionPointIdentifier='com.apple.FinalCut.WorkflowExtension',ProExtensionPrincipalViewControllerClass='SubPopProbeViewController',ProExtensionAttributes=dict(ContentViewMinimumWidth=580,ContentViewMinimumHeight=450))))
     mac_sdk=subprocess.check_output(['xcrun','--sdk','macosx','--show-sdk-path'],text=True).strip()
     flags=['-isysroot',mac_sdk,'-fobjc-arc','-Wall','-Wextra','-Werror','-Wno-unused-parameter','-arch','arm64','-mmacosx-version-min=13.0','-framework','Cocoa','-framework','QuartzCore','-framework','CoreText','-framework','CoreImage','-framework','Security','-framework','LocalAuthentication','-framework','UniformTypeIdentifiers']
+    chinese=['-I'+str(opencc['include']),ROOT/'native/Probe/ChineseConversion.m',*opencc['libraries'],'-lc++']
+    for destination in (EXT/'Contents/Resources/OpenCC',ROOT/'.subloom/build/OpenCC'):
+        if destination.exists():shutil.rmtree(destination)
+        shutil.copytree(opencc['data'],destination)
     run('xcrun','clang',*flags,ROOT/'native/Probe/CloudSettingsTests.m','-o',ROOT/'.subloom/build/SubPopCloudSettingsTests')
     run('xcrun','clang',*flags,ROOT/'native/Probe/ApplicationMenuTests.m','-o',ROOT/'.subloom/build/SubPopApplicationMenuTests')
     run('xcrun','clang',*flags,'-F'+str(frameworks),'-framework','Sparkle','-Wl,-rpath,@executable_path/../Frameworks',ROOT/'native/Probe/Container.m','-o',APP/'Contents/MacOS/SubPopProbe')
-    run('xcrun','clang',*flags,'-fapplication-extension','-I'+str(SDK/'usr/include'),'-F'+str(SDK/'Library/Frameworks'),'-L'+str(SDK/'usr/lib'),'-lProExtension','-framework','CoreMedia','-framework','AVFoundation','-Wl,-e,_ProExtensionMain',ROOT/'native/Probe/ProbeViewController.m',ROOT/'native/Probe/ProbePresentation.m',ROOT/'native/Probe/AudioProbe.m','-o',EXT/'Contents/MacOS/SubPopProbeExtension')
+    run('xcrun','clang',*flags,*chinese,'-fapplication-extension','-I'+str(SDK/'usr/include'),'-F'+str(SDK/'Library/Frameworks'),'-L'+str(SDK/'usr/lib'),'-lProExtension','-framework','CoreMedia','-framework','AVFoundation','-Wl,-e,_ProExtensionMain',ROOT/'native/Probe/ProbeViewController.m',ROOT/'native/Probe/ProbePresentation.m',ROOT/'native/Probe/AudioProbe.m','-o',EXT/'Contents/MacOS/SubPopProbeExtension')
     run('xcrun','clang',*flags,'-framework','CoreMedia','-framework','AVFoundation',ROOT/'native/Probe/PreviewSourceTests.m','-o',ROOT/'.subloom/build/SubPopPreviewSourceTests')
     run('xcrun','clang',*flags,'-framework','CoreMedia','-framework','AVFoundation',ROOT/'native/Probe/AudioProbe.m',ROOT/'native/Probe/AudioProbeCLI.m','-o',ROOT/'.subloom/build/SubPopAudioProbeCLI')
-    run('xcrun','clang',*flags,'-I'+str(SDK/'usr/include'),'-F'+str(SDK/'Library/Frameworks'),'-L'+str(SDK/'usr/lib'),'-lProExtension','-framework','CoreMedia','-framework','AVFoundation',ROOT/'native/Probe/PresentationTests.m',ROOT/'native/Probe/ProbePresentation.m',ROOT/'native/Probe/AudioProbe.m','-o',ROOT/'.subloom/build/SubPopPresentationTests')
-    run('xcrun','clang',*flags,'-I'+str(SDK/'usr/include'),'-F'+str(SDK/'Library/Frameworks'),'-L'+str(SDK/'usr/lib'),'-lProExtension','-framework','CoreMedia','-framework','AVFoundation',ROOT/'native/Probe/StudioTests.m',ROOT/'native/Probe/ProbePresentation.m',ROOT/'native/Probe/AudioProbe.m','-o',ROOT/'.subloom/build/SubPopStudioTests')
-    run('xcrun','clang',*flags,'-I'+str(SDK/'usr/include'),'-F'+str(SDK/'Library/Frameworks'),'-L'+str(SDK/'usr/lib'),'-lProExtension','-framework','CoreMedia','-framework','AVFoundation',ROOT/'native/Probe/NativeStyleTests.m',ROOT/'native/Probe/ProbePresentation.m',ROOT/'native/Probe/AudioProbe.m','-o',ROOT/'.subloom/build/SubPopNativeStyleTests')
-    run('xcrun','clang',*flags,'-I'+str(SDK/'usr/include'),'-F'+str(SDK/'Library/Frameworks'),'-L'+str(SDK/'usr/lib'),'-lProExtension','-framework','CoreMedia','-framework','AVFoundation',ROOT/'native/Probe/ReferenceTests.m',ROOT/'native/Probe/ProbePresentation.m',ROOT/'native/Probe/AudioProbe.m','-o',ROOT/'.subloom/build/SubPopReferenceTests')
-    run('xcrun','clang',*flags,'-I'+str(SDK/'usr/include'),'-F'+str(SDK/'Library/Frameworks'),'-L'+str(SDK/'usr/lib'),'-lProExtension','-framework','CoreMedia','-framework','AVFoundation',ROOT/'native/Probe/ModelPreparationTests.m',ROOT/'native/Probe/ProbePresentation.m',ROOT/'native/Probe/AudioProbe.m','-o',ROOT/'.subloom/build/SubPopModelPreparationTests')
+    run('xcrun','clang',*flags,*chinese,'-I'+str(SDK/'usr/include'),'-F'+str(SDK/'Library/Frameworks'),'-L'+str(SDK/'usr/lib'),'-lProExtension','-framework','CoreMedia','-framework','AVFoundation',ROOT/'native/Probe/PresentationTests.m',ROOT/'native/Probe/ProbePresentation.m',ROOT/'native/Probe/AudioProbe.m','-o',ROOT/'.subloom/build/SubPopPresentationTests')
+    run('xcrun','clang',*flags,*chinese,'-I'+str(SDK/'usr/include'),'-F'+str(SDK/'Library/Frameworks'),'-L'+str(SDK/'usr/lib'),'-lProExtension','-framework','CoreMedia','-framework','AVFoundation',ROOT/'native/Probe/StudioTests.m',ROOT/'native/Probe/ProbePresentation.m',ROOT/'native/Probe/AudioProbe.m','-o',ROOT/'.subloom/build/SubPopStudioTests')
+    run('xcrun','clang',*flags,*chinese,'-I'+str(SDK/'usr/include'),'-F'+str(SDK/'Library/Frameworks'),'-L'+str(SDK/'usr/lib'),'-lProExtension','-framework','CoreMedia','-framework','AVFoundation',ROOT/'native/Probe/NativeStyleTests.m',ROOT/'native/Probe/ProbePresentation.m',ROOT/'native/Probe/AudioProbe.m','-o',ROOT/'.subloom/build/SubPopNativeStyleTests')
+    run('xcrun','clang',*flags,*chinese,'-I'+str(SDK/'usr/include'),'-F'+str(SDK/'Library/Frameworks'),'-L'+str(SDK/'usr/lib'),'-lProExtension','-framework','CoreMedia','-framework','AVFoundation',ROOT/'native/Probe/ReferenceTests.m',ROOT/'native/Probe/ProbePresentation.m',ROOT/'native/Probe/AudioProbe.m','-o',ROOT/'.subloom/build/SubPopReferenceTests')
+    run('xcrun','clang',*flags,*chinese,'-I'+str(SDK/'usr/include'),'-F'+str(SDK/'Library/Frameworks'),'-L'+str(SDK/'usr/lib'),'-lProExtension','-framework','CoreMedia','-framework','AVFoundation',ROOT/'native/Probe/ModelPreparationTests.m',ROOT/'native/Probe/ProbePresentation.m',ROOT/'native/Probe/AudioProbe.m','-o',ROOT/'.subloom/build/SubPopModelPreparationTests')
+    run('xcrun','clang',*flags,*chinese,'-I'+str(SDK/'usr/include'),'-F'+str(SDK/'Library/Frameworks'),'-L'+str(SDK/'usr/lib'),'-lProExtension','-framework','CoreMedia','-framework','AVFoundation',ROOT/'native/Probe/ChineseScriptTests.m',ROOT/'native/Probe/ProbePresentation.m',ROOT/'native/Probe/AudioProbe.m','-o',ROOT/'.subloom/build/SubPopChineseScriptTests')
     run('xcrun','clang',*flags,ROOT/'native/Probe/Tap5aInstallerTests.m','-o',ROOT/'.subloom/build/SubPopTap5aInstallerTests')
     run('xcrun','clang',*flags,ROOT/'native/Probe/RuntimePathsTests.m','-o',ROOT/'.subloom/build/SubPopRuntimePathsTests')
     run('xcrun','clang',*flags,ROOT/'native/Probe/UpdateTests.m','-o',ROOT/'.subloom/build/SubPopUpdateTests')

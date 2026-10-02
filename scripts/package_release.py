@@ -56,7 +56,7 @@ def build(application_identity=None, installer_identity=None):
     run('pkgbuild','--root',STAGE/'payload','--identifier','com.chokamin.SubPop.installer','--version',version,'--compression','latest','--min-os-version','15.0','--install-location','/','--ownership','recommended',component)
     resources=STAGE/'resources';resources.mkdir()
     welcome=resources/'Welcome.html'
-    welcome.write_text('<html><meta charset="utf-8"><body><h1>SubPop 安装</h1><p>安装 FCP 扩展和独立本机识别环境。适用于 Apple Silicon、macOS 15 或更高版本。FCP 集成当前实测版本为 12.3。</p><p>首次安装后打开应用程序中的 SubPop 一次，再从 Final Cut Pro 扩展菜单打开；本机服务会自动连接。拖入项目并点击生成字幕；若尚未下载模型，确认后会自动下载并接着识别。</p><p>此包尚未完成 Developer ID 签名及 Apple 公证，仅供测试使用。安装不包含模型、测试视频、词库或历史字幕。</p></body></html>')
+    welcome.write_text('<html><meta charset="utf-8"><body><h1>SubPop 安装</h1><p>安装 FCP 扩展和独立本机识别环境。适用于 Apple Silicon、macOS 15 或更高版本。FCP 集成当前实测版本为 12.3。</p><p>首次安装后打开应用程序中的 SubPop 一次，再从 Final Cut Pro 扩展菜单打开；本机服务会自动连接。拖入项目并点击生成字幕；若尚未下载模型，确认后会自动下载并接着识别。</p><p>此包尚未完成 Developer ID 签名及 Apple 公证，仅供测试使用。安装不包含模型、测试视频、用户词库或历史字幕。</p></body></html>')
     if application_identity:
         welcome.write_text(welcome.read_text().replace('此包尚未完成 Developer ID 签名及 Apple 公证，仅供测试使用。','此包使用 Developer ID 签名。Apple 公证结果请以对应 Release 说明为准。'))
     xml=STAGE/'distribution.xml'

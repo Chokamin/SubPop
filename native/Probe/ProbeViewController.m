@@ -17,6 +17,7 @@
 #import "Tap5aPreview.h"
 #import "TitleImport.h"
 #import "CaptionExport.h"
+#import "ChineseConversion.h"
 
 static NSDictionary *Time(CMTime t) {
     return @{ @"value": @(t.value), @"timescale": @(t.timescale), @"flags": @(t.flags), @"epoch": @(t.epoch) };
@@ -154,6 +155,10 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 @property NSTableView *captionTable;
 @property NSScrollView *captionScroll;
 @property NSMutableArray *captionRows;
+@property NSMutableArray *captionSourceRows;
+@property SubPopChineseTextMode chineseTextMode;
+@property NSPopUpButton *chineseTextPicker;
+@property NSStackView *chineseTextControls;
 @property NSDictionary *resultManifest;
 @property NSString *visibleError;
 @property NSNumber *jobProgress;
@@ -194,6 +199,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 @property NSDate *referenceStarted;
 @property NSUInteger referenceGeneration;
 @property NSArray *referenceSourceRows;
+@property NSArray *referenceSourceOutputRows;
 @property NSArray *referenceUndoRows;
 @property NSDictionary *referenceUndoPayloads;
 @property BOOL referenceUndone;
@@ -301,6 +307,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 #include "StudioLayout.inc"
 #include "Tap5aStyle.inc"
 #include "NativeSubtitleStyle.inc"
+#include "ChineseText.inc"
 - (void)restoreSession {
     if (self.restoringSession || self.requestID || self.pendingRecognition || self.titlePayloads || !self.bridgeURL || !self.timeline || ![self workerAvailable]) return;
     NSDictionary *saved=[NSUserDefaults.standardUserDefaults dictionaryForKey:@"pendingSession"];
@@ -326,7 +333,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 }
 - (void)saveDraft {
     if (!self.resultRequestID || !self.titlePayloads || !self.captionRows) return;
-    NSDictionary *draft=@{@"requestID":self.resultRequestID,@"snapshotSHA":self.requestSHA ?: @"",@"modelID":self.requestModelID ?: @"",@"captions":self.captionRows,@"font":self.fontPicker.titleOfSelectedItem,@"fontSize":self.sizePicker.titleOfSelectedItem,@"tap5aStyle":SubPopNormalizeTap5aStyle(self.tap5aStyle),@"nativeStyle":SubPopNormalizeNativeStyle(self.nativeStyle),@"basicStyle":SubPopNormalizeBasicStyle(self.basicStyle),@"referenceUndoCaptions":self.referenceUndoRows ?: @[],@"referenceUndoWasOriginal":@(self.referenceUndoWasOriginal),@"referenceMessage":self.referenceMessage ?: @"",@"referenceUndone":@(self.referenceUndone),@"dragged":@(self.resultWasDragged),@"referenceSHA256":self.requestReferenceSHA ?: @"",@"templateID":SubPopTitleTemplateID(self.templatePicker.indexOfSelectedItem),@"titleTemplate":@(self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateTap5a)};
+    NSDictionary *draft=@{@"requestID":self.resultRequestID,@"snapshotSHA":self.requestSHA ?: @"",@"modelID":self.requestModelID ?: @"",@"captions":self.captionRows,@"sourceCaptions":self.captionSourceRows ?: self.captionRows,@"chineseTextMode":SubPopChineseModeID(self.chineseTextMode),@"font":self.fontPicker.titleOfSelectedItem,@"fontSize":self.sizePicker.titleOfSelectedItem,@"tap5aStyle":SubPopNormalizeTap5aStyle(self.tap5aStyle),@"nativeStyle":SubPopNormalizeNativeStyle(self.nativeStyle),@"basicStyle":SubPopNormalizeBasicStyle(self.basicStyle),@"referenceUndoCaptions":self.referenceUndoRows ?: @[],@"referenceUndoWasOriginal":@(self.referenceUndoWasOriginal),@"referenceMessage":self.referenceMessage ?: @"",@"referenceUndone":@(self.referenceUndone),@"dragged":@(self.resultWasDragged),@"referenceSHA256":self.requestReferenceSHA ?: @"",@"templateID":SubPopTitleTemplateID(self.templatePicker.indexOfSelectedItem),@"titleTemplate":@(self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateTap5a)};
     NSData *data=[NSJSONSerialization dataWithJSONObject:draft options:0 error:nil];[data writeToURL:[[self evidenceDirectory] URLByAppendingPathComponent:[@"draft-" stringByAppendingString:self.resultRequestID]] atomically:YES];
 }
 - (NSDictionary *)selectedModel {
@@ -343,15 +350,15 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     if (self.requestID || self.pendingRecognition) return;
     self.selectedModelID=self.modelPicker.selectedItem.representedObject;
     [NSUserDefaults.standardUserDefaults setObject:self.selectedModelID forKey:@"selectedModelID"];
-    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.titlePayloads=nil;self.captionRows=nil;self.displayState=self.freshDropURL ? @"input" : @"idle";
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.titlePayloads=nil;[self resetChineseText];self.captionRows=nil;self.displayState=self.freshDropURL ? @"input" : @"idle";
     [self record:@{@"reason":@"model-selected",@"modelID":self.selectedModelID}];
 }
-- (void)audioChanged:(id)sender { if (!self.requestID && !self.pendingRecognition) { [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.titlePayloads=nil;self.captionRows=nil;self.displayState=self.freshDropURL ? @"input" : @"idle";[self updateInterface]; } }
+- (void)audioChanged:(id)sender { if (!self.requestID && !self.pendingRecognition) { [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.titlePayloads=nil;[self resetChineseText];self.captionRows=nil;self.displayState=self.freshDropURL ? @"input" : @"idle";[self updateInterface]; } }
 - (void)cancelJob:(id)sender {
     if (self.pendingRecognition) { [self cancelModelDownload:sender];return; }
     if (self.referenceRequestID) {
         [@"{}" writeToURL:[[self.bridgeURL URLByAppendingPathComponent:self.referenceRequestID] URLByAppendingPathComponent:@"cancel.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
-        self.referenceRequestID=nil;self.referenceSourceRows=nil;self.referenceMessage=@"已取消脚本整理，字幕保持原样。";[self updateInterface];return;
+        self.referenceRequestID=nil;self.referenceSourceRows=nil;self.referenceSourceOutputRows=nil;self.referenceMessage=@"已取消脚本整理，字幕保持原样。";[self updateInterface];return;
     }
     if (!self.requestID) return;
     NSURL *url=[[self.bridgeURL URLByAppendingPathComponent:self.requestID] URLByAppendingPathComponent:@"cancel.json"];
@@ -374,7 +381,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
             self.visibleError=[NSString stringWithFormat:@"无法取消脚本整理：%@",error.localizedDescription ?: @"请重试"];
             self.displayState=@"error";[self updateInterface];return NO;
         }
-        self.referenceRequestID=nil;self.referenceSourceRows=nil;self.referenceStarted=nil;
+        self.referenceRequestID=nil;self.referenceSourceRows=nil;self.referenceSourceOutputRows=nil;self.referenceStarted=nil;
     }
     return YES;
 }
@@ -386,10 +393,13 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     return [NSString stringWithFormat:@"%02ld:%05.2f",(long)(value/60),fmod(value,60)];
 }
 - (void)tableView:(NSTableView *)tableView setObjectValue:(id)value forTableColumn:(NSTableColumn *)column row:(NSInteger)row {
-    if (self.referenceRequestID || self.requestID) return;
+    if (self.referenceRequestID || self.requestID || self.importInProgress || self.exportInProgress || row<0 || (NSUInteger)row>=self.captionRows.count || ![value isKindOfClass:NSString.class]) return;
     NSString *text=[value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     if (!text.length || text.length>500) { NSBeep();return; }
-    self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.captionRows[row][@"text"]=text;[self rebuildTitles];
+    NSMutableArray *source=SubPopMutableCaptionRows(self.captionSourceRows ?: self.captionRows);
+    source[row][@"text"]=text;NSMutableArray *previous=self.captionSourceRows;self.captionSourceRows=source;
+    if ([self applyChineseTextMode:self.chineseTextMode]) {self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;[self saveDraft];}
+    else self.captionSourceRows=previous;
 }
 - (BOOL)resolveTap5a {
     if (self.tap5aURL && SubPopValidTap5a(self.tap5aURL)) return YES;
@@ -494,23 +504,24 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     if (sender==self.fontPicker) style[@"textFace"]=@"Regular";
     if (basic) self.basicStyle=SubPopNormalizeBasicStyle(style);else self.tap5aStyle=SubPopNormalizeTap5aStyle(style);[self rebuildTitles];
 }
-- (void)rebuildTitles {
-    if (!self.titlePayloads) return;
+- (BOOL)rebuildTitles {
+    if (!self.titlePayloads) return NO;
     NSMutableDictionary *updated=[NSMutableDictionary new];
     for (NSString *version in self.titlePayloads) {
         NSXMLDocument *doc=[[NSXMLDocument alloc] initWithData:self.titlePayloads[version] options:NSXMLNodeLoadExternalEntitiesNever error:nil];
-        if (!doc) return;
+        if (!doc) return NO;
         SubPopSetTitleTemplate(doc,self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateTap5a ? self.tap5aURL : nil);
         if ([self usesFileImport]) SubPopApplyTap5aStyle(doc,self.tap5aStyle);
         if (self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative) {SubPopSetNativeSubtitle(doc);SubPopApplyNativeStyle(doc,self.nativeStyle);}
         else {NSDictionary *style=[self usesFileImport] ? self.tap5aStyle : self.basicStyle;SubPopApplyTitlePosition(doc,style);if (![self usesFileImport]) {SubPopApplyTitleGlow(doc,style,SubPopBasicGlowKey);SubPopApplyBasicTextPosition(doc,style);}}
         NSArray *titles=[doc nodesForXPath:@"/fcpxml/clip/spine/title" error:nil];
-        if (titles.count!=self.captionRows.count) return;
+        if (titles.count!=self.captionRows.count) return NO;
         for (NSUInteger i=0;i<titles.count;i++) {
             NSXMLElement *title=titles[i];NSString *text=self.captionRows[i][@"text"];
             [title attributeForName:@"name"].stringValue=text;
             NSXMLNode *node=[title nodesForXPath:@"text/text-style" error:nil].firstObject;node.stringValue=text;
             NSXMLElement *style=[title nodesForXPath:@"text-style-def/text-style" error:nil].firstObject;
+            if (!node || !style) return NO;
             NSMutableDictionary *textStyle=(self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative ? SubPopNormalizeNativeStyle(self.nativeStyle) : (self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateBasic ? SubPopNormalizeBasicStyle(self.basicStyle) : SubPopNormalizeTap5aStyle(self.tap5aStyle))).mutableCopy;
             textStyle[@"textFont"]=self.fontPicker.titleOfSelectedItem;textStyle[@"textSize"]=@(self.sizePicker.titleOfSelectedItem.doubleValue);
             SubPopApplyTextStyle(style,textStyle);
@@ -518,7 +529,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
         updated[version]=[doc XMLDataWithOptions:NSXMLNodePrettyPrint];
     }
     if (![self.titlePayloads isEqual:updated]) {self.importMessage=nil;self.resultWasDragged=NO;if ([self.displayState isEqual:@"sent"]) self.displayState=@"ready";}
-    self.titlePayloads=updated;self.exportStatus.stringValue=@"";[self.captionTable reloadData];[self saveDraft];[self updateInterface];
+    self.titlePayloads=updated;self.exportStatus.stringValue=@"";[self.captionTable reloadData];[self saveDraft];[self updateInterface];return YES;
 }
 - (BOOL)dropNeedsValidation { return self.freshDropURL && self.dropUID.length && !CMTIME_IS_NUMERIC(self.dropDuration); }
 - (BOOL)canReceiveExportedAudio {
@@ -603,6 +614,9 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     self.modelPicker.enabled=!busy && !managing;self.audioPicker.enabled=!busy && !self.fallbackAudioURL;self.cancelButton.hidden=!busy;
     BOOL hasRows=self.titlePayloads && self.captionRows.count;
     self.templateControls.hidden=!hasRows;
+    self.chineseTextControls.hidden=!hasRows;
+    self.chineseTextPicker.enabled=hasRows && !busy && !self.importInProgress && !self.exportInProgress;
+    [self.chineseTextPicker selectItemAtIndex:self.chineseTextMode];
     BOOL newlyReady=hasRows && self.resultView.hidden;
     if (newlyReady || !hasRows) self.reviewExpanded=NO;
     self.captionScroll.hidden=!hasRows || !self.reviewExpanded;self.resultView.hidden=!hasRows;self.reviewHeader.hidden=!hasRows;
@@ -678,10 +692,10 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     // titles inserted after this snapshot was captured.
     self.snapshotConsumed=!historical;
     if (historical) {self.freshDropURL=nil;self.freshDropDate=nil;self.dropUID=nil;self.dropName=nil;self.dropDuration=kCMTimeInvalid;}
-    self.titlePayloads=nil;self.captionRows=nil;self.resultManifest=nil;self.resultDate=nil;self.resultRequestID=nil;self.resultWasDragged=NO;
+    self.titlePayloads=nil;[self resetChineseText];self.captionRows=nil;self.resultManifest=nil;self.resultDate=nil;self.resultRequestID=nil;self.resultWasDragged=NO;
     self.requestID=nil;self.requestSHA=nil;self.requestAudioSHA=nil;self.requestModelID=nil;self.requestVocabulary=nil;self.requestReferenceSHA=nil;self.lastJobStage=nil;
     self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceUndone=NO;self.referenceUndoWasOriginal=NO;
-    self.referenceSourceRows=nil;self.referenceSourceResultID=nil;self.referenceProcessingSHA=nil;self.referenceMessage=nil;self.referenceDraft=nil;
+    self.referenceSourceRows=nil;self.referenceSourceOutputRows=nil;self.referenceSourceResultID=nil;self.referenceProcessingSHA=nil;self.referenceMessage=nil;self.referenceDraft=nil;
     self.importMessage=nil;self.exportStatus.stringValue=@"";[self.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];
     self.visibleError=nil;self.jobProgress=nil;self.cloudPhase=nil;self.displayState=self.freshDropURL ? @"input" : @"idle";
     [self clearFallbackAudio];
@@ -803,7 +817,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
         [self record:@{@"reason":@"worker-submit",@"status":@"connect-service-and-open-isolated-project-first"}]; return;
     }
     if (!self.freshDropURL || !self.freshDropDate) {
-        self.titlePayloads=nil;
+        self.titlePayloads=nil;[self resetChineseText];
         [self record:@{@"reason":@"worker-submit",@"status":@"fresh-project-drop-required",@"message":@"请重新拖入当前项目；旧快照不能重复识别"}]; return;
     }
     if (![self selectedModelAvailable]) return;
@@ -835,7 +849,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     if (!ok) { [self record:@{@"reason":@"worker-submit",@"status":@"write-failed",@"error":error.localizedDescription ?: @""}]; return; }
     self.jobProgress=nil;self.visibleError=nil;self.requestGeneration=self.dropGeneration; self.requestModelID=self.selectedModelID;self.cancelButton.enabled=YES;
     self.requestID=request; self.requestSHA=sha;self.requestAudioSHA=self.fallbackAudioSHA ?: @""; self.lastJobStage=nil; self.generateButton.enabled=NO;
-    self.resultLoadAttempted=YES; self.titlePayloads=nil;self.resultWasDragged=NO;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;self.referenceUndone=NO;
+    self.resultLoadAttempted=YES; self.titlePayloads=nil;[self resetChineseText];self.resultWasDragged=NO;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;self.referenceUndone=NO;
     [NSUserDefaults.standardUserDefaults setObject:@{@"referenceSHA256":self.requestReferenceSHA,@"audioSHA256":self.requestAudioSHA,@"vocabulary":self.requestVocabulary,@"requestID":request,@"snapshotSHA":sha,@"modelID":self.selectedModelID,@"projectUID":self.dropUID,@"projectName":self.dropName ?: @"",@"durationValue":@(self.dropDuration.value),@"durationScale":@(self.dropDuration.timescale),@"inputFile":latest.lastPathComponent} forKey:@"pendingSession"];
     [self record:@{@"reason":@"worker-submit",@"status":@"submitted",@"requestID":request,@"snapshotDate":latestDate.description ?: @"",@"source":@"received project snapshot; original capture date retained; edits after capture require another drop"}];
 }
@@ -907,7 +921,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
                 self.basicStyle=SubPopNormalizeBasicStyle(draft[@"basicStyle"] ?: draft[@"tap5aStyle"]);
                 SubPopTitleTemplate restoredTemplate=SubPopTitleTemplateFromDraft(draft);
                 if (restoredTemplate!=SubPopTitleTemplateTap5a || [self resolveTap5a]) [self.templatePicker selectItemAtIndex:restoredTemplate];
-                for (NSUInteger i=0;i<self.captionRows.count;i++) { id text=draft[@"captions"][i][@"text"];if ([text isKindOfClass:NSString.class] && [text length]>0 && [text length]<=500) self.captionRows[i][@"text"]=text; }
+                [self restoreChineseTextDraft:draft];
                 if ([draft[@"font"] isKindOfClass:NSString.class] && ![self.fontPicker itemWithTitle:draft[@"font"]]) [self.fontPicker addItemWithTitle:draft[@"font"]];
                 if ([self.fontPicker itemWithTitle:draft[@"font"]]) [self.fontPicker selectItemWithTitle:draft[@"font"]];
                 if ([draft[@"fontSize"] isKindOfClass:NSString.class] && ![self.sizePicker itemWithTitle:draft[@"fontSize"]]) [self.sizePicker addItemWithTitle:draft[@"fontSize"]];
@@ -922,13 +936,13 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
         if (self.titlePayloads && self.resultWasDragged) self.displayState=@"sent";
         if (!self.titlePayloads) [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.requestID=nil; [self updateInterface];
     } else if ([response[@"status"] isEqual:@"blocked-no-audio"]) {
-        self.titlePayloads=nil;
+        self.titlePayloads=nil;[self resetChineseText];
         NSString *skipped=SubPopSkippedAudioSummary(response[@"skippedAudio"]);
         self.visibleError=skipped.length ? [skipped stringByAppendingString:@"；其余音频为静音或没有可识别对白。"] : nil;
         [self record:@{@"reason":@"worker-result",@"status":@"blocked-no-audio",@"message":@"整段音频为静音，未启动识别或生成字幕"}];
         if (!self.titlePayloads) [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.requestID=nil; [self updateInterface];
     } else if ([response[@"status"] isEqual:@"blocked-existing-titles"]) {
-        self.titlePayloads=nil;
+        self.titlePayloads=nil;[self resetChineseText];
         [self record:@{@"reason":@"worker-result",@"status":@"blocked-existing-titles",@"stage":response[@"stage"] ?: @"conflict",@"collision":response[@"collision"] ?: @{},@"requestID":self.requestID,@"message":@"已有相同或重叠Title，未生成可拖出内容；保留现有编辑"}];
         if (!self.titlePayloads) [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];self.requestID=nil; [self updateInterface];
     } else if ([response[@"status"] isEqual:@"cancelled"]) {
@@ -1019,7 +1033,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     if (self.tap5aScoped) [self.tap5aURL stopAccessingSecurityScopedResource];self.tap5aScoped=NO;self.tap5aURL=nil;
     [self.bridgeTimer invalidate]; self.bridgeTimer=nil;
     if (self.bridgeScoped) [self.bridgeURL stopAccessingSecurityScopedResource];
-    self.freshDropURL=nil; self.freshDropDate=nil;self.snapshotConsumed=NO; self.titlePayloads=nil; self.resultDate=nil; self.dropGeneration++;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
+    self.freshDropURL=nil; self.freshDropDate=nil;self.snapshotConsumed=NO; self.titlePayloads=nil;[self resetChineseText]; self.resultDate=nil; self.dropGeneration++;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
     [self clearFallbackAudio];self.fallbackImporting=NO;
     self.bridgeScoped=NO; self.bridgeURL=nil; self.requestID=nil; [self updateInterface];
     if (self.observingTimeline) [self.timeline removeTimelineObserver:self];self.observingTimeline=NO;
@@ -1108,7 +1122,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     BOOL wasRunning=self.requestID!=nil || self.referenceRequestID!=nil;
     BOOL cancelled=[self cancelCurrentWorkForProjectSwitch];
     self.validatingDrop=NO;self.resultRevalidationURL=nil;self.recoveredResultNeedsRevalidation=NO;self.resultTimelineChanged=NO;[self clearPendingRecognition];self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
-    self.freshDropURL=nil;self.snapshotConsumed=NO;self.titlePayloads=nil;self.dropGeneration++;self.observed=YES;
+    self.freshDropURL=nil;self.snapshotConsumed=NO;self.titlePayloads=nil;[self resetChineseText];self.dropGeneration++;self.observed=YES;
     [self clearFallbackAudio];self.fallbackImporting=NO;
     [self snapshot:@"activeSequenceChanged"];
     if (wasRunning) {self.displayState=cancelled ? @"switch-cancelled" : @"error";[self updateInterface];}
@@ -1307,7 +1321,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];
     self.validatingDrop=NO;self.resultRevalidationURL=nil;self.resultTimelineChanged=NO;self.freshDropURL=newDropURL;self.freshDropDate=NSDate.date;self.snapshotConsumed=NO;
     [self clearFallbackAudio];self.fallbackImporting=NO;
-    self.titlePayloads=nil;self.resultDate=nil;self.dropGeneration++;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
+    self.titlePayloads=nil;[self resetChineseText];self.resultDate=nil;self.dropGeneration++;self.referenceUndoRows=nil;self.referenceUndoPayloads=nil;self.referenceMessage=nil;
     BOOL received=[self beginDropValidation];
     [self record:@{@"reason":@"drop",@"types":pasteboard.types ?: @[],@"xml":saved}];
     return received;

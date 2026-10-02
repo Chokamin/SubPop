@@ -58,6 +58,7 @@ int main(int argc,const char *argv[]) {
         [c loadView];NSWindow *window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,660,740) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];window.contentView=c.view;
         [c.view layoutSubtreeIfNeeded];
         if (c.templatePicker.numberOfItems!=3 || c.templatePicker.indexOfSelectedItem!=SubPopTitleTemplateBasic || ![c.templatePicker.titleOfSelectedItem isEqual:@"普通字幕 · 无底框"]) return 111;
+        if (!c.chineseTextControls.hidden || c.chineseTextPicker.numberOfItems!=3 || ![c.chineseTextPicker.titleOfSelectedItem isEqual:@"保持原文"]) return 153;
         NSString *initialModel=c.selectedModelID;
         c.selectedModelID=@"doubao-cloud";[c updateInterface];
         if (![c.scopeLabel.stringValue containsString:@"上传音频"] || ![c.modelDetail.stringValue containsString:@"云端"]) return 100;
@@ -79,7 +80,9 @@ int main(int argc,const char *argv[]) {
         c.resultWasDragged=YES;c.displayState=@"sent";[c updateInterface];
         if (c.clearResultButton.hidden || !c.clearResultButton.enabled || ![c.resultView.accessibilityLabel containsString:@"已拖出"] || ![c.statusTitle.stringValue isEqual:@"字幕已拖出"]) return 126;
         NSUInteger generation=c.dropGeneration;
+        c.captionSourceRows=[c.captionRows mutableCopy];c.chineseTextMode=SubPopChineseTextTraditional;
         [c clearResult:nil];
+        if (c.captionSourceRows || c.chineseTextMode!=SubPopChineseTextKeep || !c.chineseTextControls.hidden) return 154;
         if (c.titlePayloads || c.captionRows || !c.freshDropURL || ![c.dropUID isEqual:@"clear-test"] || !c.snapshotConsumed || c.resultWasDragged || c.dropGeneration!=generation+1 || !c.resultView.hidden || !c.clearResultButton.hidden || ![c.generateButton.title isEqual:@"重新拖入项目"] || c.generateButton.enabled || ![c.dropTitle.stringValue isEqual:@"测试项目"] || ![c.statusTitle.stringValue isEqual:@"请重新拖入这个项目"] || c.draftSaveCount!=1) return 127;
         [c startWorkerJob:nil];if (c.requestID || c.modelDownloadAlert) return 130;
         c.captionRows=[NSMutableArray arrayWithObject:[@{@"text":@"历史字幕"} mutableCopy]];c.titlePayloads=@{@"1.14":[NSData data]};c.resultRequestID=@"historical-clear-test";c.historicalResult=YES;
@@ -116,6 +119,11 @@ int main(int argc,const char *argv[]) {
             NSRect model=[c.modelPicker convertRect:c.modelPicker.bounds toView:c.view],audio=[c.audioPicker convertRect:c.audioPicker.bounds toView:c.view];
             if (model.size.width<100 || audio.size.width<100 || NSMaxX(model)>NSMinX(audio) || NSMaxX(audio)>width.doubleValue) return 2;
             c.resultManifest=m;c.captionRows=[m[@"captions"] mutableCopy];c.titlePayloads=@{@"1.14":[NSData data]};c.displayState=@"ready";[c updateInterface];[c.captionTable reloadData];[c.view layoutSubtreeIfNeeded];
+            NSRect chinese=[c.chineseTextPicker convertRect:c.chineseTextPicker.bounds toView:c.view];
+            if (c.chineseTextControls.hidden || !c.chineseTextPicker.enabled || chinese.size.width<80 || NSMinX(chinese)<0 || NSMaxX(chinese)>width.doubleValue) return 155;
+            c.referenceRequestID=@"conversion-busy";[c updateInterface];
+            if (c.chineseTextPicker.enabled) return 156;
+            c.referenceRequestID=nil;[c updateInterface];
             if (width.intValue==840) {
                 NSUInteger readyCount=c.captionRows.count;
                 [c windowWillMiniaturize:[NSNotification notificationWithName:NSWindowWillMiniaturizeNotification object:window]];
