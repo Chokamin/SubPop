@@ -6,93 +6,26 @@ body:
   - type: markdown
     attributes:
       value: |
-        请描述问题和操作步骤，方便定位并复现。提交后可在这里查看处理进展和修复版本。
-        **反馈会公开显示在 GitHub。** 请勿提交 API Key、私人音视频、完整项目或资源库；截图和报错文字中的个人信息请先遮盖。
+        只需描述遇到的问题；如果知道操作过程、报错或希望得到的结果，可以一起写在下面。
+        **反馈会公开显示在 GitHub。** 请先遮盖个人信息，不要提交 API Key、私人音视频、完整项目或资源库。
   - type: textarea
     id: problem
     attributes:
       label: 遇到了什么问题？
-      placeholder: 例如：项目能拖入，但点击「生成字幕」后提示无法识别。
+      placeholder: 例如：项目能拖入，但点击「生成字幕」后提示无法识别。报错是……，我希望……
     validations:
       required: true
-  - type: textarea
-    id: steps
-    attributes:
-      label: 如何复现？
-      description: 按顺序写下操作步骤；如果只出现过一次，也请说明当时做了什么。
-      placeholder: |
-        1. 在 FCP 中打开项目
-        2. 将完整项目拖入 SubPop
-        3. 选择模型并点击「生成字幕」
-        4. 出现……
-    validations:
-      required: true
-  - type: textarea
-    id: expected_actual
-    attributes:
-      label: 预期结果和实际结果
-      placeholder: |
-        预期：应该发生什么？
-        实际：发生了什么？字幕错位时，请说明具体时间段。
-    validations:
-      required: true
-  - type: input
-    id: subpop_version
-    attributes:
-      label: SubPop 版本
-      description: 可在 SubPop 的更新窗口查看；无法查看时填写「不清楚」。
-      placeholder: 例如：1.4.10（Build139）
-    validations:
-      required: true
-  - type: input
-    id: fcp_version
-    attributes:
-      label: Final Cut Pro 版本
-      description: 可在 FCP「关于 Final Cut Pro」查看；无法查看时填写「不清楚」。
-      placeholder: 例如：12.3，Creator Studio 版
-    validations:
-      required: true
-  - type: input
-    id: macos_version
-    attributes:
-      label: macOS 版本
-      description: 可在苹果菜单「关于本机」查看；无法查看时填写「不清楚」。
-      placeholder: 例如：macOS 15.7
-    validations:
-      required: true
-  - type: dropdown
-    id: model
-    attributes:
-      label: 使用的识别模型（可选）
-      options:
-        - Qwen3-ASR-0.6B
-        - Qwen3-ASR-1.7B
-        - Whisper Large v3 Turbo
-        - SenseVoiceSmall
-        - 豆包录音文件识别 2.0
-        - 与识别模型无关或不清楚
-    validations:
-      required: false
-  - type: textarea
-    id: timeline_details
-    attributes:
-      label: 时间线或素材信息（可选）
-      description: 音频读取或字幕时间问题可说明项目帧率、素材帧率、项目时长，以及是否包含复合片段、同步片段、多机位、变速或多声道音频。无需上传原项目。
-      placeholder: 例如：30 帧项目中有 29.97 帧素材，包含同步片段；错误发生在约 01:20。
-    validations:
-      required: false
-  - type: textarea
-    id: error_text
-    attributes:
-      label: 完整报错文字（可选）
-      description: 复制界面上的报错即可，不需要提交全部运行日志；请先移除密钥、用户名和私人文件路径。
-      render: text
-    validations:
-      required: false
   - type: textarea
     id: screenshots
     attributes:
-      label: 截图或补充说明（可选）
-      description: 可将已遮盖个人信息的截图拖到此处。不要上传私人音视频、完整项目、资源库或 API Key。
+      label: 截图（可选）
+      description: 在此粘贴或拖入 PNG、JPEG、WebP 静态截图，单张不超过 10 MB；图片在粘贴或拖入后上传。
+    validations:
+      required: false
+  - type: textarea
+    id: environment
+    attributes:
+      label: 使用环境（可选）
+      description: 从插件打开时会自动填写 SubPop 版本、Build、macOS 和处理器类型；知道 FCP 版本时也可补充。
     validations:
       required: false
