@@ -3,6 +3,7 @@ import hashlib
 import json
 from pathlib import Path
 import struct
+import subprocess
 import tempfile
 import unittest
 import uuid
@@ -16,6 +17,7 @@ from probes.snapshot import prepare
 from probes.paths import AUDIO_BINARY
 from probes.worker import request_input, job_command
 
+FALLBACK_BINARY=Path(__file__).resolve().parents[1]/'.subloom/build/SubPopFallbackAudioTests'
 
 def project_xml(duration='2s', node='unhandled-compound'):
     root=ET.Element('fcpxml',version='1.14')
@@ -36,6 +38,14 @@ def wav(path,seconds):
 
 
 class ExportedAudioTests(unittest.TestCase):
+    @unittest.skipUnless(FALLBACK_BINARY.is_file(),'native fallback importer not built')
+    def test_native_background_file_hash_does_not_overflow_worker_stack(self):
+        subprocess.run([str(FALLBACK_BINARY),'hash'],check=True,capture_output=True,text=True,timeout=20)
+
+    @unittest.skipUnless(FALLBACK_BINARY.is_file(),'native fallback importer not built')
+    def test_native_import_copies_validates_and_resumes_without_crossing_projects(self):
+        subprocess.run([str(FALLBACK_BINARY),'import'],check=True,capture_output=True,text=True,timeout=20)
+
     def test_unverified_audio_transition_uses_export_fallback(self):
         raw=project_xml(node='transition')
         with self.assertRaisesRegex(ValueError,'转场结构无法安全处理.*整条时间线音频'):

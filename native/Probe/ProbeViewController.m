@@ -713,10 +713,15 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     return sha;
 }
 - (NSString *)sha256File:(NSURL *)url {
-    NSInputStream *stream=[NSInputStream inputStreamWithURL:url];[stream open];
+    NSInputStream *stream=[NSInputStream inputStreamWithURL:url];
+    if (!stream) return nil;
+    // GCD workers have a small stack. Keep the streaming buffer on the heap
+    // so importing an exported audio file cannot overflow that thread's stack.
+    NSMutableData *buffer=[NSMutableData dataWithLength:64*1024];
+    [stream open];
     CC_SHA256_CTX context;CC_SHA256_Init(&context);
-    uint8_t buffer[1024*1024];NSInteger count=0;
-    while ((count=[stream read:buffer maxLength:sizeof(buffer)])>0) CC_SHA256_Update(&context,buffer,(CC_LONG)count);
+    NSInteger count=0;
+    while ((count=[stream read:buffer.mutableBytes maxLength:buffer.length])>0) CC_SHA256_Update(&context,buffer.bytes,(CC_LONG)count);
     [stream close];if (count<0) return nil;
     unsigned char digest[CC_SHA256_DIGEST_LENGTH];CC_SHA256_Final(digest,&context);
     NSMutableString *sha=[NSMutableString new];for (int i=0;i<CC_SHA256_DIGEST_LENGTH;i++) [sha appendFormat:@"%02x",digest[i]];
