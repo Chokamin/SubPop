@@ -54,6 +54,9 @@
     for(NSButton *button in actions.arrangedSubviews)[button.heightAnchor constraintEqualToConstant:32].active=YES;
     self.alert.accessoryView=content;
     self.alert.window.initialFirstResponder=self.checkButton;
+    // Prevent NSAlert from starting a URL edit while it chooses its responder.
+    // check: restores editability for the selected update source immediately.
+    self.mirrorField.enabled=NO;
     __weak typeof(self) weakSelf=self;
     [self.alert beginSheetModalForWindow:window completionHandler:^(NSModalResponse response){
         typeof(self) strongSelf=weakSelf;[strongSelf.client cancel];strongSelf.client=nil;strongSelf.alert=nil;
