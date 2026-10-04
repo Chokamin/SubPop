@@ -34,8 +34,7 @@
     NSTextField *mirrorLabel=[NSTextField labelWithString:@"镜像地址"];mirrorLabel.frame=NSMakeRect(0,112,76,22);[content addSubview:mirrorLabel];
     self.mirrorField=[[NSTextField alloc] initWithFrame:NSMakeRect(80,110,348,25)];
     self.mirrorField.stringValue=SubPopUpdateMirror([NSUserDefaults.standardUserDefaults stringForKey:@"updateMirrorURL"]) ?: SubPopDefaultUpdateMirror;
-    // This is a URL, not prose. Writing Tools can open an empty floating panel
-    // when AppKit automatically selects this field as an alert's first responder.
+    // A mirror URL does not need prose editing tools or text completion.
     if (@available(macOS 15.2, *)) self.mirrorField.allowsWritingTools=NO;
     self.mirrorField.automaticTextCompletionEnabled=NO;
     self.mirrorField.placeholderString=SubPopDefaultUpdateMirror;self.mirrorField.font=[NSFont systemFontOfSize:12];[self.mirrorField setAccessibilityLabel:@"镜像地址"];[content addSubview:self.mirrorField];
@@ -60,6 +59,10 @@
         typeof(self) strongSelf=weakSelf;[strongSelf.client cancel];strongSelf.client=nil;strongSelf.alert=nil;
         if(strongSelf.onClose)strongSelf.onClose();strongSelf.onClose=nil;
     }];
+    // NSAlert selects its editable accessory during presentation even when
+    // initialFirstResponder is a button. Apply focus after that selection so
+    // opening the sheet does not select the URL or activate its editing UI.
+    [self.alert.window makeFirstResponder:self.checkButton];
     [self check:nil];
 }
 - (void)close { [self.client cancel];if(self.alert.window.sheetParent)[self.alert.window.sheetParent endSheet:self.alert.window]; }
