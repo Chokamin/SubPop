@@ -64,9 +64,7 @@ int main(void) {
         [panel showForWindow:host bundle:NSBundle.mainBundle];CheckInitialFocus(panel,host);
 
         Check(panel.mirrorEditButton.target==panel && panel.mirrorEditButton.action==@selector(editMirror:),@"edit button invokes the explicit editing action");
-        // Test the action directly: performClick has a deferred button-focus
-        // phase, which is still pending when this synchronous test types.
-        [panel editMirror:panel.mirrorEditButton];
+        [panel.mirrorEditButton performClick:nil];Settle();
         NSText *editor=panel.mirrorField.currentEditor;
         Check(editor!=nil && panel.alert.window.firstResponder==editor,@"explicit edit action starts native URL editing");
         Check([editor isKindOfClass:NSTextView.class],@"URL uses the native text editor");

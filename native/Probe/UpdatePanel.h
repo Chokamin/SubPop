@@ -105,7 +105,11 @@
         self.editingMirror=NO;[self updateMirrorControls];
     } else {
         self.editingMirror=YES;[self updateMirrorControls];
-        [self.mirrorField selectText:nil];
+        // selectText schedules another full selection in the host runloop.
+        // Enter editing without overwriting the user's next input or selection.
+        if(![self.alert.window makeFirstResponder:self.mirrorField]) {
+            self.editingMirror=NO;[self updateMirrorControls];
+        }
     }
 }
 - (void)attachProgress:(SubPopUpdateClient *)client {
