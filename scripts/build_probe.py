@@ -6,6 +6,7 @@ import shutil
 import subprocess
 from sparkle_dependency import prepare, PUBLIC_KEY, FEED
 from opencc_dependency import prepare as prepare_opencc
+from extension_brand_icon import prepare as prepare_extension_brand_icon
 
 ROOT=Path(__file__).resolve().parents[1]
 SDK=ROOT/'.subloom/sdk-expanded/WorkflowExtensionsSDK.pkg/Payload/Library/Developer/SDKs/WorkflowExtensionSDK.sdk'
@@ -62,7 +63,7 @@ def build():
     if destination.exists():shutil.rmtree(destination)
     shutil.copytree(sparkle/'Sparkle.framework',destination,symlinks=True)
     for bundle in (APP,EXT):(bundle/'Contents/MacOS').mkdir(parents=True,exist_ok=True)
-    base=dict(CFBundleVersion='143',CFBundleShortVersionString='1.4.14',LSMinimumSystemVersion='13.0',SubPopUpdateRepository='Chokamin/SubPop')
+    base=dict(CFBundleVersion='144',CFBundleShortVersionString='1.4.15',LSMinimumSystemVersion='13.0',SubPopUpdateRepository='Chokamin/SubPop')
     plist(APP/'Contents/Info.plist',dict(base,CFBundleDevelopmentRegion='zh_CN',CFBundleLocalizations=['zh_CN'],SUFeedURL=FEED,SUPublicEDKey=PUBLIC_KEY,SUEnableAutomaticChecks=False,SUAllowsAutomaticUpdates=False,SUVerifyUpdateBeforeExtraction=True,SURequireSignedFeed=True,SUSignedFeedFailureExpirationInterval=0,SUShowReleaseNotes=False,SUEnableSystemProfiling=False,LSUIElement=True,CFBundleURLTypes=[dict(CFBundleURLName='com.chokamin.SubPopProbe.start',CFBundleURLSchemes=['subpop-probe'])],SubPopWorkspace=str(ROOT),CFBundleIdentifier='com.chokamin.SubPopProbe',CFBundleName='SubPop',CFBundleIconFile='SubPop',CFBundleIconName='SubPop',CFBundleExecutable='SubPopProbe',CFBundlePackageType='APPL',NSPrincipalClass='NSApplication',NSAppleEventsUsageDescription='SubPop 需要读取 Final Cut Pro 的当前项目和时间线信息。'))
     plist(EXT/'Contents/Info.plist',dict(base,SubPopWorkspace=str(ROOT),CFBundleIdentifier='com.chokamin.SubPopProbe.Extension',CFBundleName='SubPop',CFBundleIconFile='SubPop',CFBundleIconName='SubPop',CFBundleDisplayName='SubPop',CFBundleExecutable='SubPopProbeExtension',CFBundlePackageType='XPC!',NSAppleEventsUsageDescription='SubPop 需要读取 Final Cut Pro 的当前项目和时间线信息。',NSExtension=dict(NSExtensionPointIdentifier='com.apple.FinalCut.WorkflowExtension',ProExtensionPrincipalViewControllerClass='SubPopProbeViewController',ProExtensionAttributes=dict(ContentViewMinimumWidth=580,ContentViewMinimumHeight=450))))
     mac_sdk=subprocess.check_output(['xcrun','--sdk','macosx','--show-sdk-path'],text=True).strip()
@@ -96,12 +97,16 @@ def build():
     run('xcrun','actool',ROOT/'native/Probe/Assets/SubPop.icon','--compile',icon_output,
         '--app-icon','SubPop','--platform','macosx','--minimum-deployment-target','15.0',
         '--output-partial-info-plist',icon_output/'icon-info.plist','--output-format','human-readable-text')
-    # Preserve the complete brand artwork, including its square background.
-    # Incremental builds must not retain the discarded bubble-only icon.
+    # FCP templates the single-extension toolbar image by alpha. Preserve the
+    # entire logo geometry: its square base, negative bubble and three dots.
+    # The container continues to use the original full-color artwork.
     (resources/'ExtensionIcon.icns').unlink(missing_ok=True)
+    extension_icon_output=prepare_extension_brand_icon(
+        ROOT/'.subloom/build/extension-brand-assets',icon_output/'SubPop.icns')
     for bundle in (APP,EXT):
         (bundle/'Contents/Resources').mkdir(parents=True,exist_ok=True)
-        for name in ('SubPop.icns','Assets.car'):shutil.copy2(icon_output/name,bundle/'Contents/Resources'/name)
+        origin=extension_icon_output if bundle==EXT else icon_output
+        for name in ('SubPop.icns','Assets.car'):shutil.copy2(origin/name,bundle/'Contents/Resources'/name)
     shutil.copy2(ROOT/'licenses/Sparkle.txt',APP/'Contents/Resources/Sparkle-LICENSE.txt')
     shutil.copy2(ROOT/'config/models.json',resources/'models.json')
     for fixture in (ROOT/'native/Probe/Fixtures').glob('*.fcpxml'):shutil.copy2(fixture,resources/fixture.name)

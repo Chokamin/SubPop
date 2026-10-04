@@ -12,8 +12,8 @@ EXT=APP/'Contents/PlugIns/SubPopProbe.appex'
 class NativeBundleTests(unittest.TestCase):
     def test_extension_preserves_the_complete_brand_icon(self):
         name='SubPop'
-        original=ROOT/'.subloom/build/icon-assets'
         for bundle in (APP,EXT):
+            original=ROOT/'.subloom/build'/('extension-brand-assets' if bundle==EXT else 'icon-assets')
             info=plistlib.loads((bundle/'Contents/Info.plist').read_bytes())
             self.assertEqual(info['CFBundleIconName'],name)
             self.assertIn(info['CFBundleIconFile'],(name,name+'.icns'))

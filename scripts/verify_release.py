@@ -42,7 +42,8 @@ for suffix in ('', 'Contents/PlugIns/SubPopProbe.appex'):
     assert info['CFBundleVersion'] == original['CFBundleVersion']
     assert info['CFBundleShortVersionString'] == original['CFBundleShortVersionString']
 for name in ('SubPop.icns','Assets.car'):
-    assert digest(actual/'Contents/Resources'/name) == digest(actual/'Contents/PlugIns/SubPopProbe.appex/Contents/Resources'/name), 'Extension must retain the complete application brand icon'
+    assert digest(actual/'Contents/Resources'/name) == digest(ROOT/'.subloom/build/icon-assets'/name), 'Container must retain original full-color brand icon'
+    assert digest(actual/'Contents/PlugIns/SubPopProbe.appex/Contents/Resources'/name) == digest(ROOT/'.subloom/build/extension-brand-assets'/name), 'Extension must retain complete toolbar-compatible brand geometry'
 assert not any(actual.rglob('*.moti')), 'Third-party templates must be downloaded from the author, not bundled'
 assert not (actual / 'Contents/Resources/Runtime/.subloom/models').exists()
 assert not (actual / 'Contents/Resources/Runtime/.subloom/verification').exists()
