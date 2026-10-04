@@ -300,7 +300,9 @@ class ProjectTests(unittest.TestCase):
                 self.assertEqual([(s['startSample'],s['sampleCount']) for s in plan['segments']],[(64000,64000)])
                 self.assertEqual([(s['startSample'],s['endSample']) for s in plan['skippedAudio']],[(0,64000)])
                 ET.SubElement(clip,'asset-clip',ref=asset.get('id'),lane='1',offset='0s',start='0s',duration='1s')
-                with self.assertRaisesRegex(ValueError,'连接素材'):self.inspect(root)
+                connected=self.inspect(root)
+                self.assertEqual([(s['startSample'],s['sampleCount']) for s in connected['segments']],[(0,16000),(64000,64000)])
+                self.assertEqual(connected['skippedAudio'],plan['skippedAudio'])
 
     def test_skip_inside_linear_compound_maps_to_project_clock(self):
         root,p,seq,clip=basic();asset=root.find('resources/asset')
@@ -366,8 +368,8 @@ class ProjectTests(unittest.TestCase):
         media_seq=media.find('sequence');media_seq.set('duration','4s');media_seq.set('tcStart','10s')
         clip.set('offset','10s');ref.set('start','10s');ref.set('duration','2s')
         mapping=ET.SubElement(ref,'timeMap',preservesPitch='1')
-        ET.SubElement(mapping,'timept',time='0s',value='10s',interp='linear')
-        ET.SubElement(mapping,'timept',time='2s',value='14s',interp='linear')
+        ET.SubElement(mapping,'timept',time='10s',value='10s',interp='linear')
+        ET.SubElement(mapping,'timept',time='12s',value='14s',interp='linear')
         segments=self.inspect(root)['segments']
         self.assertEqual([(s['source_start'],s['source_duration'],s['startSample'],s['sampleCount']) for s in segments],
                          [('0','4',0,32000)])
@@ -410,8 +412,9 @@ class ProjectTests(unittest.TestCase):
         ET.SubElement(mapping,'timept',time='0s',value='4s',interp='linear')
         ET.SubElement(mapping,'timept',time='4s',value='0s',interp='linear')
         audio=ET.SubElement(clip,'asset-clip',ref=asset.get('id'),lane='-1',offset='0s',start='0s',duration='4s',audioRole='dialogue')
-        # Anchored audio on a retimed clip needs its own anchor mapping.
-        with self.assertRaisesRegex(ValueError,'连接素材'):self.inspect(root)
+        # Connected offsets are already in the parent's adjusted local clock.
+        plan=self.inspect(root)
+        self.assertEqual([(s['offset'],s['duration']) for s in plan['segments']],[('0','4')])
         clip.remove(audio)
         seq.find('spine').remove(clip)
         gap=ET.SubElement(seq.find('spine'),'gap',offset=seq.get('tcStart','0s'),duration=clip.get('duration'),start='0s')

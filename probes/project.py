@@ -43,12 +43,14 @@ class UnsupportedAudioRetime(ValueError):
         super().__init__(f'暂不支持{reason}；当前无法准确重建这段音频')
 
 
-def linear_time_map(node, length):
+def linear_time_map(node, length, output_start=None):
     """Return (output start/end, source start/end) in the clip's local clock.
 
     Smooth interpolation and reverse/freeze require a different renderer, so
     accepting them as linear would make the transcript's clock unreliable.
     """
+    if output_start is None:output_start=seconds(node.get('start','0s'))
+    output_limit=output_start+length
     maps=node.findall('timeMap')
     if not maps:return None
     if len(maps)!=1:raise ValueError('变速结构无效')
@@ -67,23 +69,27 @@ def linear_time_map(node, length):
         if len(points)>5000:raise ValueError('变速关键点过多')
     # FCP's own speed-ramp XML may end a few audio samples beyond the clip's
     # visible duration. Trim its final affine segment to the actual endpoint.
-    if len(points)<2 or points[0][0]!=0 or points[-1][0]<length:
+    if len(points)<2 or points[0][0]>output_start or points[-1][0]<output_limit:
         raise ValueError('变速时间范围不完整')
     intervals=[];stationary=False
     for begin,end in zip(points,points[1:]):
         if end[0]<=begin[0]:raise ValueError('变速关键点时间顺序无效')
         if end[1]<begin[1]:raise UnsupportedAudioRetime('倒放')
-        if begin[0]>=length:break
-        output_end=min(end[0],length)
+        if begin[0]>=output_limit:break
+        if end[0]<=output_start:continue
+        output_begin=max(begin[0],output_start)
+        output_end=min(end[0],output_limit)
         if end[1]==begin[1]:
             stationary=True
             # FCP's speed-ramp preset may insert a two-sample stationary lead.
             # A material freeze is still unsupported; this tiny lead is silent.
-            if output_end-begin[0]>Fraction(1,1000):
+            if output_end-output_begin>Fraction(1,1000):
                 raise UnsupportedAudioRetime('停帧')
             continue
-        source_end=begin[1]+(end[1]-begin[1])*(output_end-begin[0])/(end[0]-begin[0])
-        intervals.append((begin[0],output_end,begin[1],source_end))
+        slope=(end[1]-begin[1])/(end[0]-begin[0])
+        source_begin=begin[1]+slope*(output_begin-begin[0])
+        source_end=begin[1]+slope*(output_end-begin[0])
+        intervals.append((output_begin-output_start,output_end-output_start,source_begin,source_end))
     if not intervals:
         if stationary:raise UnsupportedAudioRetime('停帧')
         raise ValueError('变速时间范围不完整')
@@ -503,7 +509,9 @@ def inspect(path, audio_mode='dialogue'):
                 audible=selected
                 if audible:component_gain,channel_mix=segment_channels(selection)
         elif node.tag in ('video','gap'):audible=False
-        elif node.tag=='clip' and not any(child.tag in ('asset-clip','audio','ref-clip') for child in node.iter()):
+        elif node.tag=='clip' and not any(desc.tag in ('asset-clip','audio','ref-clip')
+                for child in node if child.get('lane','0')=='0' or source_audio_child(node,child)
+                for desc in child.iter()):
             # FCP also wraps visual-only material in a plain clip. Its own
             # conform/timeMap must not retime unrelated dialogue below it.
             audible=False
@@ -556,7 +564,7 @@ def inspect(path, audio_mode='dialogue'):
             raise ValueError('暂不支持同时使用帧率适配与音频变速')
         unsupported_retime=None
         try:
-            retime=linear_time_map(node,length) if has_time_map and audible else None
+            retime=linear_time_map(node,length,start) if has_time_map and audible else None
         except UnsupportedAudioRetime as error:
             retime=None;unsupported_retime=error.reason
         if retime and node.tag not in ('asset-clip','audio','ref-clip','mc-clip'):
@@ -586,13 +594,14 @@ def inspect(path, audio_mode='dialogue'):
             primary=source_audio_child(node,child) or child.get('lane','0')=='0'
             if not primary:return ()
             return (*channel_layers,container_channels) if container_channels is not None else channel_layers
-        if has_time_map and any(any(desc.tag in ('asset-clip','audio','ref-clip') for desc in child.iter()) for child in children):
-            raise ValueError('变速片段带有连接素材，暂不能准确映射时间')
+        if retime and any((child.get('lane','0')=='0' or source_audio_child(node,child))
+                          and any(desc.tag in ('asset-clip','audio','ref-clip') for desc in child.iter())
+                          for child in children):
+            raise ValueError('暂不支持变速片段的内含音频结构；可导入整条时间线音频')
         if unsupported_retime:
-            # This clip's audible output cannot be aligned. Keep the original
-            # project clock and let independent clips elsewhere still run.
+            # Skip only the unrenderable source, not independent connections.
             skipped.append((visible[0],visible[1],unsupported_retime))
-            return
+            audible=False
         if audible:
             effect_count+=bypassed_audio_processors(node.findall('filter-audio'),effects)
             bypassed_effects+=effect_count
@@ -657,10 +666,14 @@ def inspect(path, audio_mode='dialogue'):
                 # Contained media is trimmed/muted by its container. Connected
                 # items share its timeline and may outlast the anchor.
                 contained=child.get('lane','0')=='0'
+                if unsupported_retime and (contained or source_audio_child(node,child)):continue
                 groups=(*role_sources,sync_settings.get('storyline' if contained else 'connected',())) if node.tag=='sync-clip' else role_sources
+                # FCP serializes connected offsets in the adjusted local clock.
+                # Their source and duration remain independent of this timeMap.
                 walk(child,origin,start,visible if contained or source_audio_child(node,child) else bounds,
                      enabled and source_enable!='video' if contained or node.tag=='sync-clip' else inherited,
                      gain if contained or node.tag=='sync-clip' else parent_gain,depth+1,media_stack,groups,container_frame,child_channels(child))
+        if unsupported_retime:return
         if media_seq is not None:
             media_format=root.find(f"resources/format[@id='{media_seq.get('format')}']")
             media_frame=seconds(media_format.get('frameDuration','0s')) if media_format is not None else container_frame

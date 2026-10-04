@@ -263,8 +263,8 @@ class VisualAdjustmentTests(unittest.TestCase):
             with self.subTest(reason=reason):
                 root, target = container_case('asset-clip')
                 mapping = E.Element('timeMap', preservesPitch='1')
-                E.SubElement(mapping, 'timept', time='0s', value=begin, interp=interpolation)
-                E.SubElement(mapping, 'timept', time='4s', value=end, interp=interpolation)
+                E.SubElement(mapping, 'timept', time='2s', value=begin, interp=interpolation)
+                E.SubElement(mapping, 'timept', time='6s', value=end, interp=interpolation)
                 target.insert(0, mapping)
                 plans = self.assert_unchanged(root, target, add_color)
                 self.assertEqual(plans['dialogue']['segments'], [])
@@ -282,8 +282,8 @@ class VisualAdjustmentTests(unittest.TestCase):
                 else:
                     mapping = E.Element('timeMap')
                     interpolation = 'unverified' if case == 'unknown-interpolation' else 'linear'
-                    E.SubElement(mapping, 'timept', time='0s', value='2s', interp=interpolation)
-                    E.SubElement(mapping, 'timept', time='4s', value='6s', interp=interpolation)
+                    E.SubElement(mapping, 'timept', time='2s', value='2s', interp=interpolation)
+                    E.SubElement(mapping, 'timept', time='6s', value='6s', interp=interpolation)
                     target.insert(0, mapping)
                     message = '未知变速插值|容器音频变速'
                 with self.assertRaisesRegex(ValueError, message):

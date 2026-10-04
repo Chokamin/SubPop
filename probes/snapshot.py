@@ -129,13 +129,16 @@ def prepare(data, generic=False):
             start=seconds(clip.get('start',default_start))
             position=origin+seconds(clip.get('offset','0s'))-parent_start
             length=seconds(clip.get('duration','0s'))
+            children=list(clip) if generic else [c for c in clip if c.tag=='title']
+            has_time_map=clip.find('timeMap') is not None
+            mapped_children=[child for child in children if not has_time_map or child.get('lane','0')=='0']
             # Audio-only validation runs later. A visual reverse with no titles
-            # must not be rejected while stripping unrelated title layers.
-            has_nested_titles=any(node.tag=='title' for node in clip.iter()) or (
+            # in its source timeline must not block independent connections.
+            has_nested_titles=any(node.tag=='title' for child in mapped_children for node in child.iter()) or (
                 media_seq is not None and media_seq.find('.//title') is not None)
             unsupported=False
             try:
-                retime=linear_time_map(clip,length) if clip.find('timeMap') is not None and has_nested_titles and not unmapped else None
+                retime=linear_time_map(clip,length,start) if has_time_map and has_nested_titles and not unmapped else None
             except UnsupportedAudioRetime:
                 # Strip silent titles as usual, but do not invent their output
                 # clock or report an inaccurate collision interval.
@@ -148,20 +151,24 @@ def prepare(data, generic=False):
                 elif rate!=1:retime=([(Fraction(0),length,start,start+length*rate)],False)
             clip_format=resources.get(clip.get('format'))
             child_frame=seconds(clip_format.get('frameDuration','0s')) if clip_format is not None and clip_format.tag=='format' else clock_frame
-            children=list(clip) if generic else [c for c in clip if c.tag=='title']
             if retime:
                 mapping,_=retime
                 local_bounds=(mapping[0][2],mapping[-1][3])
                 output_bounds=(max(bounds[0],position),min(bounds[1],position+length))
-                separate_anchors=clip.tag=='sync-clip' and rate!=1
+                separate_anchors=has_time_map or clip.tag=='sync-clip' and rate!=1
                 inner_children=[child for child in children if not separate_anchors or child.get('lane','0')=='0']
                 anchors=[child for child in children if separate_anchors and child.get('lane','0')!='0']
                 yield from titles(inner_children,Fraction(0),Fraction(0),clip,local_bounds,media_stack,
                                   ((mapping,position,output_bounds),*warps),unmapped or unsupported,child_frame)
-                yield from titles(anchors,position,start/rate if clip.tag=='sync-clip' else start,clip,bounds,
-                                  media_stack,warps,unmapped or unsupported,clock_frame)
+                # FCP round-trips anchored offsets in the adjusted local
+                # clock. Mapping them again changes their position and length;
+                # only contained content follows this clip's full time map.
+                yield from titles(anchors,position,start if has_time_map else start/rate,clip,bounds,
+                                  media_stack,warps,unmapped if has_time_map else unmapped or unsupported,clock_frame)
             else:
-                yield from titles(children,position,start,clip,bounds,media_stack,warps,unmapped or unsupported,child_frame)
+                anchors=[child for child in children if has_time_map and child.get('lane','0')!='0']
+                yield from titles(mapped_children,position,start,clip,bounds,media_stack,warps,unmapped or unsupported,child_frame)
+                yield from titles(anchors,position,start,clip,bounds,media_stack,warps,unmapped,clock_frame)
             if media_seq is not None:
                 inner_spine=media_seq.find('spine')
                 if clip.tag!='mc-clip' and (inner_spine is None or len(media_seq.findall('spine'))!=1):
