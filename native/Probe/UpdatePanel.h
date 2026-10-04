@@ -4,6 +4,9 @@
 @property NSAlert *alert;
 @property NSPopUpButton *sourcePicker;
 @property NSTextField *mirrorField;
+@property NSButton *mirrorEditButton;
+@property BOOL editingMirror;
+@property BOOL downloading;
 @property NSTextField *status;
 @property NSProgressIndicator *progress;
 @property NSButton *checkButton;
@@ -32,12 +35,18 @@
     NSInteger mode=[NSUserDefaults.standardUserDefaults integerForKey:@"updateSourceMode"];
     [self.sourcePicker selectItemAtIndex:mode>=0 && mode<=2 ? mode : 0];self.sourcePicker.target=self;self.sourcePicker.action=@selector(check:);[self.sourcePicker setAccessibilityLabel:@"更新来源"];[content addSubview:self.sourcePicker];
     NSTextField *mirrorLabel=[NSTextField labelWithString:@"镜像地址"];mirrorLabel.frame=NSMakeRect(0,112,76,22);[content addSubview:mirrorLabel];
-    self.mirrorField=[[NSTextField alloc] initWithFrame:NSMakeRect(80,110,348,25)];
+    self.editingMirror=NO;self.downloading=NO;
+    self.mirrorField=[[NSTextField alloc] initWithFrame:NSMakeRect(80,110,284,25)];
     self.mirrorField.stringValue=SubPopUpdateMirror([NSUserDefaults.standardUserDefaults stringForKey:@"updateMirrorURL"]) ?: SubPopDefaultUpdateMirror;
     // A mirror URL does not need prose editing tools or text completion.
     if (@available(macOS 15.2, *)) self.mirrorField.allowsWritingTools=NO;
     self.mirrorField.automaticTextCompletionEnabled=NO;
+    // FCP can choose an accessory responder after beginSheet has returned.
+    // Keep the URL read-only until the user explicitly starts an edit.
+    self.mirrorField.editable=NO;self.mirrorField.selectable=NO;
     self.mirrorField.placeholderString=SubPopDefaultUpdateMirror;self.mirrorField.font=[NSFont systemFontOfSize:12];[self.mirrorField setAccessibilityLabel:@"镜像地址"];[content addSubview:self.mirrorField];
+    self.mirrorEditButton=[NSButton buttonWithTitle:@"修改" target:self action:@selector(editMirror:)];
+    self.mirrorEditButton.frame=NSMakeRect(370,109,58,27);[content addSubview:self.mirrorEditButton];
     self.status=[NSTextField wrappingLabelWithString:@""];self.status.frame=NSMakeRect(0,70,430,32);self.status.font=[NSFont systemFontOfSize:12];self.status.textColor=NSColor.secondaryLabelColor;[content addSubview:self.status];
     self.progress=[[NSProgressIndicator alloc] initWithFrame:NSMakeRect(0,51,430,6)];self.progress.style=NSProgressIndicatorStyleBar;self.progress.minValue=0;self.progress.maxValue=1;[content addSubview:self.progress];
     self.checkButton=[NSButton buttonWithTitle:@"重新检查" target:self action:@selector(check:)];
@@ -54,17 +63,11 @@
     for(NSButton *button in actions.arrangedSubviews)[button.heightAnchor constraintEqualToConstant:32].active=YES;
     self.alert.accessoryView=content;
     self.alert.window.initialFirstResponder=self.checkButton;
-    // Prevent NSAlert from starting a URL edit while it chooses its responder.
-    // check: restores editability for the selected update source immediately.
-    self.mirrorField.enabled=NO;
     __weak typeof(self) weakSelf=self;
     [self.alert beginSheetModalForWindow:window completionHandler:^(NSModalResponse response){
         typeof(self) strongSelf=weakSelf;[strongSelf.client cancel];strongSelf.client=nil;strongSelf.alert=nil;
         if(strongSelf.onClose)strongSelf.onClose();strongSelf.onClose=nil;
     }];
-    // NSAlert selects its editable accessory during presentation even when
-    // initialFirstResponder is a button. Apply focus after that selection so
-    // opening the sheet does not select the URL or activate its editing UI.
     [self.alert.window makeFirstResponder:self.checkButton];
     [self check:nil];
 }
@@ -75,11 +78,35 @@
     return value ?: SubPopDefaultUpdateMirror;
 }
 - (void)setBusy:(BOOL)busy downloading:(BOOL)downloading {
+    self.downloading=downloading;
     self.checkButton.enabled=!downloading;self.sourcePicker.enabled=!downloading;
-    self.mirrorField.enabled=!downloading && self.sourcePicker.indexOfSelectedItem!=1;
+    [self updateMirrorControls];
     self.downloadButton.enabled=!busy && [self.releaseInfo[@"installer"] boolValue] && [self.releaseInfo[@"newer"] boolValue];
     self.progress.hidden=!busy;
     if(!busy)[self.progress stopAnimation:nil];
+}
+- (void)updateMirrorControls {
+    BOOL available=!self.downloading && self.sourcePicker.indexOfSelectedItem!=1;
+    BOOL editable=available && self.editingMirror;
+    if(self.mirrorField.enabled!=available)self.mirrorField.enabled=available;
+    if(self.mirrorField.editable!=editable)self.mirrorField.editable=editable;
+    if(self.mirrorField.selectable!=editable)self.mirrorField.selectable=editable;
+    self.mirrorEditButton.enabled=available;
+    self.mirrorEditButton.title=self.editingMirror ? @"完成" : @"修改";
+}
+- (void)editMirror:(id)sender {
+    if(!self.mirrorEditButton.enabled)return;
+    if(self.editingMirror) {
+        if(![self.alert.window makeFirstResponder:self.mirrorEditButton])return;
+        NSString *mirror=[self mirror];if(!mirror)return;
+        self.mirrorField.stringValue=mirror;
+        [NSUserDefaults.standardUserDefaults setObject:mirror forKey:@"updateMirrorURL"];
+        [NSUserDefaults.standardUserDefaults setInteger:self.sourcePicker.indexOfSelectedItem forKey:@"updateSourceMode"];
+        self.editingMirror=NO;[self updateMirrorControls];
+    } else {
+        self.editingMirror=YES;[self updateMirrorControls];
+        [self.mirrorField selectText:nil];
+    }
 }
 - (void)attachProgress:(SubPopUpdateClient *)client {
     __weak typeof(self) weakSelf=self;__weak SubPopUpdateClient *weakClient=client;
@@ -90,6 +117,10 @@
     };
 }
 - (void)check:(id)sender {
+    if(self.sourcePicker.indexOfSelectedItem==1)self.editingMirror=NO;
+    // Restore the edit action before validation, including after leaving
+    // GitHub-only mode with an invalid, unfinished mirror address.
+    [self updateMirrorControls];
     NSString *mirror=[self mirror];if(!mirror)return;
     [NSUserDefaults.standardUserDefaults setObject:mirror forKey:@"updateMirrorURL"];
     [NSUserDefaults.standardUserDefaults setInteger:self.sourcePicker.indexOfSelectedItem forKey:@"updateSourceMode"];
