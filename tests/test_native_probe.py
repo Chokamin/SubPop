@@ -10,9 +10,10 @@ APP=ROOT/'.subloom/build/SubPop Probe.app'
 EXT=APP/'Contents/PlugIns/SubPopProbe.appex'
 
 class NativeBundleTests(unittest.TestCase):
-    def test_extension_has_an_independent_icon_catalog(self):
-        catalogs=[]
-        for bundle,name in ((APP,'SubPop'),(EXT,'ExtensionIcon')):
+    def test_extension_preserves_the_complete_brand_icon(self):
+        name='SubPop'
+        original=ROOT/'.subloom/build/icon-assets'
+        for bundle in (APP,EXT):
             info=plistlib.loads((bundle/'Contents/Info.plist').read_bytes())
             self.assertEqual(info['CFBundleIconName'],name)
             self.assertIn(info['CFBundleIconFile'],(name,name+'.icns'))
@@ -22,11 +23,10 @@ class NativeBundleTests(unittest.TestCase):
             entries=json.loads(subprocess.check_output(['xcrun','assetutil','--info',str(catalog)],text=True))
             names={entry.get('Name') for entry in entries if entry.get('Name')}
             self.assertIn(name,names)
-            catalogs.append(catalog.read_bytes())
-            if bundle==EXT:
-                self.assertNotIn('SubPop',names)
-                self.assertFalse((resources/'SubPop.icns').exists())
-        self.assertNotEqual(*catalogs)
+            self.assertNotIn('ExtensionIcon',names)
+            self.assertFalse((resources/'ExtensionIcon.icns').exists())
+            for filename in ('SubPop.icns','Assets.car'):
+                self.assertEqual((resources/filename).read_bytes(),(original/filename).read_bytes())
 
     def test_extension_registration_metadata(self):
         with (EXT/'Contents/Info.plist').open('rb') as f: info=plistlib.load(f)

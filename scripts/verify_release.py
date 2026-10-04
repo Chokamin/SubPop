@@ -30,17 +30,19 @@ expected, packaged = manifest(source), manifest(actual)
 assert expected == packaged, 'Expanded payload differs from staging'
 for suffix in ('', 'Contents/PlugIns/SubPopProbe.appex'):
     info = plistlib.loads((actual / suffix / 'Contents/Info.plist').read_bytes())
-    icon_name='ExtensionIcon' if suffix else 'SubPop'
+    icon_name='SubPop'
     assert info.get('CFBundleIconName') == icon_name, 'Incorrect native icon identity'
     assert info.get('CFBundleIconFile') in (icon_name,icon_name+'.icns'), 'Incorrect native icon file'
     assert (actual / suffix / ('Contents/Resources/'+icon_name+'.icns')).is_file(), 'Missing native icon file'
     if suffix:
-        assert not (actual / suffix / 'Contents/Resources/SubPop.icns').exists(), 'Stale application icon in extension'
+        assert not (actual / suffix / 'Contents/Resources/ExtensionIcon.icns').exists(), 'Discarded bubble-only icon in extension'
     assert (actual / suffix / 'Contents/Resources/Assets.car').is_file(), 'Missing native icon catalog'
     assert info['SubPopPackagedRuntime'] and 'SubPopWorkspace' not in info
     original=plistlib.loads((source / suffix / 'Contents/Info.plist').read_bytes())
     assert info['CFBundleVersion'] == original['CFBundleVersion']
     assert info['CFBundleShortVersionString'] == original['CFBundleShortVersionString']
+for name in ('SubPop.icns','Assets.car'):
+    assert digest(actual/'Contents/Resources'/name) == digest(actual/'Contents/PlugIns/SubPopProbe.appex/Contents/Resources'/name), 'Extension must retain the complete application brand icon'
 assert not any(actual.rglob('*.moti')), 'Third-party templates must be downloaded from the author, not bundled'
 assert not (actual / 'Contents/Resources/Runtime/.subloom/models').exists()
 assert not (actual / 'Contents/Resources/Runtime/.subloom/verification').exists()
