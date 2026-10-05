@@ -17,7 +17,8 @@ from urllib.parse import unquote, urlparse
 import xml.etree.ElementTree as ET
 from .readback import seconds
 from .timeline_audio import flag
-from .source_clips import VIDEO_ONLY_CHILDREN,conform_audio_speed,multicam_sources,synchronized_sources
+from .source_clips import (VIDEO_ONLY_CHILDREN,conform_audio_speed,multicam_sources,
+                           primary_audio_sources,source_audio_child,synchronized_sources)
 
 RATE=16000
 
@@ -339,23 +340,6 @@ def channel_role_sources(selection,groups,effects):
     return dict(selection,components=components,_coefficients=True,_channelGains=channel_gains,_channelRoles=roles),effect_count
 
 
-def primary_audio_sources(node):
-    """Find the source layout without treating independent connections as it."""
-    sources=[]
-    for child in node:
-        if source_audio_child(node,child) or child.tag=='asset-clip' and child.get('lane','0')=='0':
-            sources.append(child)
-            if child.tag=='audio':sources.extend(primary_audio_sources(child))
-        elif child.tag in ('clip','gap') and child.get('lane','0')=='0':sources.extend(primary_audio_sources(child))
-    return sources
-
-
-def source_audio_child(parent,child):
-    """FCP nests one source's channel fragments below its first audio node."""
-    return child.tag=='audio' and (child.get('lane','0')=='0' or parent.tag=='gap'
-           or parent.tag=='audio' and child.get('ref')==parent.get('ref') and 'srcCh' in child.attrib)
-
-
 def validate_role_sources(sources):
     seen=set()
     for source in sources:
@@ -557,6 +541,14 @@ def inspect(path, audio_mode='dialogue'):
             gain*=volume_gain(volumes[0])
         conform=node.findall('conform-rate')
         conform_speed=conform_audio_speed(node,root,assets,clock_frame,media_seq,audible,bool(media_stack))
+        if node.tag=='clip' and not audible and conform and node.find('timeMap') is None and any(
+                child.tag in STORY_TAGS and child.get('lane','0')!='0' and not source_audio_child(node,child)
+                for child in node):
+            # Muting source components does not move independent dialogue.
+            # Recover a known source clock without requiring an unsupported
+            # silent picture's audio conversion to become renderable.
+            try:conform_speed=conform_audio_speed(node,root,assets,clock_frame,media_seq,True,bool(media_stack))
+            except ValueError:pass
         # A video-only reverse or smooth retime does not change independently
         # scheduled dialogue. Its visual timing need not be reconstructed.
         has_time_map=node.find('timeMap') is not None
@@ -645,6 +637,7 @@ def inspect(path, audio_mode='dialogue'):
             try:
                 for child in children:
                     if node.tag=='sync-clip' and child.get('lane','0')!='0':continue
+                    if node.tag=='clip' and child.get('lane','0')!='0' and not source_audio_child(node,child):continue
                     groups=(*role_sources,sync_settings.get('storyline',())) if node.tag=='sync-clip' else role_sources
                     walk(child,Fraction(0),Fraction(0),source_bounds,
                          enabled and source_enable!='video',gain,depth+1,media_stack,groups,container_frame,child_channels(child))
@@ -661,6 +654,16 @@ def inspect(path, audio_mode='dialogue'):
                     if child.get('lane','0')!='0':
                         walk(child,origin,start/conform_speed,bounds,enabled and source_enable!='video',gain,depth+1,media_stack,
                              (*role_sources,sync_settings.get('connected',())),clock_frame,child_channels(child))
+            else:
+                for child in children:
+                    if child.get('lane','0')=='0' or source_audio_child(node,child):continue
+                    # FCP's plain-clip conform converts the connection point,
+                    # but not the connected clip's own speed or duration. A
+                    # six-second connection can continue beyond its anchor.
+                    offset=seconds(child.get('offset','0s'))
+                    connection_origin=origin+(offset-start)/conform_speed
+                    walk(child,connection_origin-offset,Fraction(0),bounds,inherited,parent_gain,
+                         depth+1,media_stack,role_sources,clock_frame,child_channels(child))
         else:
             for child in children:
                 # Contained media is trimmed/muted by its container. Connected

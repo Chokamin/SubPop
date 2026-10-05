@@ -155,7 +155,7 @@ def prepare(data, generic=False):
                 mapping,_=retime
                 local_bounds=(mapping[0][2],mapping[-1][3])
                 output_bounds=(max(bounds[0],position),min(bounds[1],position+length))
-                separate_anchors=has_time_map or clip.tag=='sync-clip' and rate!=1
+                separate_anchors=has_time_map or clip.tag in ('clip','sync-clip') and rate!=1
                 inner_children=[child for child in children if not separate_anchors or child.get('lane','0')=='0']
                 anchors=[child for child in children if separate_anchors and child.get('lane','0')!='0']
                 yield from titles(inner_children,Fraction(0),Fraction(0),clip,local_bounds,media_stack,
@@ -163,8 +163,17 @@ def prepare(data, generic=False):
                 # FCP round-trips anchored offsets in the adjusted local
                 # clock. Mapping them again changes their position and length;
                 # only contained content follows this clip's full time map.
-                yield from titles(anchors,position,start if has_time_map else start/rate,clip,bounds,
-                                  media_stack,warps,unmapped if has_time_map else unmapped or unsupported,clock_frame)
+                if clip.tag=='clip' and rate!=1 and not has_time_map:
+                    # Plain-clip conform maps the anchor point, while the
+                    # independent title keeps its original duration.
+                    for child in anchors:
+                        offset=seconds(child.get('offset','0s'))
+                        connection_origin=position+(offset-start)/rate
+                        yield from titles([child],connection_origin-offset,Fraction(0),clip,bounds,
+                                          media_stack,warps,unmapped or unsupported,clock_frame)
+                else:
+                    yield from titles(anchors,position,start if has_time_map else start/rate,clip,bounds,
+                                      media_stack,warps,unmapped if has_time_map else unmapped or unsupported,clock_frame)
             else:
                 anchors=[child for child in children if has_time_map and child.get('lane','0')!='0']
                 yield from titles(mapped_children,position,start,clip,bounds,media_stack,warps,unmapped or unsupported,child_frame)

@@ -20,6 +20,24 @@ VIDEO_ONLY_CHILDREN=frozenset({
 })
 
 
+def source_audio_child(parent,child):
+    """FCP nests one source's channel fragments below its first audio node."""
+    return child.tag=='audio' and (child.get('lane','0')=='0' or parent.tag=='gap'
+           or parent.tag=='audio' and child.get('ref')==parent.get('ref') and 'srcCh' in child.attrib)
+
+
+def primary_audio_sources(node):
+    """Find the source layout without treating independent connections as it."""
+    sources=[]
+    for child in node:
+        if source_audio_child(node,child) or child.tag=='asset-clip' and child.get('lane','0')=='0':
+            sources.append(child)
+            if child.tag=='audio':sources.extend(primary_audio_sources(child))
+        elif child.tag in ('clip','gap','spine','sync-clip') and child.get('lane','0')=='0':
+            sources.extend(primary_audio_sources(child))
+    return sources
+
+
 def synchronized_sources(node):
     sources={}
     for source in node.findall('sync-source'):
@@ -66,7 +84,12 @@ def conform_audio_speed(node,root,assets,frame,media_seq=None,audible=True,neste
         if scale not in ('0','1'):raise ValueError('帧率适配结构无效')
         if scale=='1' and audible:
             asset=assets.get(node.get('ref')) if node.tag in ('asset-clip','audio') else None
-            audio_assets=[asset] if asset is not None else [assets.get(child.get('ref')) for child in node.iter() if child.tag in ('asset-clip','audio')]
+            # A plain clip's source format belongs to its contained media.
+            # Independent dialogue can have no video format (or another one)
+            # without changing the picture's rate conversion.
+            source_nodes=primary_audio_sources(node) if node.tag=='clip' else (
+                child for child in node.iter() if child.tag in ('asset-clip','audio'))
+            audio_assets=[asset] if asset is not None else [assets.get(child.get('ref')) for child in source_nodes]
             source_frames=[]
             for audio_asset in audio_assets:
                 source_format=root.find(f"resources/format[@id='{audio_asset.get('format')}']") if audio_asset is not None else None
