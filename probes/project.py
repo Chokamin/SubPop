@@ -17,10 +17,15 @@ from urllib.parse import unquote, urlparse
 import xml.etree.ElementTree as ET
 from .readback import seconds
 from .timeline_audio import flag
+from .audio_gain import volume_gain, remap_gain, materialize_gain, evaluate_envelopes, curves
 from .source_clips import (VIDEO_ONLY_CHILDREN,conform_audio_speed,multicam_sources,
                            primary_audio_sources,source_audio_child,synchronized_sources)
 
 RATE=16000
+# Retime intervals and independent components can repeat an owner's curves.
+# Bound the serialized plan before duplicating their keyframe dictionaries.
+MAX_PLAN_GAIN_CURVES=10000
+MAX_PLAN_GAIN_KEYS=100000
 
 def sample(value):
     return (value*RATE + Fraction(1,2)).__floor__()
@@ -97,7 +102,7 @@ def linear_time_map(node, length, output_start=None):
     return intervals,mapping.get('preservesPitch','1')=='1'
 
 
-def inverse_retime_segment(segment, intervals, preserve_pitch, origin, visible):
+def inverse_retime_segment(segment, intervals, preserve_pitch, origin, visible, inner_clock=None, outer_clock=None):
     """Map one compound-source audio interval into the retimed parent clock.
 
     Both the source clip and the compound can already be split at rate changes.
@@ -118,6 +123,14 @@ def inverse_retime_segment(segment, intervals, preserve_pitch, origin, visible):
                     source_start=str(asset_at_begin),source_duration=str(asset_at_end-asset_at_begin),
                     startSample=sample(clipped_begin),sampleCount=sample(clipped_end)-sample(clipped_begin),
                     preservesPitch=preserve_pitch)
+        if inner_clock is not None:
+            speed=(source_at_end-source_at_begin)/(clipped_end-clipped_begin)
+            def transform(gain):
+                return remap_gain(gain,inner_clock,outer_clock,source_at_begin,clipped_begin,speed)
+            mapped['gain']=transform(segment['gain'])
+            if segment.get('channelMix',{}).get('components'):
+                mapped['channelMix']=dict(segment['channelMix'],components=[
+                    dict(component,gain=transform(component['gain'])) for component in segment['channelMix']['components']])
         if mapped['sampleCount']>0:yield mapped
 
 
@@ -169,16 +182,7 @@ def bypassed_audio_processors(children, effects):
     return count
 
 
-def volume_gain(node):
-    amount=node.get('amount','0dB')
-    if len(node) or set(node.attrib)-{'amount'} or not re.fullmatch(r'-?\d+(?:\.\d+)?dB',amount):
-        raise ValueError('暂不支持音量关键帧或淡入淡出')
-    db=float(amount[:-2])
-    if not -96<=db<=12:raise ValueError('音量超出支持范围')
-    return 10**(db/20)
-
-
-def audio_selection(node, asset, audio_mode, effects, role_sources=()):
+def audio_selection(node, asset, audio_mode, effects, role_sources=(), volume=volume_gain):
     """Plan enabled source components before asking the decoder about media.
 
     Channel numbers describe a source's layout, not timeline audio layers.
@@ -208,11 +212,11 @@ def audio_selection(node, asset, audio_mode, effects, role_sources=()):
             raise ValueError('暂不支持音频组件的通道重映射或裁剪')
         volumes=component.findall('adjust-volume')
         if len(volumes)>1:raise ValueError('音量结构无效')
-        component_gain=volume_gain(volumes[0]) if volumes else 1.0
+        component_gain=volume(volumes[0]) if volumes else 1.0
         for source in matched:
             adjustments=source.findall('adjust-volume')
             if len(adjustments)>1:raise ValueError('音量结构无效')
-            if adjustments:component_gain*=volume_gain(adjustments[0])
+            if adjustments:component_gain*=volume(adjustments[0])
             effect_count+=bypassed_audio_processors((child for child in source if child.tag!='adjust-volume'),effects)
         effect_count+=bypassed_audio_processors((child for child in component if child.tag!='adjust-volume'),effects)
         channels=None
@@ -311,7 +315,7 @@ def intersect_channels(outer,inner):
                 _channelRoles={channel:roles[channel] for channel in channel_gains})
 
 
-def channel_role_sources(selection,groups,effects):
+def channel_role_sources(selection,groups,effects,volume=volume_gain):
     """Apply remaining role controls to the final component output roles."""
     if not groups or not selection['components']:return selection,0
     components=[];channel_gains={};roles={};effect_count=0
@@ -330,7 +334,7 @@ def channel_role_sources(selection,groups,effects):
                 if not active:break
                 adjustments=source.findall('adjust-volume')
                 if len(adjustments)>1:raise ValueError('音量结构无效')
-                if adjustments:gain*=volume_gain(adjustments[0])
+                if adjustments:gain*=volume(adjustments[0])
                 effect_count+=bypassed_audio_processors((child for child in source if child.tag!='adjust-volume'),effects)
             if active:
                 for channel in channels:
@@ -402,6 +406,10 @@ def inspect(path, audio_mode='dialogue'):
     medias={m.get('id'):m for m in root.findall('resources/media')}
     effects={e.get('id'):e for e in root.findall('resources/effect')}
     segments=[];skipped=[];ignored=0;count=0;timeline_end=Fraction(0);bypassed_effects=0
+    clock=0;next_clock=0;volume_contexts={}
+
+    def contextual_volume(volume):
+        return volume_gain(volume,volume_contexts.get(id(volume)))
 
     def possible_media_audio(sequence,visited=()):
         if len(visited)>128:raise ValueError('项目片段嵌套过深')
@@ -420,7 +428,7 @@ def inspect(path, audio_mode='dialogue'):
         return False
 
     def walk(node,parent_origin,parent_start,bounds,inherited=True,parent_gain=1.0,depth=0,media_stack=(),role_sources=(),clock_frame=None,channel_layers=()):
-        nonlocal ignored,count,timeline_end,segments,skipped,bypassed_effects
+        nonlocal ignored,count,timeline_end,segments,skipped,bypassed_effects,clock,next_clock
         count+=1
         if clock_frame is None:clock_frame=frame
         if count>5000 or depth>128:raise ValueError('项目片段过多或嵌套过深')
@@ -460,6 +468,12 @@ def inspect(path, audio_mode='dialogue'):
         origin=parent_origin+seconds(node.get('offset','0s'))-parent_start
         length=seconds(node.get('duration',asset.get('duration','0s') if asset is not None else '0s'))
         if length<=0:raise ValueError('片段时长必须大于零')
+        # Bind automation to the owner before role/channel settings propagate
+        # to a leaf. The same media resource can be used at different offsets.
+        context=dict(clock=clock,origin=origin,start=start,length=length)
+        for path in ('adjust-volume','audio-channel-source/adjust-volume','audio-role-source/adjust-volume',
+                     'sync-source/audio-role-source/adjust-volume','mc-source/audio-role-source/adjust-volume'):
+            for volume in node.findall(path):volume_contexts[id(volume)]=context
         visible=(max(bounds[0],origin),min(bounds[1],origin+length))
         if visible[1]>visible[0]:timeline_end=max(timeline_end,visible[1])
         allowed=CLIP_ATTRS | ({'role','srcCh','srcID','outCh'} if node.tag=='audio' else {'role','srcID'} if node.tag=='video' else {'useAudioSubroles'} if node.tag=='ref-clip' else set())
@@ -482,10 +496,10 @@ def inspect(path, audio_mode='dialogue'):
                 ignored+=1;audible=False
             if audible:
                 selected,role,effect_count,selection=audio_selection(node,asset,'all' if layers else audio_mode,effects,
-                                                                   () if layers else role_sources)
+                                                                   () if layers else role_sources,contextual_volume)
                 for layer in reversed(layers):selection=intersect_channels(layer,selection)
                 if layers:
-                    selection,role_effects=channel_role_sources(selection,remaining_roles,effects)
+                    selection,role_effects=channel_role_sources(selection,remaining_roles,effects,contextual_volume)
                     effect_count+=role_effects
                     role=','.join(dict.fromkeys(full_role.split('.')[0] for full_role in selection.get('_channelRoles',{}).values())) or role
                 selected=selected and selection['components']!=[]
@@ -505,7 +519,7 @@ def inspect(path, audio_mode='dialogue'):
             if node.tag!='clip':
                 raise ValueError('暂不支持容器片段的音频通道重映射')
             selected,_,_,selection=audio_selection(node,ET.Element('asset'),'all' if channel_layers else audio_mode,effects,
-                                                 () if channel_layers else role_sources)
+                                                 () if channel_layers else role_sources,contextual_volume)
             if not selected:
                 container_channels=(None,selection);audible=False
             else:
@@ -514,7 +528,7 @@ def inspect(path, audio_mode='dialogue'):
                     raise ValueError('暂不支持容器片段的音频通道重映射')
                 ref=next(iter(refs))
                 _,_,component_effects,selection=audio_selection(node,assets[ref],'all' if channel_layers else audio_mode,effects,
-                                                             () if channel_layers else role_sources)
+                                                             () if channel_layers else role_sources,contextual_volume)
                 container_channels=(ref,selection)
                 effect_count+=component_effects
         if media_seq is not None and audible and not possible_media_audio(media_seq,(node.get('ref'),)):
@@ -530,7 +544,7 @@ def inspect(path, audio_mode='dialogue'):
                 if audible and not excluded_role(component.get('role'),audio_mode):
                     volumes=component.findall('adjust-volume')
                     if len(volumes)>1:raise ValueError('音量结构无效')
-                    role_gains.add(volume_gain(volumes[0]) if volumes else 1.0)
+                    role_gains.add(contextual_volume(volumes[0]) if volumes else 1.0)
                     effect_count+=bypassed_audio_processors((child for child in component if child.tag!='adjust-volume'),effects)
             if len(role_gains)>1:raise ValueError('暂不支持复合片段内不同音频角色使用不同的音量')
             component_gain*=next(iter(role_gains),1.0)
@@ -538,7 +552,7 @@ def inspect(path, audio_mode='dialogue'):
         volumes=node.findall('adjust-volume')
         if len(volumes)>1:raise ValueError('音量结构无效')
         if volumes and audible:
-            gain*=volume_gain(volumes[0])
+            gain*=contextual_volume(volumes[0])
         conform=node.findall('conform-rate')
         conform_speed=conform_audio_speed(node,root,assets,clock_frame,media_seq,audible,bool(media_stack))
         if node.tag=='clip' and not audible and conform and node.find('timeMap') is None and any(
@@ -633,6 +647,7 @@ def inspect(path, audio_mode='dialogue'):
             intervals=[(Fraction(0),length,start,start+length*conform_speed)]
             source_bounds=(start,start+length*conform_speed)
             outer_segments,outer_skipped,outer_end=segments,skipped,timeline_end
+            outer_clock=clock;next_clock+=1;clock=next_clock;inner_clock=clock
             segments=[];skipped=[]
             try:
                 for child in children:
@@ -644,8 +659,9 @@ def inspect(path, audio_mode='dialogue'):
                 inner_segments,inner_skipped=segments,skipped
             finally:
                 segments=outer_segments;skipped=outer_skipped;timeline_end=outer_end
+                clock=outer_clock
             for segment in inner_segments:
-                segments.extend(inverse_retime_segment(segment,intervals,False,origin,visible))
+                segments.extend(inverse_retime_segment(segment,intervals,False,origin,visible,inner_clock,outer_clock))
             for begin,end,reason in inner_skipped:
                 for _,_,out_begin,out_end in inverse_retime_ranges(begin,end,intervals,origin,visible):
                     skipped.append((out_begin,out_end,reason))
@@ -697,15 +713,16 @@ def inspect(path, audio_mode='dialogue'):
                 intervals,preserve_pitch=retime if retime else ([(Fraction(0),length,start,start+length*conform_speed)],False)
                 source_bounds=(intervals[0][2],intervals[-1][3])
                 outer_segments,outer_skipped,outer_end=segments,skipped,timeline_end
+                outer_clock=clock;next_clock+=1;clock=next_clock;inner_clock=clock
                 segments=[];skipped=[]
                 try:
                     walk_media(Fraction(0),Fraction(0),source_bounds)
                     inner_segments,inner_skipped=segments,skipped
                 finally:
                     segments=outer_segments;skipped=outer_skipped
-                    timeline_end=outer_end
+                    timeline_end=outer_end;clock=outer_clock
                 for segment in inner_segments:
-                    segments.extend(inverse_retime_segment(segment,intervals,preserve_pitch,origin,visible))
+                    segments.extend(inverse_retime_segment(segment,intervals,preserve_pitch,origin,visible,inner_clock,outer_clock))
                     if len(segments)>10000:raise ValueError('变速音频片段过多')
                 for begin,end,reason in inner_skipped:
                     for _,_,out_begin,out_end in inverse_retime_ranges(begin,end,intervals,origin,visible):
@@ -720,6 +737,28 @@ def inspect(path, audio_mode='dialogue'):
         if offset<0 or length<=0 or offset+length>duration:raise ValueError('片段范围超出项目')
         walk(node,Fraction(0),tc,(Fraction(0),duration));cursor+=length
     if timeline_end!=duration:raise ValueError('项目音频范围不完整')
+    # Different component envelopes cannot be applied after their channels
+    # have been summed. Decode those groups separately, preserving each
+    # existing downmix divisor and applying its own output-time envelope.
+    materialized=[];curve_count=0;key_count=0
+    for segment in segments:
+        components=segment.get('channelMix',{}).get('components')
+        groups=components if components and any(curves(c['gain']) for c in components) else (None,)
+        for component in groups:
+            item=dict(segment);gain=segment['gain']
+            if component is not None:
+                gain*=component['gain']
+                item['channelMix']=dict(segment['channelMix'],components=[dict(component,gain=1.0)])
+            envelopes=curves(gain)
+            curve_count+=len(envelopes)
+            key_count+=sum(len(envelope.keyframes) for envelope in envelopes)
+            if curve_count>MAX_PLAN_GAIN_CURVES or key_count>MAX_PLAN_GAIN_KEYS:
+                raise ValueError('项目音量自动化过于复杂；请导入整条时间线音频')
+            item['gain'],envelopes=materialize_gain(gain)
+            if envelopes:item['gainEnvelopes']=envelopes
+            materialized.append(item)
+            if len(materialized)>10000:raise ValueError('音频片段或独立音量组件过多')
+    segments=materialized
     # FCP may finish a project at the sample boundary of connected audio, after
     # the last full video frame. PCM keeps that exact endpoint; titles use frames.
     skipped_audio=[{'offset':str(begin),'duration':str(end-begin),'startSample':sample(begin),'endSample':sample(end),'reason':reason}
@@ -792,6 +831,9 @@ def render(xml,directory,binary,expected_uid,audio_mode='dialogue'):
                 values=array('f',stretched[:count])
                 if len(values)<count:values.extend([0.0]*(count-len(values)))
             base=segment['startSample']+done;gain=segment['gain']
+            if segment.get('gainEnvelopes'):
+                envelope=evaluate_envelopes(segment['gainEnvelopes'],base,count,RATE)
+                values=array('f',(v*float(envelope[k]) for k,v in enumerate(values)))
             # Sum overlapping dialogue, preserving the original project clock.
             pcm[base:base+count]=array('f',(pcm[base+k]+v*gain for k,v in enumerate(values)))
             done+=count

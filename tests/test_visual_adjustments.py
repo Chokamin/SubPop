@@ -244,7 +244,7 @@ class VisualAdjustmentTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, '未知|暂不支持'):
                     self.pipeline(root)
 
-    def test_audio_volume_keyframes_are_still_refused_next_to_color_conform(self):
+    def test_unknown_volume_parameter_is_refused_next_to_color_conform(self):
         for kind in ('asset-clip', 'clip', 'sync-clip', 'ref-clip', 'mc-audio-source'):
             with self.subTest(container=kind):
                 root, target = container_case(kind)
@@ -252,7 +252,7 @@ class VisualAdjustmentTests(unittest.TestCase):
                 volume = next(root.iter('adjust-volume'))
                 parameter = E.SubElement(volume, 'param', name='Volume', value='-6')
                 E.SubElement(E.SubElement(parameter, 'keyframeAnimation'), 'keyframe', time='0s', value='-6')
-                with self.assertRaisesRegex(ValueError, '音量关键帧'):
+                with self.assertRaisesRegex(ValueError, '音量参数'):
                     self.pipeline(root)
 
     def test_unsupported_audio_retimes_keep_the_existing_skip_rule(self):
