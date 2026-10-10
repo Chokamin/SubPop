@@ -1,8 +1,51 @@
+// The sandboxed extension asks its containing app to install only the bundled
+// preset. No file path, Apple event, or FCP launch is supplied by the caller.
+- (void)installShareDestination:(id)sender {
+    if (!self.shareHelpButton.enabled || self.shareSetupRequestID) return;
+    NSString *host=self.host.bundleIdentifier;
+    if (![@[@"com.apple.FinalCut",@"com.apple.FinalCutApp"] containsObject:host] || !self.bridgeURL) {
+        self.shareSetupStatus.stringValue=@"请在 Final Cut Pro 中打开 SubPop，再添加共享目的位置。";
+        self.shareSetupStatus.hidden=NO;return;
+    }
+    NSString *request=NSUUID.UUID.UUIDString;
+    self.shareSetupRequestID=request;self.shareSetupStarted=NSDate.date;
+    self.shareSetupStatus.stringValue=@"正在添加共享目的位置…";self.shareSetupStatus.hidden=NO;
+    NSURLComponents *components=[NSURLComponents new];components.scheme=@"subpop-probe";components.host=@"share-destination";
+    components.queryItems=@[[NSURLQueryItem queryItemWithName:@"host" value:host],[NSURLQueryItem queryItemWithName:@"request" value:request]];
+    NSWorkspaceOpenConfiguration *config=[NSWorkspaceOpenConfiguration configuration];config.activates=NO;
+    [self updateInterface];
+    [NSWorkspace.sharedWorkspace openURL:components.URL configuration:config completionHandler:^(NSRunningApplication *app,NSError *error) {
+        if (error) dispatch_async(dispatch_get_main_queue(),^{
+            if (![self.shareSetupRequestID isEqual:request]) return;
+            self.shareSetupRequestID=nil;self.shareSetupStarted=nil;
+            self.shareSetupStatus.stringValue=@"无法打开 SubPop 主程序。请确认已安装到“应用程序”，然后重试。";
+            [self updateInterface];
+        });
+    }];
+}
+- (void)pollShareDestinationSetup {
+    if (!self.shareSetupRequestID) return;
+    NSURL *resultURL=[[self.bridgeURL URLByAppendingPathComponent:@"share-destination"] URLByAppendingPathComponent:[self.shareSetupRequestID stringByAppendingPathExtension:@"json"]];
+    NSDictionary *result=[self readJSON:resultURL];
+    if ([result[@"requestID"] isEqual:self.shareSetupRequestID]) {
+        NSString *status=result[@"status"];
+        if ([status isEqual:@"installed"] || [status isEqual:@"already-installed"]) {
+            self.shareSetupStatus.stringValue=@"共享预设已就位。请在 FCP「共享」中查看“发送到 SubPop”；若未显示，保存工作后重启 FCP。";
+            self.shareHelpButton.title=@"检查共享配置";
+        } else if ([status isEqual:@"conflict"]) {
+            self.shareSetupStatus.stringValue=@"发现同名的不同预设，已保留原设置。请在 FCP「设置 → 目的位置」检查 SubPop 项目。";
+        } else self.shareSetupStatus.stringValue=@"未能添加共享预设，已有设置已保留。请重新安装 SubPop 后重试。";
+        self.shareSetupRequestID=nil;self.shareSetupStarted=nil;
+    } else if (self.shareSetupStarted && -self.shareSetupStarted.timeIntervalSinceNow>30) {
+        self.shareSetupRequestID=nil;self.shareSetupStarted=nil;
+        self.shareSetupStatus.stringValue=@"暂未收到配置结果。请检查 FCP「共享」菜单，或稍后重试。";
+    }
+}
 - (void)showShareHelp:(id)sender {
-    NSAlert *alert=[NSAlert new];alert.messageText=@"从 Final Cut Pro 发送成片音频";
-    alert.informativeText=@"首次设置：在 FCP「设置 → 目的位置」添加「导出文件」，格式选「仅音频」，音频格式选 WAV 或 AIFF；在「打开方式 → 其他」选择 SubPop。可将目的位置命名为“发送到 SubPop”。\n\n之后打开完整项目，清除范围选择，再从「共享」选择这个目的位置。FCP 渲染完成后，回到扩展点击「接收 FCP 音频」。无需手动寻找导出的音频，也无需先拖入项目。\n\n接收的是共享设置中的声音。若只要对白，请在 FCP 共享设置中选择对白角色，并合成为一个音频文件；混音中的音乐不能在 SubPop 内再按角色分离。时间线修改后请重新共享。";
-    [alert addButtonWithTitle:@"知道了"];
-    [alert beginSheetModalForWindow:self.view.window completionHandler:nil];
+    self.shareGuideExpanded=!self.shareGuideExpanded;
+    self.shareGuideDetail.hidden=!self.shareGuideExpanded;
+    [self.view layoutSubtreeIfNeeded];
+    if (self.shareGuideExpanded) [self.shareGuideDetail scrollRectToVisible:self.shareGuideDetail.bounds];
 }
 - (void)showRecognitionReview:(id)sender {
     NSDictionary *review=self.resultManifest[@"recognitionReview"];

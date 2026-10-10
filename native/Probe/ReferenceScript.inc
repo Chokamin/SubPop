@@ -17,12 +17,17 @@
 - (NSString *)referenceHash:(NSString *)text {
     return text.length ? [self sha256:[text dataUsingEncoding:NSUTF8StringEncoding]] : @"";
 }
+- (BOOL)referenceMutationBusy {
+    return self.requestID || self.referenceRequestID || self.pendingRecognition || self.shareReceiving || self.fallbackImporting || self.sharePromptOpen || self.importInProgress || self.exportInProgress;
+}
 - (void)importReferenceText:(id)sender {
-    if (!self.referenceAlert) return;
+    if ([self referenceMutationBusy] || !self.referenceAlert) return;
+    NSAlert *referenceAlert=self.referenceAlert;NSTextView *editor=self.referenceEditor;
+    NSString *project=self.dropUID;NSUInteger generation=self.dropGeneration;
     NSOpenPanel *panel=[NSOpenPanel new];panel.canChooseDirectories=NO;panel.allowsMultipleSelection=NO;
     panel.allowedContentTypes=@[UTTypePlainText,[UTType typeWithFilenameExtension:@"md"] ?: UTTypePlainText];panel.message=@"选择参考脚本的文本文件";
     [panel beginSheetModalForWindow:self.referenceAlert.window completionHandler:^(NSModalResponse response) {
-        if (response!=NSModalResponseOK) return;
+        if (response!=NSModalResponseOK || [self referenceMutationBusy] || self.referenceAlert!=referenceAlert || self.referenceEditor!=editor || ![self.dropUID isEqual:project] || self.dropGeneration!=generation) return;
         NSNumber *size=nil;[panel.URL getResourceValue:&size forKey:NSURLFileSizeKey error:nil];
         NSString *text=size.unsignedLongLongValue<=128*1024 ? [NSString stringWithContentsOfURL:panel.URL usedEncoding:nil error:nil] : nil;
         text=[self validatedReferenceText:text];
@@ -31,8 +36,8 @@
     }];
 }
 - (void)showReferenceScript:(id)sender {
-    if (self.requestID || self.referenceRequestID || self.pendingRecognition || !self.dropUID.length || ![self isolatedProjectActive] || self.referenceAlert) return;
-    NSString *project=self.dropUID;
+    if ([self referenceMutationBusy] || !self.dropUID.length || ![self isolatedProjectActive] || self.referenceAlert) return;
+    NSString *project=self.dropUID;NSUInteger generation=self.dropGeneration;
     NSAlert *alert=[NSAlert new];self.referenceAlert=alert;alert.messageText=@"参考脚本";
     alert.informativeText=@"以实际说出的内容为准，参考脚本校正疑似错词、统一写法和辅助断句。\n现场改说、临时补充和未读出的段落会保留差异，不会照抄整篇脚本。";
     NSView *view=[[NSView alloc] initWithFrame:NSMakeRect(0,0,500,300)];
@@ -51,9 +56,10 @@
     if (current) [alert addButtonWithTitle:@"仅保存"];
     [alert addButtonWithTitle:@"取消"];alert.accessoryView=view;
     [alert beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse result) {
+        if (self.referenceAlert!=alert) return;
         self.referenceAlert=nil;self.referenceEditor=nil;self.referenceLimit=nil;
         if (result!=(NSAlertFirstButtonReturn) && !(current && result==NSAlertSecondButtonReturn)) {self.referenceDraft=nil;return;}
-        if (![self.dropUID isEqual:project]) {self.referenceDraft=nil;return;}
+        if ([self referenceMutationBusy] || ![self.dropUID isEqual:project] || self.dropGeneration!=generation) {self.referenceDraft=nil;return;}
         NSString *text=[self validatedReferenceText:editor.string];
         if (!text) {
             self.referenceDraft=editor.string;NSAlert *error=[NSAlert new];error.messageText=@"脚本未保存";error.informativeText=@"参考脚本最多 20000 字，不能包含控制字符。";[error beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse r){[self showReferenceScript:nil];}];return;
@@ -66,7 +72,7 @@
 }
 - (void)startReferenceRefinement {
     NSString *script=[self effectiveReferenceScript];
-    if (!script.length || self.requestID || self.referenceRequestID || self.pendingRecognition || !self.captionRows.count || ![self isolatedProjectActive]) return;
+    if ([self referenceMutationBusy] || !script.length || !self.captionRows.count || ![self isolatedProjectActive]) return;
     if (![self workerAvailable]) {self.referenceMessage=@"请先连接本机服务，再整理当前字幕。";[self updateInterface];return;}
     [self.view.window makeFirstResponder:nil];
     NSString *identifier=NSUUID.UUID.UUIDString.lowercaseString;NSURL *directory=[self.bridgeURL URLByAppendingPathComponent:identifier];
@@ -113,7 +119,7 @@
     self.referenceRequestID=nil;self.referenceSourceRows=nil;self.referenceSourceOutputRows=nil;self.referenceStarted=nil;[self updateInterface];
 }
 - (void)undoReferenceRefinement:(id)sender {
-    if (self.requestID || self.referenceRequestID || !self.referenceUndoRows || !self.referenceUndoPayloads) return;
+    if ([self referenceMutationBusy] || !self.referenceUndoRows || !self.referenceUndoPayloads) return;
     NSMutableArray *previousSource=self.captionSourceRows,*previousRows=self.captionRows;NSDictionary *previousPayloads=self.titlePayloads;
     // Initial recognition may use the script to change caption boundaries.
     // Restore its matching original XML as well as text before converting.
@@ -123,7 +129,7 @@
     self.referenceMessage=@"已撤销本次脚本整理";[self rebuildTitles];[self.captionTable reloadData];[self updateInterface];
 }
 - (void)updateReferenceInterface {
-    BOOL busy=self.requestID || self.referenceRequestID || self.pendingRecognition;
+    BOOL busy=[self referenceMutationBusy];
     NSString *script=[self effectiveReferenceScript];
     self.referenceButton.enabled=!busy && self.dropUID.length && [self isolatedProjectActive] && !self.importInProgress;
     NSString *referenceState=script.length ? @"已启用" : ([self referenceSettings][@"text"] ? @"已停用" : @"可选");
@@ -154,7 +160,7 @@
     return YES;
 }
 - (void)restoreLastResult:(id)sender {
-    if (self.requestID || self.referenceRequestID || self.titlePayloads || !self.observedProjectUID.length || !CMTIME_IS_NUMERIC(self.observedProjectDuration)) return;
+    if ([self referenceMutationBusy] || self.titlePayloads || !self.observedProjectUID.length || !CMTIME_IS_NUMERIC(self.observedProjectDuration)) return;
     NSString *sha=nil,*uid=self.observedProjectUID;
     if (self.freshDropURL) {
         NSXMLDocument *xml=[[NSXMLDocument alloc] initWithData:[NSData dataWithContentsOfURL:self.freshDropURL] options:NSXMLNodeLoadExternalEntitiesNever error:nil];

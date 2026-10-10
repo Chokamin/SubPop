@@ -59,6 +59,20 @@ int main(int argc,const char *argv[]) {
         [c.view layoutSubtreeIfNeeded];
         if (c.templatePicker.numberOfItems!=3 || c.templatePicker.indexOfSelectedItem!=SubPopTitleTemplateBasic || ![c.templatePicker.titleOfSelectedItem isEqual:@"普通字幕 · 无底框"]) return 111;
         if (!c.chineseTextControls.hidden || c.chineseTextPicker.numberOfItems!=3 || ![c.chineseTextPicker.titleOfSelectedItem isEqual:@"保持原文"]) return 153;
+        NSString *setupID=NSUUID.UUID.UUIDString;
+        NSURL *setupRoot=[NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString] isDirectory:YES];
+        NSURL *setupDirectory=[setupRoot URLByAppendingPathComponent:@"share-destination"];
+        [NSFileManager.defaultManager createDirectoryAtURL:setupDirectory withIntermediateDirectories:YES attributes:nil error:nil];
+        c.bridgeURL=setupRoot;c.shareSetupRequestID=setupID;c.shareSetupStarted=NSDate.date;
+        NSURL *receipt=[setupDirectory URLByAppendingPathComponent:[setupID stringByAppendingPathExtension:@"json"]];
+        [@"{\"requestID\":\"wrong\",\"status\":\"installed\"}" writeToURL:receipt atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        [c pollShareDestinationSetup];if(![c.shareSetupRequestID isEqual:setupID])return 159;
+        NSData *result=[NSJSONSerialization dataWithJSONObject:@{@"requestID":setupID,@"status":@"conflict"} options:0 error:nil];[result writeToURL:receipt atomically:YES];
+        [c pollShareDestinationSetup];if(c.shareSetupRequestID || ![c.shareSetupStatus.stringValue containsString:@"保留原设置"])return 160;
+        c.shareSetupRequestID=NSUUID.UUID.UUIDString;c.shareSetupStarted=[NSDate dateWithTimeIntervalSinceNow:-31];
+        [c pollShareDestinationSetup];if(c.shareSetupRequestID || ![c.shareSetupStatus.stringValue containsString:@"暂未收到"])return 161;
+        c.bridgeURL=nil;[NSFileManager.defaultManager removeItemAtURL:setupRoot error:nil];
+        c.shareSetupStatus.stringValue=@"";c.shareSetupStatus.hidden=YES;
         NSString *initialModel=c.selectedModelID;
         c.selectedModelID=@"doubao-cloud";[c updateInterface];
         if (![c.scopeLabel.stringValue containsString:@"上传音频"] || ![c.modelDetail.stringValue containsString:@"云端"]) return 100;
@@ -147,6 +161,14 @@ int main(int argc,const char *argv[]) {
                 [c updateInterface];
                 if (![c.statusDetail.stringValue containsString:@"00:02–00:04 平滑变速"]) return 133;
                 if (![c.statusDetail.stringValue containsString:@"2 处音频效果未参与识别"]) return 134;
+                withCollision[@"cloudCleanupPending"]=@1;
+                withCollision[@"audioSource"]=@"exported-full-timeline";
+                withCollision[@"existingTitleReview"]=@"unavailable";
+                withCollision[@"recognitionReview"]=@{@"warningCount":@2};
+                c.resultTimelineChanged=YES;[c updateInterface];
+                for(NSString *notice in @[@"文字标题与 1 条",@"00:02–00:04",@"2 处音频效果",@"导出音频",@"标题未能核对",@"时长与识别时不同",@"尚待清理",@"试听核对"])
+                    if(![c.statusDetail.stringValue containsString:notice]) {NSLog(@"Dropped independent notice: %@",notice);return 158;}
+                c.resultTimelineChanged=NO;
                 c.resultManifest=m;[c updateInterface];
             }
             if (width.intValue==580) {
@@ -170,10 +192,14 @@ int main(int argc,const char *argv[]) {
                 }
             }
             NSRect beforeScroll=c.pageScroll.documentVisibleRect;
-            [c.captionScroll scrollRectToVisible:c.captionScroll.bounds];
+            // Review now starts beside the result. Exercise the lower source
+            // controls to verify the outer page still scrolls without a bar.
+            NSRect sourceRect=[c.shareSection convertRect:c.shareSection.bounds toView:c.pageScroll.documentView];
+            [c.shareSection scrollRectToVisible:c.shareSection.bounds];
             NSRect afterScroll=c.pageScroll.documentVisibleRect;
-            if (width.intValue==840 && fabs(NSMinY(afterScroll)-NSMinY(beforeScroll))<1) {
-                NSLog(@"Review should scroll without a visible bar: %@ -> %@",NSStringFromRect(beforeScroll),NSStringFromRect(afterScroll));return 124;
+            if (width.intValue==840 && !NSContainsRect(beforeScroll,sourceRect) &&
+                (fabs(NSMinY(afterScroll)-NSMinY(beforeScroll))<1 || !NSContainsRect(afterScroll,sourceRect))) {
+                NSLog(@"Source controls should scroll into view without a visible bar: %@ -> %@, source %@",NSStringFromRect(beforeScroll),NSStringFromRect(afterScroll),NSStringFromRect(sourceRect));return 124;
             }
             [c.captionTable scrollRowToVisible:0];
             NSRect firstCaption=c.captionScroll.documentVisibleRect;

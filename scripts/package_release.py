@@ -12,8 +12,37 @@ STAGE=ROOT/'.subloom/package'
 APP=STAGE/'payload/Applications/SubPop.app'
 RUNTIME=APP/'Contents/Resources/Runtime'
 DIST=ROOT/'dist'
+SHARE_PRESET=Path('Contents/Resources/Share Destinations/SubPop.fcpxdest')
 
 def run(*args):subprocess.run([str(a) for a in args],check=True)
+
+def validate_share_preset(app):
+    """Require the genuine FCP-exported resource; never invent a private preset."""
+    path=Path(app)/SHARE_PRESET
+    if path.is_symlink() or not path.is_file() or not 0<path.stat().st_size<=1024*1024:
+        raise RuntimeError('Required FCP share preset is missing or invalid: '+str(path))
+    try:
+        value=plistlib.loads(path.read_bytes())
+    except (ValueError,TypeError,plistlib.InvalidFileException) as error:
+        raise RuntimeError('Invalid FCP share preset plist') from error
+    if not isinstance(value,dict) or not value:
+        raise RuntimeError('Invalid FCP share preset container')
+    return path
+
+def prepare_installer_scripts(directory):
+    """Use the signed app's narrow root-only installer without starting NSApp."""
+    directory=Path(directory);directory.mkdir(parents=True)
+    script=directory/'postinstall'
+    script.write_text('''#!/bin/sh
+set -eu
+if [ "${3:-}" != "/" ]; then
+    echo "SubPop shared destination requires the startup volume." >&2
+    exit 1
+fi
+exec /Applications/SubPop.app/Contents/MacOS/SubPopProbe --install-share-destination-system /
+''')
+    script.chmod(0o755)
+    return directory
 
 def build(application_identity=None, installer_identity=None):
     if bool(application_identity) != bool(installer_identity):
@@ -21,6 +50,7 @@ def build(application_identity=None, installer_identity=None):
     if STAGE.exists():shutil.rmtree(STAGE)
     APP.parent.mkdir(parents=True);DIST.mkdir(exist_ok=True)
     shutil.copytree(ROOT/'.subloom/build/SubPop Probe.app',APP,symlinks=True)
+    validate_share_preset(APP)
     RUNTIME.mkdir()
     info=plistlib.loads((APP/'Contents/Info.plist').read_bytes())
     version=info['CFBundleShortVersionString']
@@ -53,15 +83,16 @@ def build(application_identity=None, installer_identity=None):
         run('codesign','--force','--sign','-','--entitlements',ROOT/'native/Probe/Container.entitlements',APP)
     run('codesign','--verify','--deep','--strict',APP)
     component=STAGE/'SubPop-component.pkg'
-    run('pkgbuild','--root',STAGE/'payload','--identifier','com.chokamin.SubPop.installer','--version',version,'--compression','latest','--min-os-version','15.0','--install-location','/','--ownership','recommended',component)
+    installer_scripts=prepare_installer_scripts(STAGE/'installer-scripts')
+    run('pkgbuild','--root',STAGE/'payload','--scripts',installer_scripts,'--identifier','com.chokamin.SubPop.installer','--version',version,'--compression','latest','--min-os-version','15.0','--install-location','/','--ownership','recommended',component)
     resources=STAGE/'resources';resources.mkdir()
     welcome=resources/'Welcome.html'
-    welcome.write_text('<html><meta charset="utf-8"><body><h1>SubPop 安装</h1><p>安装 FCP 扩展和独立本机识别环境。适用于 Apple Silicon、macOS 15 或更高版本。FCP 集成当前实测版本为 12.3。</p><p>首次安装后打开应用程序中的 SubPop 一次，再从 Final Cut Pro 扩展菜单打开；本机服务会自动连接。拖入项目并点击生成字幕；若尚未下载模型，确认后会自动下载并接着识别。</p><p>此包尚未完成 Developer ID 签名及 Apple 公证，仅供测试使用。安装不包含模型、测试视频、用户词库或历史字幕。</p></body></html>')
+    welcome.write_text('<html><meta charset="utf-8"><body><h1>SubPop 安装</h1><p>安装 FCP 扩展和独立本机识别环境。适用于 Apple Silicon、macOS 15 或更高版本。FCP 集成当前实测版本为 12.4。</p><p>安装会添加 SubPop 共享预设，保留已有目的位置与默认设置。若 FCP 尚未显示新目的位置，请重新打开 FCP；也可以在 SubPop 面板内补装预设。</p><p>首次安装后打开应用程序中的 SubPop 一次，再从 Final Cut Pro 扩展菜单打开；本机服务会自动连接。共享完整项目音频后，在 SubPop 确认接收并生成字幕；若尚未下载模型，确认后会自动下载并接着识别。</p><p>此包尚未完成 Developer ID 签名及 Apple 公证，仅供测试使用。安装不包含模型、测试视频、用户词库或历史字幕。</p></body></html>')
     if application_identity:
         welcome.write_text(welcome.read_text().replace('此包尚未完成 Developer ID 签名及 Apple 公证，仅供测试使用。','此包使用 Developer ID 签名。Apple 公证结果请以对应 Release 说明为准。'))
     xml=STAGE/'distribution.xml'
     xml.write_text(f'''<?xml version="1.0" encoding="utf-8"?>
-<installer-gui-script minSpecVersion="2"><title>SubPop</title><welcome file="Welcome.html"/><options customize="never" require-scripts="false" hostArchitectures="arm64"/><volume-check><allowed-os-versions><os-version min="15.0"/></allowed-os-versions></volume-check><choices-outline><line choice="default"/></choices-outline><choice id="default" visible="false"><pkg-ref id="com.chokamin.SubPop.installer"/></choice><pkg-ref id="com.chokamin.SubPop.installer" version="{version}">SubPop-component.pkg</pkg-ref></installer-gui-script>''')
+<installer-gui-script minSpecVersion="2"><title>SubPop</title><welcome file="Welcome.html"/><options customize="never" require-scripts="true" hostArchitectures="arm64"/><domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/><volume-check><allowed-os-versions><os-version min="15.0"/></allowed-os-versions></volume-check><choices-outline><line choice="default"/></choices-outline><choice id="default" visible="false"><pkg-ref id="com.chokamin.SubPop.installer"/></choice><pkg-ref id="com.chokamin.SubPop.installer" version="{version}">SubPop-component.pkg</pkg-ref></installer-gui-script>''')
     flavor='signed-candidate' if application_identity else 'test'
     output=DIST/f'SubPop-{version}-arm64-{flavor}.pkg'
     run('productbuild','--distribution',xml,'--resources',resources,'--package-path',STAGE,*(['--sign',installer_identity,'--timestamp'] if installer_identity else []),output)

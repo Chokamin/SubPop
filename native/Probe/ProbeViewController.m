@@ -67,6 +67,16 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 @property NSButton *fallbackAudioButton;
 @property NSButton *shareReceiveButton;
 @property NSButton *shareHelpButton;
+@property NSTextField *shareHeading;
+@property NSTextField *shareDetail;
+@property NSTextField *shareSetupStatus;
+@property NSStackView *shareSection;
+@property NSStackView *recognitionSelectors;
+@property NSTextField *recognitionRules;
+@property NSString *shareSetupRequestID;
+@property NSDate *shareSetupStarted;
+@property NSTextField *shareGuideDetail;
+@property BOOL shareGuideExpanded;
 @property NSButton *recognitionReviewButton;
 @property NSArray<NSDictionary *> *pendingShares;
 @property BOOL shareReceiving;
@@ -252,7 +262,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 - (instancetype)initWithFrame:(NSRect)frame {
     if ((self=[super initWithFrame:frame])) {
         self.bordered=NO;self.title=@"";[self setButtonType:NSButtonTypeMomentaryPushIn];
-        NSURL *url=[NSWorkspace.sharedWorkspace URLForApplicationWithBundleIdentifier:@"com.apple.FinalCut"];
+        NSURL *url=[NSWorkspace.sharedWorkspace URLForApplicationWithBundleIdentifier:@"com.apple.FinalCutApp"];
         NSString *appPath=url.path ?: @"/Applications/Final Cut Pro.app";
         self.hostIcon=[[NSImage alloc] initWithContentsOfFile:[appPath stringByAppendingPathComponent:@"Contents/Resources/AppIcon.icns"]];
         if (!self.hostIcon) self.hostIcon=[NSImage imageWithSystemSymbolName:@"film.stack" accessibilityDescription:nil];
@@ -267,18 +277,22 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 - (void)mouseExited:(NSEvent *)event { self.hovered=NO;[self setNeedsDisplay:YES]; }
 - (void)resetCursorRects { if (self.enabled) [self addCursorRect:self.bounds cursor:[self.controller usesFileImport] ? NSCursor.pointingHandCursor : NSCursor.openHandCursor]; }
 - (void)drawRect:(NSRect)rect {
-    BOOL enabled=[self.controller canDragResult] && !self.controller.importInProgress;
+    BOOL enabled=self.enabled && [self.controller canDragResult] && !self.controller.importInProgress;
     BOOL importing=[self.controller usesFileImport];
     NSBezierPath *shape=[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds,1,1) xRadius:16 yRadius:16];
-    NSColor *base=enabled ? [NSColor colorWithCalibratedRed:.32 green:.26 blue:.64 alpha:1] : NSColor.controlBackgroundColor;
-    NSGradient *gradient=[[NSGradient alloc] initWithStartingColor:enabled ? [NSColor colorWithCalibratedRed:.43 green:.35 blue:(self.hovered ? .86 : .78) alpha:1] : base endingColor:base];[gradient drawInBezierPath:shape angle:-20];
-    [[NSColor colorWithCalibratedWhite:1 alpha:self.hovered ? .32 : .16] setStroke];[shape stroke];
-    [self.hostIcon drawInRect:NSMakeRect(20,35,50,50) fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:enabled ? 1 : .4];
+    NSColor *base=enabled ? [NSColor colorWithCalibratedRed:.16 green:.145 blue:.23 alpha:1] : NSColor.controlBackgroundColor;
+    [base setFill];[shape fill];
+    [[SubPopAccent() colorWithAlphaComponent:enabled ? (self.hovered ? .8 : .38) : .12] setStroke];[shape stroke];
+    [self.hostIcon drawInRect:NSMakeRect(20,36,48,48) fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:enabled ? 1 : .4];
     NSString *title=self.controller.importInProgress ? @"正在发送到 Final Cut Pro…" : (enabled ? (importing ? @"导入字幕到 Final Cut Pro" : (self.controller.resultWasDragged ? @"字幕已拖出 · 可再次拖入" : @"拖回字幕到 Final Cut Pro")) : @"请先打开原项目时间线");
-    [title drawAtPoint:NSMakePoint(86,73) withAttributes:@{NSForegroundColorAttributeName:NSColor.whiteColor,NSFontAttributeName:[NSFont systemFontOfSize:17 weight:NSFontWeightSemibold]}];
     NSString *detail=[NSString stringWithFormat:importing ? @"%lu 条字幕 · 点击导入，再从 FCP 浏览器拖回时间线" : (self.controller.resultWasDragged ? @"%lu 条字幕仍保留 · 如未落轨可再次拖入" : @"%lu 条字幕已准备好 · 按住卡片拖到时间线起点上方"),(unsigned long)self.controller.captionRows.count];
-    [detail drawAtPoint:NSMakePoint(86,48) withAttributes:@{NSForegroundColorAttributeName:[NSColor colorWithCalibratedWhite:1 alpha:.85],NSFontAttributeName:[NSFont systemFontOfSize:11]}];
-    [(importing ? @"每次导入使用独立编号事件 · 对齐原项目起点" : @"落轨后：片段 → 将片段项分开，即可逐句编辑") drawAtPoint:NSMakePoint(86,24) withAttributes:@{NSForegroundColorAttributeName:[NSColor colorWithCalibratedWhite:1 alpha:.72],NSFontAttributeName:[NSFont systemFontOfSize:10]}];
+    NSString *hint=importing ? @"每次导入使用独立编号事件 · 对齐原项目起点" : @"落轨后：片段 → 将片段项分开，即可逐句编辑";
+    NSMutableParagraphStyle *paragraph=[NSMutableParagraphStyle new];paragraph.lineBreakMode=NSLineBreakByTruncatingTail;
+    NSArray *lines=@[title,detail,hint];NSArray *sizes=@[@17,@12,@11];NSArray *ys=@[@72,@48,@25];
+    for(NSUInteger i=0;i<lines.count;i++) {
+        NSColor *color=i==0 ? NSColor.whiteColor : [NSColor colorWithCalibratedRed:.79 green:.77 blue:.88 alpha:1];
+        [lines[i] drawInRect:NSMakeRect(86,[ys[i] doubleValue],MAX(0,self.bounds.size.width-106),23) withAttributes:@{NSForegroundColorAttributeName:color,NSFontAttributeName:[NSFont systemFontOfSize:[sizes[i] doubleValue] weight:i==0 ? NSFontWeightSemibold : NSFontWeightRegular],NSParagraphStyleAttributeName:paragraph}];
+    }
 }
 - (void)mouseDown:(NSEvent *)event {
     if (!self.enabled) return;
@@ -599,7 +613,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     self.shareReceiveButton.hidden=!self.pendingShares.count;
     self.shareReceiveButton.title=[NSString stringWithFormat:@"接收 FCP 音频 · %lu",(unsigned long)self.pendingShares.count];
     self.shareReceiveButton.enabled=!busy && !self.shareReceiving && !self.sharePromptOpen && !self.fallbackImporting && !self.importInProgress && !self.exportInProgress;
-    self.shareHelpButton.enabled=!busy && !self.shareReceiving;
+    self.shareHelpButton.enabled=!busy && !self.shareSetupRequestID && !self.importInProgress && !self.exportInProgress;
     if (fresh && self.snapshotConsumed && !self.titlePayloads && !busy && !awaitingProject && [self isolatedProjectActive]) state=@"refresh-input";
     NSDictionary *copy=SubPopPresentation(state); self.statusTitle.stringValue=copy[@"title"]; self.statusDetail.stringValue=copy[@"detail"];
     if (([state isEqual:@"error"] || [state isEqual:@"silent"]) && self.visibleError.length) self.statusDetail.stringValue=self.visibleError;
@@ -616,7 +630,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     else if (self.snapshotConsumed && self.titlePayloads) self.dropDetail.stringValue=@"字幕已保留 · 可更换样式并再次拖入";
     else if (self.snapshotConsumed) self.dropDetail.stringValue=@"上次识别已使用此快照 · 请重新拖入项目以确认最新时间线";
     else if (self.fallbackImporting) self.dropDetail.stringValue=@"正在导入整条时间线的音频…";
-    else if (self.fallbackAudioURL) self.dropDetail.stringValue=@"备用音频包含导出的全部声音 · 按原项目时间轴生成字幕";
+    else if (self.fallbackAudioURL) self.dropDetail.stringValue=@"已接收导出的全部声音 · 按原项目时间轴生成字幕";
     else if ([state isEqual:@"error"] || [state isEqual:@"silent"]) self.dropDetail.stringValue=@"也可将整条时间线导出的音频拖到这里";
     else self.dropDetail.stringValue=[NSString stringWithFormat:@"%02ld:%02ld · 整个项目 · 修改时间线后请重新拖入",(long)(CMTimeGetSeconds(self.dropDuration)/60),(long)CMTimeGetSeconds(self.dropDuration)%60];
     BOOL managing=[self modelOperationBusy];
@@ -628,6 +642,8 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     if (awaitingProject) {self.generateButton.title=self.validatingDrop ? @"正在确认项目…" : @"重新确认项目";self.generateButton.enabled=!self.validatingDrop && fresh && !busy;}
     self.vocabularyButton.enabled=!busy;self.vocabularyButton.title=[NSString stringWithFormat:@"词库 · %lu",(unsigned long)[self effectiveVocabulary].count];
     self.modelPicker.enabled=!busy && !managing;self.audioPicker.enabled=!busy && !self.fallbackAudioURL;self.cancelButton.hidden=!busy || self.shareReceiving;
+    [self.audioPicker itemAtIndex:0].title=@"仅对白 · 排除音乐角色";[self.audioPicker itemAtIndex:1].title=@"所有音频 · 时间线混合";
+    if (self.fallbackAudioURL) self.audioPicker.selectedItem.title=@"导出音频 · 包含全部声音";
     BOOL hasRows=self.titlePayloads && self.captionRows.count;
     self.templateControls.hidden=!hasRows;
     self.chineseTextControls.hidden=!hasRows;
@@ -638,6 +654,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     self.captionScroll.hidden=!hasRows || !self.reviewExpanded;self.resultView.hidden=!hasRows;self.reviewHeader.hidden=!hasRows;
     self.exportActions.hidden=!hasRows;
     self.clearResultButton.hidden=!hasRows;
+    self.generateButton.hidden=hasRows && !busy;
     self.clearResultButton.enabled=hasRows && !busy && !self.importInProgress && !self.exportInProgress;
     self.srtExportButton.enabled=hasRows && !self.exportInProgress && !busy;
     self.fcpxmlExportButton.enabled=hasRows && !self.exportInProgress && !busy;
@@ -647,8 +664,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     self.jobBar.hidden=!(busy && [state isEqual:@"recognize"] && self.jobProgress);
     if (!self.jobBar.hidden) self.jobBar.doubleValue=self.jobProgress.doubleValue;
     [self.signal setWorking:managing && !busy && !preparing];
-    [self.activity showStage:state active:busy || preparing];
-    if (hasRows && [self.resultManifest[@"reviewWarnings"] count]) self.statusDetail.stringValue=[NSString stringWithFormat:@"已自动整理 · %lu 段时间需校对，保留原断句 · 拖回后可逐句编辑",(unsigned long)[self.resultManifest[@"reviewWarnings"] count]];
+    [self.activity showStage:self.shareReceiving ? @"receiving-share" : state active:busy || preparing];
     BOOL stageChanged=self.lastVisualState && ![self.lastVisualState isEqual:state];
     if (stageChanged) SubPopReveal(self.statusTitle);
     self.lastVisualState=state;
@@ -659,32 +675,35 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
         self.statusTitle.stringValue=self.importInProgress ? @"正在发送导入请求" : (self.importMessage.length ? @"Tap5a 字幕导入" : @"底框字幕已准备好");
         self.statusDetail.stringValue=self.importMessage ?: @"点击上方按钮导入 FCP，在本次新建的“SubPop 字幕”编号事件中拖出片段，对齐原项目起点。落轨后可将片段项分开。";
     }
-    if (hasRows && [self.resultManifest[@"cloudCleanupPending"] unsignedIntegerValue]>0) self.statusDetail.stringValue=[self.statusDetail.stringValue stringByAppendingString:@" 旧版临时音频尚待清理，请打开云端设置查看。"];
 
     if (hasRows && !fileImport && ready && !self.resultWasDragged) self.statusDetail.stringValue=self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative
         ? @"拖到原项目起点上方。落轨后将片段项分开，可在 FCP 调整底框、圆角和动画。"
         : @"拖到原项目起点上方。落轨后将片段项分开，可在 FCP 逐句编辑文字和样式。";
+    NSMutableArray<NSString *> *notices=[NSMutableArray new];
+    if (hasRows && [self.resultManifest[@"reviewWarnings"] count]) [notices addObject:[NSString stringWithFormat:@"%lu 段时间需校对，已保留原断句。",(unsigned long)[self.resultManifest[@"reviewWarnings"] count]]];
     NSDictionary *existingCollision=self.resultManifest[@"existingTitleCollision"];
     if (hasRows && [existingCollision[@"overlappingRows"] unsignedIntegerValue]>0)
-        self.statusDetail.stringValue=[NSString stringWithFormat:@"项目中的文字标题与 %lu 条新字幕时段重叠，请在 FCP 检查画面是否叠加；原标题不会自动删除。",(unsigned long)[existingCollision[@"overlappingRows"] unsignedIntegerValue]];
+        [notices addObject:[NSString stringWithFormat:@"项目中的文字标题与 %lu 条新字幕时段重叠，请在 FCP 检查画面是否叠加；原标题不会自动删除。",(unsigned long)[existingCollision[@"overlappingRows"] unsignedIntegerValue]]];
     NSString *skipped=SubPopSkippedAudioSummary(self.resultManifest[@"skippedAudio"]);
-    if (hasRows && skipped.length) self.statusDetail.stringValue=[skipped stringByAppendingString:@"；其余对白已识别。请核对空缺处。"];
+    if (hasRows && skipped.length) [notices addObject:[skipped stringByAppendingString:@"；其余对白已识别。请核对空缺处。"]];
     NSUInteger effects=[self.resultManifest[@"bypassedAudioEffects"] unsignedIntegerValue];
-    if (hasRows && effects) self.statusDetail.stringValue=[NSString stringWithFormat:@"%@%lu 处音频效果未参与识别，字幕依据处理前原声生成；请核对文字。",
-        skipped.length ? [self.statusDetail.stringValue stringByAppendingString:@" "] : @"",(unsigned long)effects];
+    if (hasRows && effects) [notices addObject:[NSString stringWithFormat:@"%lu 处音频效果未参与识别，字幕依据处理前原声生成；请核对文字。",(unsigned long)effects]];
     NSUInteger transitions=[self.resultManifest[@"bypassedAudioTransitions"] count];
-    if (hasRows && transitions) self.statusDetail.stringValue=[NSString stringWithFormat:@"%@%lu 处转场音频按原片段硬切处理；请核对转场附近的字幕。",
-        (skipped.length || effects) ? [self.statusDetail.stringValue stringByAppendingString:@" "] : @"",(unsigned long)transitions];
+    if (hasRows && transitions) [notices addObject:[NSString stringWithFormat:@"%lu 处转场音频按原片段硬切处理；请核对转场附近的字幕。",(unsigned long)transitions]];
     if (hasRows && [self.resultManifest[@"audioSource"] isEqual:@"exported-full-timeline"])
-        self.statusDetail.stringValue=@"字幕按整条时间线的导出音频生成；请核对音频起点及字幕时间。";
+        [notices addObject:@"字幕按整条时间线的导出音频生成；请核对音频起点及字幕时间。"];
     if (hasRows && [self.resultManifest[@"existingTitleReview"] isEqual:@"unavailable"])
-        self.statusDetail.stringValue=[self.statusDetail.stringValue stringByAppendingString:@" 原项目标题未能核对，拖回前请检查是否与旧字幕重叠。"];
+        [notices addObject:@"原项目标题未能核对，拖回前请检查是否与旧字幕重叠。"];
     if (hasRows && self.resultTimelineChanged)
-        self.statusDetail.stringValue=[self.statusDetail.stringValue stringByAppendingString:@" 当前时间线时长与识别时不同，旧字幕可能错位；请在 FCP 核对时间。"];
+        [notices addObject:@"当前时间线时长与识别时不同，旧字幕可能错位；请在 FCP 核对时间。"];
+    if (hasRows && [self.resultManifest[@"cloudCleanupPending"] unsignedIntegerValue]>0)
+        [notices addObject:@"旧版临时音频尚待清理，请打开云端设置查看。"];
     NSUInteger recognitionWarnings=[self.resultManifest[@"recognitionReview"][@"warningCount"] unsignedIntegerValue];
     self.recognitionReviewButton.hidden=!recognitionWarnings;
     self.recognitionReviewButton.title=[NSString stringWithFormat:@"核对可能漏识别或重复的时段 · %lu",(unsigned long)recognitionWarnings];
-    if (recognitionWarnings) self.statusDetail.stringValue=[self.statusDetail.stringValue stringByAppendingString:@" 有音频时段需要试听核对，识别结果未作删改。"];
+    if (recognitionWarnings) [notices addObject:@"有音频时段需要试听核对，识别结果未作删改。"];
+    if (notices.count) self.statusDetail.stringValue=[NSString stringWithFormat:@"%@\n\n%@",self.statusDetail.stringValue,[notices componentsJoinedByString:@"\n"]];
+    if (self.shareReceiving) {self.statusTitle.stringValue=@"正在接收 FCP 音频";self.statusDetail.stringValue=@"核对当前项目与完整音频，接收完成后即可生成字幕。";}
     self.tap5aStyleButton.hidden=NO;self.tap5aStyleButton.enabled=!self.importInProgress;
     self.tap5aStyleButton.title=@"预览与样式";
     self.resultView.enabled=ready && !self.importInProgress && !busy;
@@ -883,6 +902,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     if([install[@"timestamp"] isKindOfClass:NSNumber.class] && fabs(NSDate.date.timeIntervalSince1970-[install[@"timestamp"] doubleValue])<8 && !self.requestID && !self.pendingRecognition && !self.referenceRequestID && !self.importInProgress) {
         [self saveDraft];[self.view.window close];return;
     }
+    [self pollShareDestinationSetup];
     [self pollModelPreparation];
     [self pollReferenceRefinement];
     self.pendingShares=SubPopPendingShares(self.bridgeURL);

@@ -4,6 +4,7 @@
 #import "OnlineUpdate.h"
 #import "ApplicationMenu.h"
 #import "ShareReceiver.h"
+#import "ShareDestination.h"
 // Background model runner and independent fullscreen preview host.
 @interface SubPopFullscreenWindow : NSWindow
 @end
@@ -63,7 +64,7 @@
             [alert addButtonWithTitle:@"完成"];[NSApp activateIgnoringOtherApps:YES];[alert runModal];
         }
     }];
-    for (NSURL *url in urls) if ([url.scheme isEqual:@"subpop-probe"]) {if ([url.host isEqual:@"start"]) [self startEngine];else if ([url.host isEqual:@"update"]) [self showOnlineUpdate:url];else if ([url.host isEqual:@"cloud-settings"]) [self showCloudSettings];else if ([url.host isEqual:@"preview"]) [self showPreview:url];}
+    for (NSURL *url in urls) if ([url.scheme isEqual:@"subpop-probe"]) {if ([url.host isEqual:@"share-destination"]) SubPopHandleShareDestinationURL(url,NSBundle.mainBundle,[NSURL fileURLWithPath:SubPopBridgePath(NSBundle.mainBundle) isDirectory:YES]);else if ([url.host isEqual:@"start"]) [self startEngine];else if ([url.host isEqual:@"update"]) [self showOnlineUpdate:url];else if ([url.host isEqual:@"cloud-settings"]) [self showCloudSettings];else if ([url.host isEqual:@"preview"]) [self showPreview:url];}
 }
 - (void)showOnlineUpdate:(NSURL *)url {
     if(!self.onlineUpdate){
@@ -182,6 +183,8 @@
 @end
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
+        if (argc==3 && strcmp(argv[1],"--install-share-destination-system")==0)
+            return SubPopInstallSystemShareDestination(NSBundle.mainBundle,[NSString stringWithUTF8String:argv[2]]);
         if (argc==2 && strcmp(argv[1],"--doubao-legacy-credentials")==0) {
             if (isatty(STDOUT_FILENO)) return 2;
             NSDictionary *value=SubPopLegacyCredentials();if (!SubPopLegacyValid(value)) return 3;
