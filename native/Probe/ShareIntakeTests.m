@@ -8,6 +8,15 @@
 @property BOOL pauseHash;
 @property dispatch_semaphore_t hashEntered;
 @property dispatch_semaphore_t hashContinue;
+@property BOOL mockHost;
+@property BOOL acceptanceOnStack;
+@property BOOL readInsideAcceptance;
+@property NSUInteger hostReads;
+@property NSUInteger unavailableReads;
+@property BOOL unavailableObserved;
+@property NSString *hostUID;
+@property CMTime hostDuration;
+@property BOOL switchDuringRead;
 @end
 @implementation SubPopShareIntakeController
 - (NSURL *)evidenceDirectory { return self.testDirectory; }
@@ -16,6 +25,20 @@
 - (BOOL)isolatedProjectActive { return YES; }
 - (void)record:(NSDictionary *)value {}
 - (void)startWorkerJob:(id)sender { self.recognitionStarts++; }
+- (void)snapshot:(NSString *)reason {
+    if (!self.mockHost) { [super snapshot:reason];return; }
+    self.hostReads++;self.readInsideAcceptance|=self.acceptanceOnStack;
+    if (self.unavailableReads) {
+        self.unavailableReads--;self.observed=self.unavailableObserved;self.observedProjectUID=nil;self.observedProjectDuration=kCMTimeInvalid;
+    } else {
+        self.observed=YES;self.observedProjectUID=self.hostUID ?: @"PROJECT-A";
+        self.observedProjectDuration=CMTIME_IS_NUMERIC(self.hostDuration) ? self.hostDuration : CMTimeMake(10,1);
+    }
+    if (self.switchDuringRead) {
+        self.switchDuringRead=NO;self.dropGeneration++;self.observedProjectUID=@"PROJECT-B";
+        self.displayState=@"input";self.visibleError=nil;self.fallbackImporting=NO;
+    }
+}
 - (NSString *)sha256File:(NSURL *)url {
     if (self.pauseHash) {
         dispatch_semaphore_signal(self.hashEntered);
@@ -49,7 +72,7 @@ static NSString *XML(NSString *uid,NSString *duration) {
 }
 static NSURL *Directory(NSURL *parent,NSString *name) {
     NSURL *url=[parent URLByAppendingPathComponent:name isDirectory:YES];
-    Check([NSFileManager.defaultManager createDirectoryAtURL:url withIntermediateDirectories:YES attributes:nil error:nil],@"create isolated directory");return url;
+    Check([NSFileManager.defaultManager createDirectoryAtURL:url withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0700} error:nil],@"create isolated directory");return url;
 }
 static SubPopShareIntakeController *Controller(NSURL *root,NSString *name) {
     NSURL *directory=Directory(root,name);
@@ -100,7 +123,9 @@ static void StartPaused(SubPopShareIntakeController *c,NSDictionary *share) {
     c.pauseHash=YES;c.hashEntered=dispatch_semaphore_create(0);c.hashContinue=dispatch_semaphore_create(0);
     Check([c acceptSharedAudio:share],@"starts asynchronous share intake");
     Check(![c canDragResult],@"old results cannot be dragged while a replacement input is being copied");
-    Check(!dispatch_semaphore_wait(c.hashEntered,dispatch_time(DISPATCH_TIME_NOW,10*NSEC_PER_SEC)),@"actual copy reaches background hash");
+    __block BOOL entered=NO;
+    Settle(^BOOL{if (!entered) entered=dispatch_semaphore_wait(c.hashEntered,DISPATCH_TIME_NOW)==0;return entered;});
+    Check(entered,@"actual copy reaches background hash");
 }
 
 static void RestoreDuringIntake(NSURL *root) {
@@ -119,6 +144,86 @@ static void RestoreDuringIntake(NSURL *root) {
     Check(!c.requestID,@"historical restoration cannot change the current result beneath the share selection sheet");
     c.timeline=nil;
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];
+}
+
+static void DeferredHostValidation(NSURL *root,NSData *audio) {
+    SubPopShareIntakeController *c=Controller(root,@"deferred-host");
+    NSDictionary *share=Share(c,XML(@"PROJECT-A",@"10s"),audio);
+    c.mockHost=YES;c.timeline=(id)[NSObject new];c.hostDuration=kCMTimeInvalid;
+    c.observed=NO;c.observedProjectUID=nil;c.observedProjectDuration=kCMTimeInvalid;
+    c.acceptanceOnStack=YES;
+    BOOL scheduled=[c acceptSharedAudio:share];
+    c.acceptanceOnStack=NO;
+    Check(scheduled && c.shareReceiving,@"acceptance schedules a guarded confirmation");
+    Check(!c.readInsideAcceptance && c.hostReads==0,@"no synchronous SDK read while the share sheet completion is still on stack");
+    __block BOOL modalFinished=NO;
+    NSDate *modalStarted=NSDate.date;
+    NSTimer *modalTimer=[NSTimer timerWithTimeInterval:.2 repeats:NO block:^(NSTimer *timer){modalFinished=YES;}];
+    [NSRunLoop.currentRunLoop addTimer:modalTimer forMode:NSModalPanelRunLoopMode];
+    while (!modalFinished) [NSRunLoop.currentRunLoop runMode:NSModalPanelRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:1]];
+    Check(-modalStarted.timeIntervalSinceNow>=.1 && c.hostReads==0 && c.shareReceiving,@"host reads stay deferred throughout the actual modal runloop beyond the scheduled delay");
+    Settle(^BOOL{return !c.shareReceiving;});
+    Check(c.hostReads==1 && [c.displayState isEqual:@"input"] && !c.recognitionStarts,@"next default runloop confirms identity without starting ASR");
+    c.timeline=nil;
+}
+
+static NSDictionary *Diagnostic(SubPopShareIntakeController *c,NSDictionary *share) {
+    NSURL *url=[Inbox(c,share) URLByAppendingPathComponent:@"share-intake.json"];
+    NSDictionary *diagnostic=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfURL:url] options:0 error:nil];
+    Check([diagnostic[@"shareID"] isEqual:share[@"shareID"]],@"diagnostic is bound to the selected share only");
+    NSDictionary *attrs=[NSFileManager.defaultManager attributesOfItemAtPath:url.path error:nil];
+    Check([attrs[NSFilePosixPermissions] unsignedIntegerValue]==0600,@"diagnostic is private to this account");
+    NSSet *allowed=[NSSet setWithArray:@[@"shareID",@"version",@"build",@"startedAt",@"updatedAt",@"finished",@"accepted",@"cancelled",@"contentVerified",@"snapshots"]];
+    for (NSString *key in diagnostic) Check([allowed containsObject:key],@"diagnostic top-level whitelist excludes names, paths, settings and media");
+    NSSet *snapshotKeys=[NSSet setWithArray:@[@"observed",@"hasTimeline",@"current",@"expectedProjectUID",@"observedProjectUID",@"expectedDuration",@"observedDuration",@"notReady",@"identityMismatch",@"durationMismatch"]];
+    for (NSDictionary *snapshot in diagnostic[@"snapshots"])
+        for (NSString *key in snapshot) Check([snapshotKeys containsObject:key],@"host diagnostic has only booleans, identities and times");
+    return diagnostic;
+}
+
+static void HostReadiness(NSURL *root,NSData *audio) {
+    for (NSString *kind in @[@"observer-late",@"invalid-late",@"unavailable",@"wrong-uid",@"wrong-duration",@"zero-duration"]) {
+        SubPopShareIntakeController *c=Controller(root,kind);NSDictionary *share=Share(c,XML(@"PROJECT-A",@"10s"),audio);
+        NSURL *oldXML=c.freshDropURL,*oldAudio=c.fallbackAudioURL;NSArray *before=EvidenceNames(c);
+        c.mockHost=YES;c.timeline=(id)[NSObject new];c.hostDuration=kCMTimeInvalid;
+        if ([kind hasSuffix:@"late"]) c.unavailableReads=2;
+        c.unavailableObserved=[kind isEqual:@"invalid-late"];
+        if ([kind isEqual:@"unavailable"]) c.unavailableReads=10;
+        if ([kind isEqual:@"wrong-uid"]) c.hostUID=@"OTHER-PROJECT";
+        if ([kind isEqual:@"wrong-duration"]) c.hostDuration=CMTimeMake(9,1);
+        if ([kind isEqual:@"zero-duration"]) c.hostDuration=kCMTimeZero;
+        Check([c acceptSharedAudio:share],@"host validation is deferred for the selected transaction");
+        Settle(^BOOL{return !c.shareReceiving;});
+        NSDictionary *diagnostic=Diagnostic(c,share);NSArray *snapshots=diagnostic[@"snapshots"];
+        BOOL succeeds=[kind hasSuffix:@"late"],mismatch=[kind hasPrefix:@"wrong-"];
+        Check(c.hostReads==(mismatch ? 1U : 3U) && snapshots.count==c.hostReads,@"only unavailable host state is retried, at most three times");
+        Check([diagnostic[@"finished"] boolValue] && [diagnostic[@"accepted"] boolValue]==succeeds,@"diagnostic records the final acceptance without starting recognition");
+        if (succeeds) Check([c.displayState isEqual:@"input"] && c.fallbackAudioURL && !c.recognitionStarts,@"delayed valid host state safely receives once");
+        else {
+            Unchanged(c,oldXML,oldAudio,before);
+            Check([c.visibleError containsString:mismatch ? @"不一致" : @"暂时无法读取"],@"unavailable and true mismatch have distinct messages");
+            Check(![NSFileManager.defaultManager fileExistsAtPath:[Inbox(c,share) URLByAppendingPathComponent:@"consumed.json"].path],@"host failure never consumes the share");
+        }
+        c.timeline=nil;
+    }
+}
+
+static void CancelHostValidation(NSURL *root,NSData *audio) {
+    for (NSString *kind in @[@"switch-before-read",@"switch-during-read",@"close-before-read"]) {
+        SubPopShareIntakeController *c=Controller(root,kind);NSDictionary *share=Share(c,XML(@"PROJECT-A",@"10s"),audio);
+        c.mockHost=YES;c.timeline=(id)[NSObject new];c.hostDuration=kCMTimeInvalid;
+        Check([c acceptSharedAudio:share],@"schedule host validation before lifecycle change");
+        if ([kind isEqual:@"switch-during-read"]) c.switchDuringRead=YES;
+        else {
+            c.dropGeneration++;c.fallbackImporting=NO;c.displayState=@"input";c.visibleError=nil;
+            if ([kind isEqual:@"close-before-read"]) {c.bridgeURL=nil;c.timeline=nil;c.observed=NO;}
+        }
+        Settle(^BOOL{return !c.shareReceiving;});
+        Check(c.hostReads==([kind isEqual:@"switch-during-read"] ? 1U : 0U),@"cancelled host validation does not retry or query a closed host");
+        Check([c.displayState isEqual:@"input"] && !c.visibleError && !c.fallbackImporting,@"cancelled confirmation preserves the new UI state");
+        Check(!c.recognitionStarts && ![NSFileManager.defaultManager fileExistsAtPath:[[[root URLByAppendingPathComponent:kind] URLByAppendingPathComponent:@"bridge/share-inbox"] URLByAppendingPathComponent:[share[@"shareID"] stringByAppendingPathComponent:@"consumed.json"]].path],@"cancelled confirmation never consumes or starts recognition");
+        c.timeline=nil;
+    }
 }
 
 static void Success(NSURL *root,NSData *audio) {
@@ -154,8 +259,8 @@ static void Rejections(NSURL *root,NSData *audio) {
         if ([kind isEqual:@"checksum"]) Write([dir URLByAppendingPathComponent:@"audio.wav"],[@"modified after manifest publication" dataUsingEncoding:NSUTF8StringEncoding]);
         if ([kind isEqual:@"consumed"]) JSON([dir URLByAppendingPathComponent:@"consumed.json"],@{@"status":@"received"});
         BOOL accepted=[c acceptSharedAudio:share];
-        if ([kind hasPrefix:@"active-"] || [kind isEqual:@"consumed"]) Check(!accepted,@"identity/duration/terminal receipt rejected before copy");
-        else Check(accepted,@"content verification runs on background queue");
+        if ([kind isEqual:@"consumed"]) Check(!accepted,@"terminal receipt rejected before host validation");
+        else Check(accepted,@"identity and content are checked after the acceptance callback returns");
         Settle(^BOOL{return !c.shareReceiving;});Unchanged(c,oldXML,oldAudio,before);
         Check([NSFileManager.defaultManager fileExistsAtPath:[dir URLByAppendingPathComponent:@"audio.wav"].path],@"rejected transaction remains available for diagnosis or retry");
         if (![kind isEqual:@"consumed"]) Check(![NSFileManager.defaultManager fileExistsAtPath:[dir URLByAppendingPathComponent:@"consumed.json"].path],@"failed transaction is not marked received");
@@ -213,7 +318,7 @@ int main(void) {
         int status=0;
         @try {
             Check([NSFileManager.defaultManager createDirectoryAtURL:root withIntermediateDirectories:YES attributes:nil error:nil],@"create isolated test root");
-            NSData *audio=Audio();Success(root,audio);Rejections(root,audio);InvalidManifest(root,audio);StaleCompletions(root,audio);RestoreDuringIntake(root);
+            NSData *audio=Audio();DeferredHostValidation(root,audio);HostReadiness(root,audio);CancelHostValidation(root,audio);Success(root,audio);Rejections(root,audio);InvalidManifest(root,audio);StaleCompletions(root,audio);RestoreDuringIntake(root);
             printf("Share intake: %lu checks passed; actual background copy/hash, validation, terminal replay and stale-completion state preservation (no FCP).\n",(unsigned long)checks);
         } @catch (NSException *exception) {
             fprintf(stderr,"Share intake failure: %s\n",exception.reason.UTF8String);status=1;

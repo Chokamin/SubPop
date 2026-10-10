@@ -49,18 +49,84 @@
 }
 - (BOOL)acceptSharedAudio:(NSDictionary *)share {
     if (self.requestID || self.pendingRecognition || self.referenceRequestID || self.fallbackImporting || self.shareReceiving || self.importInProgress || self.exportInProgress) return NO;
-    if (self.timeline) [self snapshot:@"share-intake-state"];
-    if (self.requestID || self.pendingRecognition || self.referenceRequestID || self.fallbackImporting || self.shareReceiving || self.importInProgress || self.exportInProgress) return NO;
-    CMTime duration=SubPopShareTime(share[@"duration"]);
-    if (!self.observed || ![self.observedProjectUID isEqual:share[@"projectUID"]] || !CMTIME_IS_NUMERIC(self.observedProjectDuration) || !CMTIME_IS_NUMERIC(duration) || CMTimeCompare(duration,self.observedProjectDuration)) {
-        self.visibleError=@"请先在 FCP 打开这次共享的完整项目；当前项目或时长不一致。音频仍保留，可稍后接收。";
-        self.displayState=@"error";[self updateInterface];return NO;
-    }
     NSURL *dir=[[self.bridgeURL URLByAppendingPathComponent:@"share-inbox"] URLByAppendingPathComponent:share[@"shareID"]];
     NSDictionary *current=SubPopShareManifest(dir);
     if (![current isEqual:share]) return NO;
-    NSUInteger generation=self.dropGeneration;
+    NSBundle *bundle=[NSBundle bundleForClass:self.class];
+    NSMutableDictionary *context=[@{@"share":share.copy,@"directory":dir,@"bridge":self.bridgeURL,@"generation":@(self.dropGeneration),@"attempts":@0,
+        @"diagnostic":[@{@"shareID":share[@"shareID"],@"version":[bundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"",
+            @"build":[bundle objectForInfoDictionaryKey:@"CFBundleVersion"] ?: @"",@"startedAt":[[NSISO8601DateFormatter new] stringFromDate:NSDate.date],
+            @"finished":@NO,@"accepted":@NO,@"snapshots":[NSMutableArray new]} mutableCopy]} mutableCopy];
     self.shareReceiving=YES;self.fallbackImporting=YES;[self updateInterface];
+    [self recordShareIntake:context flags:@{}];
+    // Return control to the host before any synchronous SDK read. A sheet
+    // completion, like a drop callback, can still be inside host modal work.
+    [self performSelector:@selector(confirmSharedAudio:) withObject:context afterDelay:.1 inModes:@[NSDefaultRunLoopMode]];
+    return YES;
+}
+- (void)recordShareIntake:(NSMutableDictionary *)context flags:(NSDictionary *)flags {
+    NSMutableDictionary *diagnostic=context[@"diagnostic"];
+    [diagnostic addEntriesFromDictionary:flags];
+    diagnostic[@"updatedAt"]=[[NSISO8601DateFormatter new] stringFromDate:NSDate.date];
+    // This local diagnostic belongs only to the explicitly selected share.
+    // No project names, file paths, media, model settings or credentials enter it.
+    NSURL *dir=context[@"directory"],*url=[dir URLByAppendingPathComponent:@"share-intake.json"];
+    NSFileManager *fm=NSFileManager.defaultManager;
+    NSDictionary *attrs=[fm attributesOfItemAtPath:dir.path error:nil];
+    if (![attrs.fileType isEqual:NSFileTypeDirectory] || [attrs[NSFileOwnerAccountID] unsignedIntegerValue]!=getuid() || [attrs[NSFilePosixPermissions] unsignedIntegerValue]!=0700) return;
+    NSDictionary *existing=[fm attributesOfItemAtPath:url.path error:nil];
+    if (existing && (![existing.fileType isEqual:NSFileTypeRegular] || [existing[NSFileOwnerAccountID] unsignedIntegerValue]!=getuid())) return;
+    NSData *data=[NSJSONSerialization dataWithJSONObject:diagnostic options:NSJSONWritingPrettyPrinted|NSJSONWritingSortedKeys error:nil];
+    if ([data writeToURL:url options:NSDataWritingAtomic error:nil]) [fm setAttributes:@{NSFilePosixPermissions:@0600} ofItemAtPath:url.path error:nil];
+}
+- (BOOL)shareIntakeContextCurrent:(NSDictionary *)context {
+    return self.shareReceiving && [context[@"generation"] unsignedIntegerValue]==self.dropGeneration && [context[@"bridge"] isEqual:self.bridgeURL];
+}
+- (void)stopShareIntake:(NSMutableDictionary *)context failure:(NSString *)failure {
+    BOOL current=[self shareIntakeContextCurrent:context];
+    [self recordShareIntake:context flags:@{@"finished":@YES,@"accepted":@NO,@"cancelled":@(!current)}];
+    self.shareReceiving=NO;
+    // A project switch or close already owns the new UI state and input.
+    if (current) {
+        self.fallbackImporting=NO;
+        if (failure) {self.visibleError=failure;self.displayState=@"error";}
+    }
+    [self updateInterface];
+}
+- (void)confirmSharedAudio:(NSMutableDictionary *)context {
+    if (![self shareIntakeContextCurrent:context]) { [self stopShareIntake:context failure:nil];return; }
+    NSDictionary *share=context[@"share"];
+    if (![SubPopShareManifest(context[@"directory"]) isEqual:share]) { [self stopShareIntake:context failure:@"这次共享已改变或已接收，请重新选择。原输入已保留。"];return; }
+    NSUInteger attempt=[context[@"attempts"] unsignedIntegerValue]+1;context[@"attempts"]=@(attempt);
+    if (self.timeline) [self snapshot:@"share-intake-state"];
+    CMTime duration=SubPopShareTime(share[@"duration"]),hostDuration=self.observedProjectDuration;
+    BOOL current=[self shareIntakeContextCurrent:context];
+    BOOL validDuration=self.observed && CMTIME_IS_NUMERIC(hostDuration) && CMTimeGetSeconds(hostDuration)>0;
+    BOOL identityMismatch=self.observed && self.observedProjectUID.length && ![self.observedProjectUID isEqual:share[@"projectUID"]];
+    BOOL durationMismatch=validDuration && CMTimeCompare(duration,hostDuration)!=0;
+    BOOL notReady=!self.observed || !self.observedProjectUID.length || !validDuration;
+    NSMutableArray *snapshots=context[@"diagnostic"][@"snapshots"];
+    [snapshots addObject:@{@"observed":@(self.observed),@"hasTimeline":@(self.timeline!=nil),@"current":@(current),
+        @"expectedProjectUID":share[@"projectUID"],@"observedProjectUID":self.observedProjectUID ?: @"",
+        @"expectedDuration":Time(duration),@"observedDuration":Time(hostDuration),@"notReady":@(notReady),
+        @"identityMismatch":@(identityMismatch),@"durationMismatch":@(durationMismatch)}];
+    [self recordShareIntake:context flags:@{}];
+    // SDK reads may deliver an observer callback while waiting for the reply.
+    if (!current) { [self stopShareIntake:context failure:nil];return; }
+    if (identityMismatch || durationMismatch) {
+        [self stopShareIntake:context failure:@"请先在 FCP 打开这次共享的完整项目；当前项目或时长不一致。音频仍保留，可稍后接收。"];return;
+    }
+    if (notReady) {
+        if (attempt<3) [self performSelector:@selector(confirmSharedAudio:) withObject:context afterDelay:.25*attempt inModes:@[NSDefaultRunLoopMode]];
+        else [self stopShareIntake:context failure:@"暂时无法读取 FCP 当前项目，音频仍保留。请确认完整项目已打开，再点击接收 FCP 音频重试。"];return;
+    }
+    [self copyConfirmedSharedAudio:context];
+}
+- (void)copyConfirmedSharedAudio:(NSMutableDictionary *)context {
+    NSDictionary *share=context[@"share"];
+    NSURL *dir=context[@"directory"];
+    NSUInteger generation=[context[@"generation"] unsignedIntegerValue];
+    CMTime duration=SubPopShareTime(share[@"duration"]);
     NSURL *destination=[self evidenceDirectory];
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0), ^{
         NSError *error=nil;NSString *failure=nil;
@@ -76,18 +142,22 @@
         CMTime xmlDuration=SubPopShareTime([sequence attributeForName:@"duration"].stringValue);
         if (!failure && (![[project attributeForName:@"uid"].stringValue isEqual:share[@"projectUID"]] || !CMTIME_IS_NUMERIC(xmlDuration) || CMTimeCompare(xmlDuration,duration))) failure=@"共享的项目资料与音频不匹配，请重新共享完整项目。";
         dispatch_async(dispatch_get_main_queue(), ^{
-            self.shareReceiving=NO;
-            BOOL stale=generation!=self.dropGeneration || ![self.observedProjectUID isEqual:share[@"projectUID"]] || !CMTIME_IS_NUMERIC(self.observedProjectDuration) || CMTimeCompare(duration,self.observedProjectDuration);
+            BOOL stale=![self shareIntakeContextCurrent:context] || !self.observed || ![self.observedProjectUID isEqual:share[@"projectUID"]] || !CMTIME_IS_NUMERIC(self.observedProjectDuration) || CMTimeCompare(duration,self.observedProjectDuration);
+            [self recordShareIntake:context flags:@{@"contentVerified":@(!failure),@"cancelled":@(stale)}];
             if (stale || failure) {
                 [NSFileManager.defaultManager removeItemAtURL:xml error:nil];[NSFileManager.defaultManager removeItemAtURL:audio error:nil];
+                self.shareReceiving=NO;
+                [self recordShareIntake:context flags:@{@"finished":@YES,@"accepted":@NO}];
                 if (!stale) {self.fallbackImporting=NO;self.visibleError=failure;self.displayState=@"error";[self updateInterface];}
                 else if (generation==self.dropGeneration) {self.fallbackImporting=NO;[self updateInterface];}
                 return;
             }
-            if (!SubPopShareManifest(dir) || !SubPopFinishShare(dir,@"received")) {
+            if (![SubPopShareManifest(dir) isEqual:share] || !SubPopFinishShare(dir,@"received")) {
                 [NSFileManager.defaultManager removeItemAtURL:xml error:nil];[NSFileManager.defaultManager removeItemAtURL:audio error:nil];
-                self.fallbackImporting=NO;self.visibleError=@"无法确认接收状态，未开始识别；请重试。";self.displayState=@"error";[self updateInterface];return;
+                [self stopShareIntake:context failure:@"无法确认接收状态，未开始识别；请重试。"];return;
             }
+            self.shareReceiving=NO;
+            [self recordShareIntake:context flags:@{@"finished":@YES,@"accepted":@YES}];
             [NSUserDefaults.standardUserDefaults removeObjectForKey:@"pendingSession"];
             [self clearFallbackAudio];[self resetChineseText];
             self.dropGeneration++;self.validatingDrop=NO;self.resultRevalidationURL=nil;self.resultTimelineChanged=NO;self.historicalResult=NO;
@@ -103,5 +173,4 @@
             // existing per-job cloud upload/cost confirmation if selected.
         });
     });
-    return YES;
 }
