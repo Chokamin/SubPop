@@ -69,6 +69,17 @@ int main(int argc,const char *argv[]) {
         [c pollShareDestinationSetup];if(![c.shareSetupRequestID isEqual:setupID])return 159;
         NSData *result=[NSJSONSerialization dataWithJSONObject:@{@"requestID":setupID,@"status":@"conflict"} options:0 error:nil];[result writeToURL:receipt atomically:YES];
         [c pollShareDestinationSetup];if(c.shareSetupRequestID || ![c.shareSetupStatus.stringValue containsString:@"保留原设置"])return 160;
+        NSString *retainedPath=@"/Library/Application Support/ProApps/Share Destinations/.SubPop-preserved-1234.fcpxdest";
+        NSString *failureMessage=[NSString stringWithFormat:@"共享预设迁移失败。旧预设保留在：%@。请手动核对后重试。",retainedPath];
+        NSArray *failureMessages=@[failureMessage,@42,NSNull.null,@"",@" \n\t",[@"x" stringByPaddingToLength:8193 withString:@"x" startingAtIndex:0]];
+        for (id message in failureMessages) {
+            c.shareSetupRequestID=setupID;c.shareSetupStarted=NSDate.date;
+            NSData *failedReceipt=[NSJSONSerialization dataWithJSONObject:@{@"requestID":setupID,@"status":@"failed",@"message":message} options:0 error:nil];
+            if(![failedReceipt writeToURL:receipt atomically:YES])return 162;
+            [c pollShareDestinationSetup];
+            NSString *expected=message==failureMessage ? failureMessage : @"未能添加共享预设，已有设置已保留。请重新安装 SubPop 后重试。";
+            if(c.shareSetupRequestID || c.shareSetupStarted || ![c.shareSetupStatus.stringValue isEqual:expected]) {NSLog(@"Share setup failed receipt lost recovery details or accepted invalid message: %@",[message class]);return 163;}
+        }
         c.shareSetupRequestID=NSUUID.UUID.UUIDString;c.shareSetupStarted=[NSDate dateWithTimeIntervalSinceNow:-31];
         [c pollShareDestinationSetup];if(c.shareSetupRequestID || ![c.shareSetupStatus.stringValue containsString:@"暂未收到"])return 161;
         c.bridgeURL=nil;[NSFileManager.defaultManager removeItemAtURL:setupRoot error:nil];

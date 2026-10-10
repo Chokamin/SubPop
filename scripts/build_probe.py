@@ -40,7 +40,7 @@ def sign_development_runtime(runtime,launcher,identity):
 
 def build():
     if not (SDK/'usr/lib/libProExtension.a').exists():raise SystemExit(f'Extract the official Apple Workflow Extension SDK first; expected SDK: {SDK}')
-    preset=ROOT/'native/Probe/Resources/Share Destinations/SubPop.fcpxdest'
+    preset=ROOT/'native/Probe/Resources/Share Destinations/发送到 SubPop.fcpxdest'
     if not preset.is_file() or preset.is_symlink():raise SystemExit('Missing regular SubPop share destination resource')
     # The development venv links to an interpreter outside the project. Copy
     # and entitle a private launcher so the child can write the App Group bridge.
@@ -65,7 +65,7 @@ def build():
     if destination.exists():shutil.rmtree(destination)
     shutil.copytree(sparkle/'Sparkle.framework',destination,symlinks=True)
     for bundle in (APP,EXT):(bundle/'Contents/MacOS').mkdir(parents=True,exist_ok=True)
-    base=dict(CFBundleVersion='156',CFBundleShortVersionString='1.5.10',LSMinimumSystemVersion='13.0',SubPopUpdateRepository='Chokamin/SubPop')
+    base=dict(CFBundleVersion='157',CFBundleShortVersionString='1.5.11',LSMinimumSystemVersion='13.0',SubPopUpdateRepository='Chokamin/SubPop')
     plist(APP/'Contents/Info.plist',dict(base,**{'com.apple.proapps.MediaAssetProtocol':{}},NSAppleScriptEnabled=True,OSAScriptingDefinition='ShareReceiver.sdef',CFBundleDocumentTypes=[dict(CFBundleTypeName='FCP shared audio',CFBundleTypeRole='Viewer',LSHandlerRank='Alternate',LSItemContentTypes=['public.audio','com.apple.finalcutpro.xml'])],CFBundleDevelopmentRegion='zh_CN',CFBundleLocalizations=['zh_CN'],SUFeedURL=FEED,SUPublicEDKey=PUBLIC_KEY,SUEnableAutomaticChecks=False,SUAllowsAutomaticUpdates=False,SUVerifyUpdateBeforeExtraction=True,SURequireSignedFeed=True,SUSignedFeedFailureExpirationInterval=0,SUShowReleaseNotes=False,SUEnableSystemProfiling=False,LSUIElement=True,CFBundleURLTypes=[dict(CFBundleURLName='com.chokamin.SubPopProbe.start',CFBundleURLSchemes=['subpop-probe'])],SubPopWorkspace=str(ROOT),CFBundleIdentifier='com.chokamin.SubPopProbe',CFBundleName='SubPop',CFBundleIconFile='SubPop',CFBundleIconName='SubPop',CFBundleExecutable='SubPopProbe',CFBundlePackageType='APPL',NSPrincipalClass='NSApplication',NSAppleEventsUsageDescription='SubPop 需要读取 Final Cut Pro 的当前项目和时间线信息。'))
     plist(EXT/'Contents/Info.plist',dict(base,SubPopWorkspace=str(ROOT),CFBundleIdentifier='com.chokamin.SubPopProbe.Extension',CFBundleName='SubPop',CFBundleIconFile='SubPop',CFBundleIconName='SubPop',CFBundleDisplayName='SubPop',CFBundleExecutable='SubPopProbeExtension',CFBundlePackageType='XPC!',NSAppleEventsUsageDescription='SubPop 需要读取 Final Cut Pro 的当前项目和时间线信息。',NSExtension=dict(NSExtensionPointIdentifier='com.apple.FinalCut.WorkflowExtension',ProExtensionPrincipalViewControllerClass='SubPopProbeViewController',ProExtensionAttributes=dict(ContentViewMinimumWidth=580,ContentViewMinimumHeight=450))))
     mac_sdk=subprocess.check_output(['xcrun','--sdk','macosx','--show-sdk-path'],text=True).strip()
@@ -77,7 +77,7 @@ def build():
     run('xcrun','clang',*flags,ROOT/'native/Probe/CloudSettingsTests.m','-o',ROOT/'.subloom/build/SubPopCloudSettingsTests')
     run('xcrun','clang',*flags,ROOT/'native/Probe/ApplicationMenuTests.m','-o',ROOT/'.subloom/build/SubPopApplicationMenuTests')
     run('xcrun','clang',*flags,ROOT/'native/Probe/ShareReceiverTests.m',ROOT/'native/Probe/ShareReceiver.m','-o',ROOT/'.subloom/build/SubPopShareReceiverTests')
-    run('xcrun','clang',*flags,ROOT/'native/Probe/ShareDestinationTests.m',ROOT/'native/Probe/ShareDestination.m','-o',ROOT/'.subloom/build/SubPopShareDestinationTests')
+    run('xcrun','clang',*flags,'-DSUBPOP_SHARE_DESTINATION_TESTING=1',ROOT/'native/Probe/ShareDestinationTests.m',ROOT/'native/Probe/ShareDestination.m','-o',ROOT/'.subloom/build/SubPopShareDestinationTests')
     run('xcrun','clang',*flags,'-F'+str(frameworks),'-framework','Sparkle','-Wl,-rpath,@executable_path/../Frameworks',ROOT/'native/Probe/Container.m',ROOT/'native/Probe/ShareReceiver.m',ROOT/'native/Probe/ShareDestination.m','-o',APP/'Contents/MacOS/SubPopProbe')
     run('xcrun','clang',*flags,*chinese,'-fapplication-extension','-I'+str(SDK/'usr/include'),'-F'+str(SDK/'Library/Frameworks'),'-L'+str(SDK/'usr/lib'),'-lProExtension','-framework','CoreMedia','-framework','AVFoundation','-Wl,-e,_ProExtensionMain',ROOT/'native/Probe/ProbeViewController.m',ROOT/'native/Probe/ProbePresentation.m',ROOT/'native/Probe/AudioProbe.m','-o',EXT/'Contents/MacOS/SubPopProbeExtension')
     run('xcrun','clang',*flags,'-framework','CoreMedia','-framework','AVFoundation',ROOT/'native/Probe/PreviewSourceTests.m','-o',ROOT/'.subloom/build/SubPopPreviewSourceTests')
@@ -117,6 +117,7 @@ def build():
     for target in (resources,ROOT/'.subloom/build'):
         shutil.copy2(ROOT/'native/Probe/Assets/SubPop.png',target/'BrandMark.png')
     preset_target=APP/'Contents/Resources/Share Destinations'
+    if preset_target.exists():shutil.rmtree(preset_target)
     preset_target.mkdir(parents=True,exist_ok=True)
     shutil.copy2(preset,preset_target/preset.name)
     shutil.copy2(ROOT/'native/Probe/ShareReceiver.sdef',APP/'Contents/Resources/ShareReceiver.sdef')

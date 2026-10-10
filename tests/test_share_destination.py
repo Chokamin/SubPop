@@ -16,7 +16,7 @@ spec.loader.exec_module(packaging)
 
 class ShareDestinationTests(unittest.TestCase):
     def test_genuine_preset_is_portable_audio_only_and_targets_installed_app(self):
-        path=ROOT/'native/Probe/Resources/Share Destinations/SubPop.fcpxdest'
+        path=ROOT/'native/Probe/Resources/Share Destinations/发送到 SubPop.fcpxdest'
         data=path.read_bytes()
         self.assertEqual(hashlib.sha256(data).hexdigest(),'3481e4d53c567e0d3fdc341bd7fd6eec2b822354dff8ee04446cfd7c1f16e475')
         archive=plistlib.loads(data)

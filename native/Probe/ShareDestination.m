@@ -6,8 +6,12 @@
 #include <grp.h>
 #include <errno.h>
 #include <dirent.h>
+#include <stdio.h>
+#import <CommonCrypto/CommonDigest.h>
 
-static NSString *const SPPresetName=@"SubPop.fcpxdest";
+static NSString *const SPPresetName=@"发送到 SubPop.fcpxdest";
+static NSString *const SPLegacyPresetName=@"SubPop.fcpxdest";
+static NSString *const SPLegacyPresetSHA256=@"3481e4d53c567e0d3fdc341bd7fd6eec2b822354dff8ee04446cfd7c1f16e475";
 static const NSUInteger SPMaxPresetBytes=1024*1024;
 
 static NSDictionary *SPResult(NSString *status,NSString *message) {
@@ -82,7 +86,9 @@ static int SPExisting(NSURL *directory,NSData *preset) {
     while((entry=readdir(stream))) {
         if(++count>4096){closedir(stream);close(fd);return -1;}
         NSString *name=[NSString stringWithUTF8String:entry->d_name];
-        if([name.pathExtension.lowercaseString isEqual:@"fcpxdest"] && [SPReadFile(fd,name,NO) isEqual:preset]){same=YES;break;}
+        // The fixed legacy filename needs explicit migration. Treating it as
+        // any renamed duplicate would keep the old FCP-visible label forever.
+        if(![name isEqual:SPLegacyPresetName] && [name.pathExtension.lowercaseString isEqual:@"fcpxdest"] && [SPReadFile(fd,name,NO) isEqual:preset]){same=YES;break;}
     }
     closedir(stream);close(fd);return same ? 1 : 0;
 }
@@ -92,6 +98,64 @@ static BOOL SPPresetValid(NSData *data) {
     // Parse plist containers only; never instantiate NSKeyedArchiver classes.
     id plist=[NSPropertyListSerialization propertyListWithData:data options:NSPropertyListImmutable format:nil error:nil];
     return [plist isKindOfClass:NSDictionary.class] && [plist count]>0;
+}
+
+static BOOL SPKnownLegacy(NSData *data,NSData *preset) {
+    if(![data isEqual:preset] || data.length>SPMaxPresetBytes)return NO;
+    unsigned char bytes[CC_SHA256_DIGEST_LENGTH];CC_SHA256(data.bytes,(CC_LONG)data.length,bytes);
+    NSMutableString *hash=[NSMutableString new];for(NSUInteger i=0;i<sizeof(bytes);i++)[hash appendFormat:@"%02x",bytes[i]];
+    return [hash isEqual:SPLegacyPresetSHA256];
+}
+
+// Same states as SPExisting, but only the exact, pinned legacy file is owned.
+static int SPLegacyExisting(NSURL *directory,NSData *preset) {
+    int fd=SPOpenDirectory(directory,NO,0755,NO,NO);if(fd<0)return errno==ENOENT ? 0 : -1;
+    struct stat st;int found=fstatat(fd,SPLegacyPresetName.fileSystemRepresentation,&st,AT_SYMLINK_NOFOLLOW);
+    if(found==0){NSData *data=SPReadFile(fd,SPLegacyPresetName,NO);close(fd);return SPKnownLegacy(data,preset) ? 1 : 2;}
+    int saved=errno;close(fd);return saved==ENOENT ? 0 : -1;
+}
+
+#if defined(SUBPOP_SHARE_DESTINATION_TESTING)
+static void (^SPMigrationCheckpoint)(NSString *,NSURL *,NSString *);
+void SubPopSetShareDestinationMigrationCheckpoint(void (^checkpoint)(NSString *,NSURL *,NSString *)) { SPMigrationCheckpoint=[checkpoint copy]; }
+#endif
+
+static NSString *SPRestoreLegacy(int fd,NSURL *directory,NSString *heldName,NSString *reason) {
+    if(renameatx_np(fd,heldName.fileSystemRepresentation,fd,SPLegacyPresetName.fileSystemRepresentation,RENAME_EXCL)==0) {
+        fsync(fd);return [reason stringByAppendingString:@"，已恢复原文件。请关闭 FCP 后重试。"];
+    }
+    // A concurrent save may now occupy the original name. Never overwrite it
+    // or delete the isolated object; tell the caller where it was retained.
+    fsync(fd);return [NSString stringWithFormat:@"%@，无法无覆盖恢复原名。待恢复文件保存在 %@；请检查后重试。",reason,[[directory URLByAppendingPathComponent:heldName] path]];
+}
+
+// nil means success; a failure describes restoration or the retained object.
+static NSString *SPMigrateLegacy(NSURL *directory,NSData *preset,NSURL *duplicateDirectory) {
+    int fd=SPOpenDirectory(directory,NO,0755,NO,NO);if(fd<0)return @"无法安全打开旧版共享预设目录，未作更改。";
+    if(!SPKnownLegacy(SPReadFile(fd,SPLegacyPresetName,NO),preset)){close(fd);return @"旧版共享预设已变化，未作更改。";}
+    NSString *heldName=[@".SubPop-legacy-" stringByAppendingString:NSUUID.UUID.UUIDString];
+#if defined(SUBPOP_SHARE_DESTINATION_TESTING)
+    if(SPMigrationCheckpoint)SPMigrationCheckpoint(@"verified",directory,heldName);
+#endif
+    // Move the active name aside atomically, then validate the object actually
+    // acquired. FCP could have saved a replacement after the first SHA check.
+    if(renameatx_np(fd,SPLegacyPresetName.fileSystemRepresentation,fd,heldName.fileSystemRepresentation,RENAME_EXCL)!=0){close(fd);return @"无法安全接管旧版共享预设，未删除或覆盖任何文件。";}
+    fsync(fd);
+#if defined(SUBPOP_SHARE_DESTINATION_TESTING)
+    if(SPMigrationCheckpoint)SPMigrationCheckpoint(@"isolated",directory,heldName);
+#endif
+    NSString *failure=nil;
+    if(!SPKnownLegacy(SPReadFile(fd,heldName,NO),preset))failure=SPRestoreLegacy(fd,directory,heldName,@"共享预设在更新时发生变化");
+    else if(duplicateDirectory && SPExisting(duplicateDirectory,preset)!=1)failure=SPRestoreLegacy(fd,directory,heldName,@"用于去重的共享预设已变化");
+    else {
+        // Only our isolated, verified former product file is deleted. Custom
+        // names are never removed; a concurrent target is never overwritten.
+        int result=duplicateDirectory ? unlinkat(fd,heldName.fileSystemRepresentation,0) :
+            renameatx_np(fd,heldName.fileSystemRepresentation,fd,SPPresetName.fileSystemRepresentation,RENAME_EXCL);
+        if(result!=0)failure=SPRestoreLegacy(fd,directory,heldName,@"旧版共享预设未能完成更新");
+        else fsync(fd);
+    }
+    close(fd);return failure;
 }
 
 static BOOL SPWriteNew(int directory,NSString *name,NSData *data,mode_t mode) {
@@ -108,8 +172,24 @@ static BOOL SPWriteNew(int directory,NSString *name,NSData *data,mode_t mode) {
 NSDictionary *SubPopInstallShareDestination(NSData *preset,NSURL *userDirectory,NSURL *systemDirectory,BOOL systemInstall) {
     if(!SPPresetValid(preset))return SPResult(@"failed",@"共享预设资源缺失或无效，请重新安装 SubPop。");
     int user=systemInstall ? 0 : SPExisting(userDirectory,preset),system=SPExisting(systemDirectory,preset);
-    if(user==2 || system==2)return SPResult(@"conflict",@"已有同名共享预设，已保留原文件。请在 FCP 中检查 SubPop 目的位置。");
-    if(user<0 || system<0)return SPResult(@"failed",@"无法安全读取共享目的位置目录，请检查目录权限后重试。");
+    int userLegacy=systemInstall ? 0 : SPLegacyExisting(userDirectory,preset),systemLegacy=SPLegacyExisting(systemDirectory,preset);
+    if(user==2 || system==2 || userLegacy==2 || systemLegacy==2)return SPResult(@"conflict",@"已有同名共享预设，已保留原文件。请在 FCP 中检查 SubPop 目的位置。");
+    if(user<0 || system<0 || userLegacy<0 || systemLegacy<0)return SPResult(@"failed",@"无法安全读取共享目的位置目录，请检查目录权限后重试。");
+    // The ordinary app never modifies a root-owned system destination or adds
+    // a second user copy to disguise an old system preset that needs upgrading.
+    if(!systemInstall && systemLegacy==1)return SPResult(@"failed",@"系统中仍有旧版 SubPop 共享预设，请重新安装新版 SubPop 完成更新。现有预设已保留。");
+    BOOL migrated=NO;
+    if(systemInstall && systemLegacy==1) {
+        NSString *failure=SPMigrateLegacy(systemDirectory,preset,system==1 ? systemDirectory : nil);
+        if(failure)return SPResult(@"failed",failure);
+        migrated=YES;
+    }
+    if(!systemInstall && userLegacy==1) {
+        NSString *failure=SPMigrateLegacy(userDirectory,preset,system==1 ? systemDirectory : user==1 ? userDirectory : nil);
+        if(failure)return SPResult(@"failed",failure);
+        migrated=YES;
+    }
+    if(migrated)return SPResult(@"installed",@"共享预设已更新；如 FCP 尚未显示，请重新打开 FCP。");
     if(user==1 || system==1)return SPResult(@"already-installed",@"共享预设已安装；如 FCP 尚未显示，请重新打开 FCP。");
     NSURL *target=systemInstall ? systemDirectory : userDirectory;
     int fd=SPOpenDirectory(target,YES,0755,NO,NO);

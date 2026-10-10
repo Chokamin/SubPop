@@ -150,6 +150,64 @@ static NSDictionary *ControlGeometry(NSView *control,NSView *root) {
     return @{@"hidden":@(control.hidden),@"frame":NSStringFromRect(frame),@"insideWindow":@(NSContainsRect(root.bounds,frame))};
 }
 
+static NSDictionary *HostGeometry(SubPopVisualController *controller,NSWindow *window,NSString *phase,NSSize expectedSize) {
+    NSView *root=controller.view,*host=window.contentView;
+    NSRect column=[controller.pageStack convertRect:controller.pageStack.bounds toView:root];
+    NSView *footer=controller.scopeLabel.superview;
+    NSRect footerRect=[footer convertRect:footer.bounds toView:root];
+    BOOL fillsHost=fabs(root.frame.origin.x)<.5 && fabs(root.frame.origin.y)<.5 && fabs(root.frame.size.width-host.bounds.size.width)<.5 && fabs(root.frame.size.height-host.bounds.size.height)<.5;
+    BOOL centered=fabs(NSMidX(column)-NSMidX(root.bounds))<.5;
+    BOOL preservesHost=fabs(host.bounds.size.width-expectedSize.width)<.5 && fabs(host.bounds.size.height-expectedSize.height)<.5;
+    BOOL widthFits=fabs(column.size.width-MIN(800,expectedSize.width-40))<.5;
+    BOOL footerPinned=fabs(NSMinY(footerRect))<.5 && fabs(NSMidX(footerRect)-NSMidX(root.bounds))<.5 && NSContainsRect(root.bounds,footerRect);
+    BOOL scrollable=controller.pageScroll.documentView.bounds.size.height>controller.pageScroll.contentView.bounds.size.height;
+    return @{@"phase":phase,@"window":NSStringFromRect(window.frame),@"host":NSStringFromRect(host.bounds),@"expectedHostSize":NSStringFromSize(expectedSize),@"rootFrame":NSStringFromRect(root.frame),@"rootBounds":NSStringFromRect(root.bounds),@"rootFitting":NSStringFromSize(root.fittingSize),@"preferredSize":NSStringFromSize(controller.preferredContentSize),@"document":NSStringFromRect(controller.pageScroll.documentView.bounds),@"clip":NSStringFromRect(controller.pageScroll.contentView.bounds),@"column":NSStringFromRect(column),@"footer":NSStringFromRect(footerRect),@"compact":@(controller.compactLayout),@"autoresizingMask":@(root.autoresizingMask),@"fillsHost":@(fillsHost),@"preservesHostSize":@(preservesHost),@"columnCentered":@(centered),@"columnWidthFits":@(widthFits),@"footerPinned":@(footerPinned),@"scrollable":@(scrollable),@"hasResult":@(controller.titlePayloads!=nil),@"scope":ControlGeometry(controller.scopeLabel,root)};
+}
+
+static void VerifyHostTransitions(NSDictionary *catalog,NSDictionary *fixture,NSData *titles,NSURL *output,BOOL embedded) {
+    SubPopVisualController *controller=[SubPopVisualController new];controller.previewCatalog=catalog;[controller loadView];
+    NSSize initial=NSMakeSize(756,422);
+    NSWindow *window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,initial.width,initial.height) styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskResizable backing:NSBackingStoreBuffered defer:NO];window.releasedWhenClosed=NO;
+    // A host embeds the extension's root inside its own viewport. Do not add
+    // test-only sizing constraints to the extension or reset its frame later.
+    NSView *viewport=embedded ? [[NSView alloc] initWithFrame:NSMakeRect(0,0,initial.width,initial.height)] : controller.view;window.contentView=viewport;
+    if (embedded) {controller.view.frame=viewport.bounds;[viewport addSubview:controller.view];}
+    [window setContentSize:initial];
+    __block NSSize expectedSize=initial;
+    NSMutableArray *snapshots=[NSMutableArray new];
+    void (^capture)(NSString *)=^(NSString *phase) {
+        [viewport layoutSubtreeIfNeeded];[controller.view layoutSubtreeIfNeeded];
+        [snapshots addObject:HostGeometry(controller,window,phase,expectedSize)];
+        if (embedded) {
+            FreezeLayers(viewport);
+            NSBitmapImageRep *bitmap=[viewport bitmapImageRepForCachingDisplayInRect:viewport.bounds];
+            Require(bitmap!=nil,@"Cannot allocate hosted screenshot bitmap");
+            [viewport cacheDisplayInRect:viewport.bounds toBitmapImageRep:bitmap];
+            NSData *png=[bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+            NSString *name=[NSString stringWithFormat:@"host-%@.png",phase];
+            Require(png.length>0 && [png writeToURL:[output URLByAppendingPathComponent:name] options:NSDataWritingAtomic error:NULL],@"Cannot write hosted screenshot PNG");
+        }
+    };
+    Configure(controller,@"received",fixture,titles);capture(@"received");
+    controller.requestID=@"VISUAL-TRANSITION";controller.displayState=@"recognize";controller.jobProgress=@.5;[controller updateInterface];capture(@"recognize");
+    controller.requestID=nil;controller.jobProgress=nil;Configure(controller,@"complete",fixture,titles);capture(@"ready");
+    [controller toggleReview:nil];capture(@"review-expanded");
+    [controller toggleReview:nil];capture(@"review-collapsed");
+    expectedSize=NSMakeSize(840,691);[window setContentSize:expectedSize];capture(@"host-medium");
+    expectedSize=NSMakeSize(1512,876);[window setContentSize:expectedSize];capture(@"host-expanded");
+    [controller toggleReview:nil];capture(@"expanded-review");
+    expectedSize=NSMakeSize(580,422);[window setContentSize:expectedSize];capture(@"host-narrow");
+    [controller toggleReview:nil];capture(@"narrow-review-collapsed");
+    expectedSize=initial;[window setContentSize:initial];capture(@"host-restored");
+    NSError *error=nil;NSData *report=[NSJSONSerialization dataWithJSONObject:@{@"scope":@"Offscreen hosted NSWindow state transitions; no FCP, worker or model",@"snapshots":snapshots} options:NSJSONWritingPrettyPrinted|NSJSONWritingSortedKeys error:&error];
+    Require(report && [report writeToURL:[output URLByAppendingPathComponent:embedded ? @"host-transitions.json" : @"window-transitions.json"] options:NSDataWritingAtomic error:&error],@"Cannot write host transition report");
+    [controller.activity.wave setWorking:NO];[controller.signal setWorking:NO];window.contentView=nil;[window close];
+    for (NSDictionary *snapshot in snapshots) {
+        Require([snapshot[@"fillsHost"] boolValue] && [snapshot[@"preservesHostSize"] boolValue] && [snapshot[@"columnCentered"] boolValue] && [snapshot[@"columnWidthFits"] boolValue] && [snapshot[@"footerPinned"] boolValue] && [snapshot[@"scope"][@"insideWindow"] boolValue],[NSString stringWithFormat:@"%@ viewport mismatch at %@: expected %@ host %@ root %@",embedded ? @"Embedded" : @"Direct",snapshot[@"phase"],snapshot[@"expectedHostSize"],snapshot[@"host"],snapshot[@"rootFrame"]]);
+        if ([snapshot[@"hasResult"] boolValue] && [snapshot[@"compact"] boolValue]) Require([snapshot[@"scrollable"] boolValue],@"Result contents must scroll inside a short host viewport");
+    }
+}
+
 int main(int argc,const char *argv[]) {
     @autoreleasepool {
         if (argc!=3) {
@@ -167,6 +225,9 @@ int main(int argc,const char *argv[]) {
             NSError *error=nil;
             Require([NSFileManager.defaultManager createDirectoryAtURL:output withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0700} error:&error],@"Cannot create screenshot output directory");
             [NSApplication sharedApplication];
+            VerifyHostTransitions(catalog,fixture,titles,output,YES);
+            VerifyHostTransitions(catalog,fixture,titles,output,NO);
+            if (getenv("SUBPOP_HOST_TRANSITIONS_ONLY")) {puts("Hosted window state transitions passed.");return 0;}
             NSArray *states=@[@"empty",@"project",@"pending",@"receiving",@"received",@"complete",@"warnings",@"error",@"cloud",@"setup-error",@"long-name"];
             NSArray *sizes=@[[NSValue valueWithSize:NSMakeSize(580,422)],[NSValue valueWithSize:NSMakeSize(660,740)],[NSValue valueWithSize:NSMakeSize(1100,740)]];
             NSMutableArray *captures=[NSMutableArray new];
@@ -175,14 +236,11 @@ int main(int argc,const char *argv[]) {
                     NSSize size=sizeValue.sizeValue;
                     SubPopVisualController *controller=[SubPopVisualController new];controller.previewCatalog=catalog;
                     [controller loadView];
-                    NSWindow *window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,size.width,size.height) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
+                    NSWindow *window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,size.width,size.height) styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskResizable backing:NSBackingStoreBuffered defer:NO];
                     window.releasedWhenClosed=NO;window.contentView=controller.view;
-                    // The real FCP host owns the viewport size. This standalone
-                    // window must likewise keep its assigned viewport rather
-                    // than shrink-wrap the product's 800-point content column.
-                    window.contentMinSize=size;window.contentMaxSize=size;
+                    // Assign the host's size without pinning root dimensions or
+                    // min/max size; product constraints must preserve the viewport.
                     [window setContentSize:size];
-                    [NSLayoutConstraint activateConstraints:@[[controller.view.widthAnchor constraintEqualToConstant:size.width],[controller.view.heightAnchor constraintEqualToConstant:size.height]]];
                     Configure(controller,state,fixture,titles);
                     [controller.view layoutSubtreeIfNeeded];
                     // Capture the same top-of-page starting position for all states.

@@ -34,7 +34,13 @@
             self.shareHelpButton.title=@"检查共享配置";
         } else if ([status isEqual:@"conflict"]) {
             self.shareSetupStatus.stringValue=@"发现同名的不同预设，已保留原设置。请在 FCP「设置 → 目的位置」检查 SubPop 项目。";
-        } else self.shareSetupStatus.stringValue=@"未能添加共享预设，已有设置已保留。请重新安装 SubPop 后重试。";
+        } else {
+            id message=result[@"message"];
+            BOOL validMessage=[status isEqual:@"failed"] && [message isKindOfClass:NSString.class] && [message length]<=8192 && [[message stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] length]>0;
+            // Keep recovery details (including retained backup paths) as plain
+            // text. Malformed or oversized receipts use the existing fallback.
+            self.shareSetupStatus.stringValue=validMessage ? message : @"未能添加共享预设，已有设置已保留。请重新安装 SubPop 后重试。";
+        }
         self.shareSetupRequestID=nil;self.shareSetupStarted=nil;
     } else if (self.shareSetupStarted && -self.shareSetupStarted.timeIntervalSinceNow>30) {
         self.shareSetupRequestID=nil;self.shareSetupStarted=nil;

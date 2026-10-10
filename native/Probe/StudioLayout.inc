@@ -10,14 +10,21 @@
     NSButton *button=[NSButton buttonWithTitle:title target:self action:action];button.bezelStyle=NSBezelStyleRounded;button.controlSize=NSControlSizeRegular;button.image=[NSImage imageWithSystemSymbolName:symbol accessibilityDescription:nil];button.imagePosition=NSImageLeading;button.font=[NSFont systemFontOfSize:12 weight:NSFontWeightMedium];[button.heightAnchor constraintEqualToConstant:32].active=YES;return button;
 }
 - (void)loadView {
-    self.view=[[NSView alloc] initWithFrame:NSMakeRect(0,0,660,740)];self.view.appearance=[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];self.view.wantsLayer=YES;self.view.layer.backgroundColor=[NSColor colorWithCalibratedWhite:.07 alpha:1].CGColor;
+    self.view=[[NSView alloc] initWithFrame:NSMakeRect(0,0,660,740)];
+    // FCP embeds this view in its own viewport. Follow the host's frame changes
+    // while keeping all content growth inside our scrolling document.
+    self.view.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
+    self.view.appearance=[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];self.view.wantsLayer=YES;self.view.layer.backgroundColor=[NSColor colorWithCalibratedWhite:.07 alpha:1].CGColor;
     NSDictionary *catalog=[self readJSON:[[NSBundle bundleForClass:self.class] URLForResource:@"models" withExtension:@"json"]];self.modelCatalog=catalog[@"models"] ?: @[];
     self.selectedModelID=[NSUserDefaults.standardUserDefaults stringForKey:@"selectedModelID"] ?: catalog[@"defaultModelID"];
     if (![self.modelCatalog filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"id == %@",self.selectedModelID]].count) self.selectedModelID=catalog[@"defaultModelID"];
     NSScrollView *page=[NSScrollView new];self.pageScroll=page;page.translatesAutoresizingMaskIntoConstraints=NO;page.hasVerticalScroller=NO;page.drawsBackground=NO;[self.view addSubview:page];
     SubPopDocumentView *document=[SubPopDocumentView new];document.translatesAutoresizingMaskIntoConstraints=NO;page.documentView=document;[document.widthAnchor constraintEqualToAnchor:page.contentView.widthAnchor].active=YES;
     NSStackView *stack=[self column:@[] spacing:16];self.pageStack=stack;stack.translatesAutoresizingMaskIntoConstraints=NO;[document addSubview:stack];
-    NSLayoutConstraint *fluid=[stack.widthAnchor constraintEqualToAnchor:document.widthAnchor constant:-40];fluid.priority=750;fluid.active=YES;
+    [stack.widthAnchor constraintLessThanOrEqualToAnchor:document.widthAnchor constant:-40].active=YES;
+    // Prefer a readable content width without allowing that preference to
+    // resize the host window (AppKit's window-size stay-put priority is 500).
+    NSLayoutConstraint *fluid=[stack.widthAnchor constraintEqualToConstant:800];fluid.priority=NSLayoutPriorityWindowSizeStayPut-1;fluid.active=YES;
     self.pageTopInset=[stack.topAnchor constraintEqualToAnchor:document.topAnchor constant:24];
     [NSLayoutConstraint activateConstraints:@[[stack.centerXAnchor constraintEqualToAnchor:document.centerXAnchor],[stack.widthAnchor constraintLessThanOrEqualToConstant:800],self.pageTopInset,[document.bottomAnchor constraintEqualToAnchor:stack.bottomAnchor constant:16]]];
     self.signal=[SubPopSignalView new];
@@ -115,7 +122,8 @@
     // Keep the primary action outside the scrolling document at every height.
     NSStackView *footer=[self column:@[actions,self.scopeLabel] spacing:8];footer.translatesAutoresizingMaskIntoConstraints=NO;footer.edgeInsets=NSEdgeInsetsMake(12,0,16,0);[self.view addSubview:footer];
     for(NSView *row in footer.arrangedSubviews) [row.widthAnchor constraintEqualToAnchor:footer.widthAnchor].active=YES;
-    NSLayoutConstraint *footerWidth=[footer.widthAnchor constraintEqualToAnchor:self.view.widthAnchor constant:-40];footerWidth.priority=750;footerWidth.active=YES;
+    [footer.widthAnchor constraintLessThanOrEqualToAnchor:self.view.widthAnchor constant:-40].active=YES;
+    NSLayoutConstraint *footerWidth=[footer.widthAnchor constraintEqualToConstant:800];footerWidth.priority=NSLayoutPriorityWindowSizeStayPut-1;footerWidth.active=YES;
     [NSLayoutConstraint activateConstraints:@[[footer.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],[footer.widthAnchor constraintLessThanOrEqualToConstant:800],[footer.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],[page.topAnchor constraintEqualToAnchor:self.view.topAnchor],[page.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],[page.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],[page.bottomAnchor constraintEqualToAnchor:footer.topAnchor]]];
     for (NSView *row in stack.arrangedSubviews) [row.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active=YES;
     self.output=[[NSTextView alloc] initWithFrame:NSMakeRect(0,0,520,300)];self.output.editable=NO;self.output.font=[NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightRegular];self.displayState=@"idle";[self updateInterface];

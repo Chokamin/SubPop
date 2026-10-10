@@ -13,3 +13,8 @@ NSDictionary *SubPopInstallShareDestination(NSData *preset, NSURL *userDirectory
 NSDictionary *SubPopShareDestinationRequest(NSURL *URL);
 BOOL SubPopShareDestinationDirectoryModeAllowed(NSString *path,uid_t owner,gid_t group,
                                                mode_t mode,BOOL final,BOOL resourceRead);
+
+#if defined(SUBPOP_SHARE_DESTINATION_TESTING)
+// Only the isolated native test binary includes this deterministic race hook.
+void SubPopSetShareDestinationMigrationCheckpoint(void (^checkpoint)(NSString *stage,NSURL *directory,NSString *heldName));
+#endif

@@ -12,7 +12,7 @@ STAGE=ROOT/'.subloom/package'
 APP=STAGE/'payload/Applications/SubPop.app'
 RUNTIME=APP/'Contents/Resources/Runtime'
 DIST=ROOT/'dist'
-SHARE_PRESET=Path('Contents/Resources/Share Destinations/SubPop.fcpxdest')
+SHARE_PRESET=Path('Contents/Resources/Share Destinations/发送到 SubPop.fcpxdest')
 
 def run(*args):subprocess.run([str(a) for a in args],check=True)
 
