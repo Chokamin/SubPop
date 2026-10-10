@@ -2,6 +2,8 @@
 #import "ShareReceiver.h"
 #include <sys/stat.h>
 #include <unistd.h>
+#include <stdlib.h>
+#include <limits.h>
 
 @interface SubPopShareReceiver (Testing)
 - (void)createAsset:(NSAppleEventDescriptor *)event reply:(NSAppleEventDescriptor *)reply;
@@ -80,7 +82,17 @@ int main(void){@autoreleasepool{
     Check([[pairs descriptorAtIndex:1].stringValue isEqual:@"descriptionVersion"] && [[pairs descriptorAtIndex:2].stringValue isEqual:@"1.14"],@"selects newest supported offered FCPXML version");
     Check([Property(receiver,first,'meta') descriptorForKeyword:'usrf'].numberOfItems==0,@"no new project metadata is inserted");
     NSArray *files=Files(first,XML),*otherFiles=Files(second,[XML stringByReplacingOccurrencesOfString:@"TEST-UID" withString:@"SECOND-UID"]);
-    NSDictionary *manifest=Receive(receiver,files,YES);
+    // FCP can return /private/var URLs for files whose returned export folder
+    // uses /var. Foundation standardizes existing paths differently from raw
+    // URL.path; the entire receive operation must apply one canonical form.
+    NSMutableArray *physicalFiles=[NSMutableArray new];
+    for(NSURL *URL in files) {
+        char resolved[PATH_MAX];Check(realpath(URL.fileSystemRepresentation,resolved)!=NULL,@"actual export fixture has physical path");
+        NSURL *physical=[NSURL fileURLWithPath:[NSString stringWithUTF8String:resolved]];
+        Check([physical.URLByStandardizingPath.path isEqual:URL.URLByStandardizingPath.path],@"physical and Foundation file URLs identify same export");
+        [physicalFiles addObject:physical];
+    }
+    NSDictionary *manifest=Receive(receiver,physicalFiles,YES);
     Check([manifest[@"projectUID"] isEqual:@"TEST-UID"] && [manifest[@"audioSHA256"] length]==64 && [manifest[@"xmlSHA256"] length]==64,@"bound identity and checksums");
     NSURL *inbox=[[bridge URLByAppendingPathComponent:@"share-inbox"] URLByAppendingPathComponent:first[@"id"]];
     Check([NSFileManager.defaultManager fileExistsAtPath:[inbox URLByAppendingPathComponent:@"ready.json"].path],@"manifest published");

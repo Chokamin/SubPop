@@ -253,8 +253,13 @@ static NSDictionary *SPProject(NSURL *URL,NSError **error) {
     NSURL *folder=[self exportURL:ID];if(![self validateExportDirectory:ID create:NO error:error])return nil;
     NSMutableArray<NSURL *> *xmls=[NSMutableArray new],*audios=[NSMutableArray new];NSMutableSet *seen=[NSMutableSet new];
     NSSet *audioTypes=[NSSet setWithArray:@[@"wav",@"aif",@"aiff",@"m4a",@"caf"]];
-    for(NSURL *URL in URLs) {
-        if(![[self shareIDForURL:URL] isEqual:ID]){SPFail(error,@"共享结果不能混合不同项目的文件");return nil;}
+    for(NSURL *receivedURL in URLs) {
+        if(![[self shareIDForURL:receivedURL] isEqual:ID]){SPFail(error,@"共享结果不能混合不同项目的文件");return nil;}
+        // Validate the original URL first so a real symlink is still rejected.
+        // FCP returns physical /private/var paths while Foundation may provide
+        // /var for the same existing file. Match the canonical form already
+        // used by shareIDForURL before checking the direct parent directory.
+        NSURL *URL=receivedURL.URLByStandardizingPath;
         if([seen containsObject:URL.path])continue;[seen addObject:URL.path];
         if(![URL.URLByDeletingLastPathComponent.path isEqual:folder.path]){SPFail(error,@"共享文件不在本次导出目录内");return nil;}
         NSString *extension=URL.pathExtension.lowercaseString,*stem=URL.lastPathComponent.stringByDeletingPathExtension;
