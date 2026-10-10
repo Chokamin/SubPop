@@ -7,6 +7,21 @@ from unittest.mock import patch
 from probes import run_job
 
 class JobTests(unittest.TestCase):
+    def test_recognition_listening_prompts_survive_finalization_without_editing_rows(self):
+        rows=[{'text':'保留原来的重复文字','start_frame':0,'end_frame':25}]
+        diagnostics={'schemaVersion':1,'warningCount':1,'warnings':[{'reason':'signal-without-text','start':2,'end':5,'chunk':2}]}
+        result={'snapshot':{'frameDuration':'1/25','totalFrames':125},'pcm_sha256':'pcm','device':'cpu','recognitionDiagnostics':diagnostics}
+        state={'projectUID':'project','modelID':'test','vocabulary':[]}
+        with tempfile.TemporaryDirectory() as temp:
+            output=Path(temp)
+            with patch.object(run_job,'optimized_captions',return_value=rows),patch.object(run_job,'payload',return_value=b'<fcpxml/>'):
+                run_job.finalize(output,state,result,[])
+            manifest=json.loads((output/'captions.json').read_text())
+            self.assertEqual(manifest['recognitionReview'],diagnostics)
+            self.assertEqual(manifest['captions'],rows)
+            self.assertEqual(manifest['reviewWarnings'],[])
+            self.assertEqual(json.loads((output/'status.json').read_text())['status'],'ready')
+
     def test_direct_job_reports_crossfade_hard_cut_without_blocking_recognition(self):
         root=ET.parse(Path(__file__).parent/'fixtures/fcp-12.3-native-drop.fcpxml').getroot()
         seq=root.find('.//project/sequence');first=seq.find('spine/asset-clip')

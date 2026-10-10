@@ -54,6 +54,10 @@ def finalize(directory,state,result,existing):
         manifest.update(audioSource='exported-full-timeline',audioSHA256=state['audioSHA256'],
                         existingTitleReview=state.get('existingTitleReview','available'))
     manifest.update(editorialRules=RULES_VERSION,reviewWarnings=review)
+    # These are listening prompts, not evidence that a model omitted speech.
+    # Keep them separate from subtitle alignment/editorial warnings.
+    if result.get('recognitionDiagnostics'):
+        manifest['recognitionReview']=result['recognitionDiagnostics']
     manifest.update(referenceSHA256=reference_digest(script),referenceReview=reference_review)
     if script:
         original=optimized_captions(result,fps,state.get('vocabulary',[]))

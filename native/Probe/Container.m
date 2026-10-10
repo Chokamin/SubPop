@@ -3,6 +3,7 @@
 #import "CloudSettings.h"
 #import "OnlineUpdate.h"
 #import "ApplicationMenu.h"
+#import "ShareReceiver.h"
 // Background model runner and independent fullscreen preview host.
 @interface SubPopFullscreenWindow : NSWindow
 @end
@@ -16,8 +17,14 @@
 @property BOOL choosingFolder;
 @property NSWindow *previewWindow;
 @property BOOL showingCloudSettings;
+@property SubPopShareReceiver *shareReceiver;
 @end
 @implementation SubPopAppDelegate
+- (void)applicationWillFinishLaunching:(NSNotification *)notification {
+    [self prepareBridge];
+    self.shareReceiver=[[SubPopShareReceiver alloc] initWithBridgeURL:[NSURL fileURLWithPath:SubPopBridgePath(NSBundle.mainBundle) isDirectory:YES]];
+    [self.shareReceiver registerAppleEventHandlers];
+}
 - (BOOL)prepareBridge {
     NSString *bridge=SubPopBridgePath(NSBundle.mainBundle);
     NSError *error=nil;
@@ -49,6 +56,13 @@
     SubPopWriteCloudStatus();[self startEngine];
 }
 - (void)application:(NSApplication *)application openURLs:(NSArray<NSURL *> *)urls {
+    [self.shareReceiver handleOpenURLs:urls completion:^(NSDictionary *manifest,NSError *error) {
+        [self startEngine];
+        if (error) {
+            NSAlert *alert=[NSAlert new];alert.messageText=@"未能接收 FCP 共享";alert.informativeText=error.localizedDescription;
+            [alert addButtonWithTitle:@"完成"];[NSApp activateIgnoringOtherApps:YES];[alert runModal];
+        }
+    }];
     for (NSURL *url in urls) if ([url.scheme isEqual:@"subpop-probe"]) {if ([url.host isEqual:@"start"]) [self startEngine];else if ([url.host isEqual:@"update"]) [self showOnlineUpdate:url];else if ([url.host isEqual:@"cloud-settings"]) [self showCloudSettings];else if ([url.host isEqual:@"preview"]) [self showPreview:url];}
 }
 - (void)showOnlineUpdate:(NSURL *)url {

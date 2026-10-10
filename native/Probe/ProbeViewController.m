@@ -19,6 +19,7 @@
 #import "TitleImport.h"
 #import "CaptionExport.h"
 #import "ChineseConversion.h"
+#import "ShareInbox.h"
 
 static NSDictionary *Time(CMTime t) {
     return @{ @"value": @(t.value), @"timescale": @(t.timescale), @"flags": @(t.flags), @"epoch": @(t.epoch) };
@@ -64,6 +65,12 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 @property NSString *fallbackAudioSHA;
 @property BOOL fallbackImporting;
 @property NSButton *fallbackAudioButton;
+@property NSButton *shareReceiveButton;
+@property NSButton *shareHelpButton;
+@property NSButton *recognitionReviewButton;
+@property NSArray<NSDictionary *> *pendingShares;
+@property BOOL shareReceiving;
+@property BOOL sharePromptOpen;
 @property NSDate *freshDropDate;
 @property BOOL snapshotConsumed;
 @property NSDate *resultDate;
@@ -313,6 +320,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 #include "NativeSubtitleStyle.inc"
 #include "ChineseText.inc"
 - (void)restoreSession {
+    if (self.shareReceiving || self.fallbackImporting || self.sharePromptOpen) return;
     if (self.restoringSession || self.requestID || self.pendingRecognition || self.titlePayloads || !self.bridgeURL || !self.timeline || ![self workerAvailable]) return;
     NSDictionary *saved=[NSUserDefaults.standardUserDefaults dictionaryForKey:@"pendingSession"];
     if (!saved || !self.observed || ![self.observedProjectUID isEqual:saved[@"projectUID"]] || !CMTIME_IS_NUMERIC(self.observedProjectDuration)) return;
@@ -555,7 +563,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     }
     [self.diagnostics showRelativeToRect:[sender bounds] ofView:sender preferredEdge:NSRectEdgeMaxY];
 }
-- (BOOL)canDragResult { return !self.pendingRecognition && !self.referenceRequestID && self.titlePayloads && self.resultDate && [self isolatedProjectActive]; }
+- (BOOL)canDragResult { return !self.shareReceiving && !self.fallbackImporting && !self.pendingRecognition && !self.referenceRequestID && self.titlePayloads && self.resultDate && [self isolatedProjectActive]; }
 - (BOOL)usesFileImport { return self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateTap5a; }
 - (void)consumeUIEvent:(NSDictionary *)event {
     NSString *reason=event[@"reason"], *status=event[@"status"];
@@ -587,7 +595,11 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     BOOL awaitingProject=self.validatingDrop || [self dropNeedsValidation];
     if (awaitingProject) state=self.validatingDrop ? @"validating-input" : @"project-unavailable";
     if (fresh && !self.requestID && !awaitingProject && ![self isolatedProjectActive]) state=@"inactive";
-    BOOL busy=self.requestID!=nil || self.referenceRequestID!=nil || self.pendingRecognition!=nil;
+    BOOL busy=self.requestID!=nil || self.referenceRequestID!=nil || self.pendingRecognition!=nil || self.shareReceiving;
+    self.shareReceiveButton.hidden=!self.pendingShares.count;
+    self.shareReceiveButton.title=[NSString stringWithFormat:@"接收 FCP 音频 · %lu",(unsigned long)self.pendingShares.count];
+    self.shareReceiveButton.enabled=!busy && !self.shareReceiving && !self.sharePromptOpen && !self.fallbackImporting && !self.importInProgress && !self.exportInProgress;
+    self.shareHelpButton.enabled=!busy && !self.shareReceiving;
     if (fresh && self.snapshotConsumed && !self.titlePayloads && !busy && !awaitingProject && [self isolatedProjectActive]) state=@"refresh-input";
     NSDictionary *copy=SubPopPresentation(state); self.statusTitle.stringValue=copy[@"title"]; self.statusDetail.stringValue=copy[@"detail"];
     if (([state isEqual:@"error"] || [state isEqual:@"silent"]) && self.visibleError.length) self.statusDetail.stringValue=self.visibleError;
@@ -611,11 +623,11 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     BOOL preparing=[state isEqual:@"preparing"];
     self.generateButton.title=preparing ? @"正在准备…" : (busy ? @"正在处理…" : (connected ? (self.snapshotConsumed ? @"重新拖入项目" : @"生成字幕") : @"重新连接本机服务"));
     self.generateButton.enabled=(!connected || !managing || [self selectedModelDownloadInProgress]) && !self.modelDownloadAlert && !preparing && !busy && !self.fallbackImporting && !self.snapshotConsumed && (!connected || (fresh && [self isolatedProjectActive]));
-    self.fallbackAudioButton.hidden=!fresh || self.snapshotConsumed || busy || self.fallbackImporting || !([state isEqual:@"error"] || [state isEqual:@"silent"]);
+    self.fallbackAudioButton.hidden=!fresh || self.snapshotConsumed || busy || self.fallbackImporting;
     self.fallbackAudioButton.enabled=[self canReceiveExportedAudio];
     if (awaitingProject) {self.generateButton.title=self.validatingDrop ? @"正在确认项目…" : @"重新确认项目";self.generateButton.enabled=!self.validatingDrop && fresh && !busy;}
     self.vocabularyButton.enabled=!busy;self.vocabularyButton.title=[NSString stringWithFormat:@"词库 · %lu",(unsigned long)[self effectiveVocabulary].count];
-    self.modelPicker.enabled=!busy && !managing;self.audioPicker.enabled=!busy && !self.fallbackAudioURL;self.cancelButton.hidden=!busy;
+    self.modelPicker.enabled=!busy && !managing;self.audioPicker.enabled=!busy && !self.fallbackAudioURL;self.cancelButton.hidden=!busy || self.shareReceiving;
     BOOL hasRows=self.titlePayloads && self.captionRows.count;
     self.templateControls.hidden=!hasRows;
     self.chineseTextControls.hidden=!hasRows;
@@ -627,8 +639,8 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     self.exportActions.hidden=!hasRows;
     self.clearResultButton.hidden=!hasRows;
     self.clearResultButton.enabled=hasRows && !busy && !self.importInProgress && !self.exportInProgress;
-    self.srtExportButton.enabled=hasRows && !self.exportInProgress;
-    self.fcpxmlExportButton.enabled=hasRows && !self.exportInProgress;
+    self.srtExportButton.enabled=hasRows && !self.exportInProgress && !busy;
+    self.fcpxmlExportButton.enabled=hasRows && !self.exportInProgress && !busy;
     self.exportStatus.hidden=!hasRows || !self.exportStatus.stringValue.length;
     self.captionCount.stringValue=[NSString stringWithFormat:@"已识别 %lu 条字幕",(unsigned long)self.captionRows.count];
     self.reviewToggle.title=self.reviewExpanded ? @"收起字幕 ▴" : @"查看字幕 ▾";
@@ -669,6 +681,10 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
         self.statusDetail.stringValue=[self.statusDetail.stringValue stringByAppendingString:@" 原项目标题未能核对，拖回前请检查是否与旧字幕重叠。"];
     if (hasRows && self.resultTimelineChanged)
         self.statusDetail.stringValue=[self.statusDetail.stringValue stringByAppendingString:@" 当前时间线时长与识别时不同，旧字幕可能错位；请在 FCP 核对时间。"];
+    NSUInteger recognitionWarnings=[self.resultManifest[@"recognitionReview"][@"warningCount"] unsignedIntegerValue];
+    self.recognitionReviewButton.hidden=!recognitionWarnings;
+    self.recognitionReviewButton.title=[NSString stringWithFormat:@"核对可能漏识别或重复的时段 · %lu",(unsigned long)recognitionWarnings];
+    if (recognitionWarnings) self.statusDetail.stringValue=[self.statusDetail.stringValue stringByAppendingString:@" 有音频时段需要试听核对，识别结果未作删改。"];
     self.tap5aStyleButton.hidden=NO;self.tap5aStyleButton.enabled=!self.importInProgress;
     self.tap5aStyleButton.title=@"预览与样式";
     self.resultView.enabled=ready && !self.importInProgress && !busy;
@@ -869,6 +885,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     }
     [self pollModelPreparation];
     [self pollReferenceRefinement];
+    self.pendingShares=SubPopPendingShares(self.bridgeURL);
     [self updateInterface];
     if (!self.requestID) return;
     NSURL *directory=[self.bridgeURL URLByAppendingPathComponent:self.requestID isDirectory:YES];
@@ -1210,6 +1227,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     [self updateInterface];
 }
 - (BOOL)beginResultRevalidation:(NSURL *)url projectUID:(NSString *)uid {
+    if (self.shareReceiving || self.fallbackImporting) return NO;
     if (!url || !self.titlePayloads || !self.resultDate || self.requestID || self.referenceRequestID || ![uid isEqual:self.dropUID]) return NO;
     self.resultRevalidationURL=url;self.validatingDrop=YES;self.dropValidationAttempts=0;
     self.displayState=@"validating-input";[self updateInterface];
@@ -1337,6 +1355,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     return received;
 }
 #include "Preferences.inc"
+#include "ShareIntake.inc"
 #include "ModelPreparation.inc"
 #include "ReferenceScript.inc"
 @end

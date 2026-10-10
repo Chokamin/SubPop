@@ -56,6 +56,10 @@
     for(NSView *label in dropCopy.arrangedSubviews) [label.widthAnchor constraintEqualToAnchor:dropCopy.widthAnchor].active=YES;
     [NSLayoutConstraint activateConstraints:@[[importIcon.leadingAnchor constraintEqualToAnchor:drop.leadingAnchor constant:18],[importIcon.centerYAnchor constraintEqualToAnchor:drop.centerYAnchor],[importIcon.widthAnchor constraintEqualToConstant:34],[importIcon.heightAnchor constraintEqualToConstant:34],[dropCopy.leadingAnchor constraintEqualToAnchor:drop.leadingAnchor constant:68],[dropCopy.trailingAnchor constraintEqualToAnchor:drop.trailingAnchor constant:-18],[dropCopy.centerYAnchor constraintEqualToAnchor:drop.centerYAnchor]]];
     [stack addArrangedSubview:drop];self.dropHeight=[drop.heightAnchor constraintEqualToConstant:96];self.dropHeight.active=YES;
+    self.shareHelpButton=[self toolbarButton:@"从 FCP 发送成片音频…" symbol:@"square.and.arrow.up" action:@selector(showShareHelp:)];
+    self.shareReceiveButton=[self toolbarButton:@"接收 FCP 音频" symbol:@"waveform" action:@selector(receiveSharedAudio:)];self.shareReceiveButton.hidden=YES;
+    NSStackView *inputActions=[NSStackView stackViewWithViews:@[self.shareHelpButton,self.shareReceiveButton,[NSView new]]];inputActions.spacing=8;
+    [stack addArrangedSubview:inputActions];
     self.modelPicker=[[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];self.modelPicker.target=self;self.modelPicker.action=@selector(modelChanged:);[self.modelPicker setAccessibilityLabel:@"识别模型"];
     for (NSDictionary *model in self.modelCatalog) {[self.modelPicker addItemWithTitle:model[@"name"]];self.modelPicker.lastItem.representedObject=model[@"id"];}
     [self.modelPicker selectItemAtIndex:[self.modelCatalog indexOfObjectPassingTest:^BOOL(NSDictionary *m,NSUInteger i,BOOL *stop){return [m[@"id"] isEqual:self.selectedModelID];}]];
@@ -76,9 +80,10 @@
     self.activity=[[SubPopActivityView alloc] initWithFrame:NSMakeRect(0,0,520,56)];[self.activity.heightAnchor constraintEqualToConstant:56].active=YES;
     self.jobBar=[[NSProgressIndicator alloc] initWithFrame:NSZeroRect];self.jobBar.indeterminate=NO;self.jobBar.minValue=0;self.jobBar.maxValue=1;self.jobBar.style=NSProgressIndicatorStyleBar;[self.jobBar.heightAnchor constraintEqualToConstant:5].active=YES;self.jobBar.hidden=YES;
     self.fallbackAudioButton=[self toolbarButton:@"导入整条时间线音频…" symbol:@"waveform" action:@selector(chooseFallbackAudio:)];
-    self.fallbackAudioButton.toolTip=@"仅在直接读取项目音频失败时使用。请从 Final Cut Pro 导出当前完整项目的音频；备用音频会按原项目时间轴识别。";
+    self.fallbackAudioButton.toolTip=@"可以直接使用 FCP 渲染的声音。请选择从当前完整项目起点到结尾的音频，保留效果、转场和混音。";
     self.fallbackAudioButton.hidden=YES;
-    self.statusCard=[self surface:@[statusLine,self.statusDetail,self.fallbackAudioButton,self.activity,self.jobBar]];[stack addArrangedSubview:self.statusCard];
+    self.recognitionReviewButton=[self toolbarButton:@"核对识别时段" symbol:@"ear" action:@selector(showRecognitionReview:)];self.recognitionReviewButton.hidden=YES;
+    self.statusCard=[self surface:@[statusLine,self.statusDetail,self.recognitionReviewButton,self.fallbackAudioButton,self.activity,self.jobBar]];[stack addArrangedSubview:self.statusCard];
     self.captionCount=[self label:@"已识别 0 条字幕" size:13 weight:NSFontWeightSemibold];self.reviewToggle=[self toolbarButton:@"查看字幕 ▾" symbol:@"text.alignleft" action:@selector(toggleReview:)];
     self.reviewHeader=[NSStackView stackViewWithViews:@[self.captionCount,[NSView new],self.reviewToggle]];[stack addArrangedSubview:self.reviewHeader];self.reviewHeader.hidden=YES;
     self.captionTable=[NSTableView new];self.captionTable.rowHeight=36;self.captionTable.intercellSpacing=NSMakeSize(10,4);self.captionTable.usesAlternatingRowBackgroundColors=NO;self.captionTable.backgroundColor=[NSColor colorWithCalibratedWhite:.09 alpha:1];self.captionTable.dataSource=self;self.captionTable.delegate=self;
@@ -108,8 +113,8 @@
     BOOL compact=self.view.bounds.size.height<600;
     if(compact!=self.compactLayout) {
         self.compactLayout=compact;
-        self.pageStack.spacing=compact ? 10 : 16;
-        self.pageTopInset.constant=compact ? 16 : 24;
+        self.pageStack.spacing=compact ? 8 : 16;
+        self.pageTopInset.constant=compact ? 12 : 24;
         self.dropHeight.constant=compact ? 72 : 96;
         self.settingsCard.spacing=compact ? 8 : 12;
         self.settingsCard.edgeInsets=compact ? NSEdgeInsetsMake(12,16,12,16) : NSEdgeInsetsMake(16,16,16,16);

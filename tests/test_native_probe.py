@@ -10,6 +10,14 @@ APP=ROOT/'.subloom/build/SubPop Probe.app'
 EXT=APP/'Contents/PlugIns/SubPopProbe.appex'
 
 class NativeBundleTests(unittest.TestCase):
+    def test_host_declares_receive_only_fcp_share_protocol(self):
+        info=plistlib.loads((APP/'Contents/Info.plist').read_bytes())
+        self.assertEqual(info['com.apple.proapps.MediaAssetProtocol'],{})
+        self.assertIs(info['NSAppleScriptEnabled'],True)
+        self.assertEqual(info['OSAScriptingDefinition'],'ShareReceiver.sdef')
+        self.assertEqual((APP/'Contents/Resources/ShareReceiver.sdef').read_bytes(),(ROOT/'native/Probe/ShareReceiver.sdef').read_bytes())
+        self.assertTrue(all(entry['LSHandlerRank']=='Alternate' for entry in info['CFBundleDocumentTypes']))
+
     def test_extension_preserves_the_complete_brand_icon(self):
         name='SubPop'
         for bundle in (APP,EXT):

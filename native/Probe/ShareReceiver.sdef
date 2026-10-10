@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE dictionary SYSTEM "file://localhost/System/Library/DTDs/sdef.dtd">
+<!-- Receive-only subset of Apple's documented ProVideo Asset Management suite.
+     Wire event/property codes match the Apple protocol. Native handlers implement
+     the commands directly; no general application scripting is exposed. -->
+<dictionary>
+  <suite name="SubPop Share Receiver" code="pvam" description="Receive rendered audio and its project description from Final Cut Pro.">
+    <command name="make" code="corecrel">
+      <access-group identifier="com.apple.proapps.assetmanagement.import" access="rw"/>
+      <access-group identifier="com.apple.assetmanagement.import" access="rw"/>
+      <parameter name="new" code="kocl" type="type"/>
+      <parameter name="at" code="insh" type="location specifier" optional="yes"/>
+      <parameter name="with data" code="data" type="any" optional="yes"/>
+      <parameter name="with properties" code="prdt" type="record" optional="yes"/>
+      <result type="specifier"/>
+    </command>
+    <command name="get" code="coregetd">
+      <access-group identifier="com.apple.proapps.assetmanagement.import" access="r"/>
+      <access-group identifier="com.apple.assetmanagement.import" access="r"/>
+      <direct-parameter type="specifier" requires-access="r"/><result type="any"/>
+    </command>
+    <command name="open" code="aevtodoc">
+      <access-group identifier="com.apple.proapps.assetmanagement.import" access="rw"/>
+      <direct-parameter><type type="file"/><type type="file" list="yes"/></direct-parameter>
+    </command>
+    <record-type name="asset location" code="aslc">
+      <property name="folder" code="asfd" type="file"/>
+      <property name="base name" code="asbn" type="text"/>
+      <property name="has media" code="ashm" type="boolean"/>
+      <property name="has description" code="ashd" type="boolean"/>
+    </record-type>
+    <record-type name="library location" code="lblc">
+      <property name="library folder" code="lbfd" type="file"/>
+      <property name="library base name" code="lbbn" type="text"/>
+      <property name="has archive" code="lbha" type="boolean"/>
+      <property name="has library description" code="lbhd" type="boolean"/>
+    </record-type>
+    <value-type name="user defined record" code="usrf"><cocoa class="NSDictionary"/></value-type>
+    <class name="application" code="capp">
+      <cocoa class="NSApplication"/>
+      <access-group identifier="com.apple.proapps.assetmanagement.import" access="r"/>
+      <element type="asset"><access-group identifier="com.apple.assetmanagement.import" access="rw"/><access-group identifier="com.apple.proapps.assetmanagement.import" access="rw"/></element>
+    </class>
+    <class name="asset" code="aset">
+      <access-group identifier="com.apple.proapps.assetmanagement.import" access="rw"/>
+      <access-group identifier="com.apple.assetmanagement.import" access="rw"/>
+      <property name="id" code="ID  " type="text" access="r"/>
+      <property name="name" code="pnam" type="text" access="r"/>
+      <property name="location info" code="locn" type="asset location" access="r"/>
+      <property name="library info" code="lbry" type="library location" access="r"/>
+      <property name="metadata" code="meta" type="user defined record" access="r"/>
+      <property name="data options" code="dopt" type="user defined record" access="r"/>
+    </class>
+  </suite>
+</dictionary>
