@@ -6,6 +6,10 @@ NS_ASSUME_NONNULL_BEGIN
 // No request starts recognition, opens a project, or uploads media.
 @interface SubPopShareReceiver : NSObject
 - (instancetype)initWithBridgeURL:(NSURL *)bridgeURL;
+// Inject a dedicated private staging root for isolated native protocol tests.
+// The production initializer uses a per-user temporary directory, outside the
+// AppGroup so FCP can export without access to another application's data.
+- (instancetype)initWithBridgeURL:(NSURL *)bridgeURL exportRootURL:(NSURL *)exportRootURL;
 // Register before applicationDidFinishLaunching so the first create event is handled.
 - (void)registerAppleEventHandlers;
 // Returns YES if any file URL belongs to an export created by this receiver.

@@ -28,6 +28,15 @@ static BOOL SPDirectory(NSURL *URL,BOOL create,NSError **error) {
     struct stat st;if(lstat(URL.fileSystemRepresentation,&st)!=0 || !S_ISDIR(st.st_mode) || st.st_uid!=getuid())return SPFail(error,@"共享目录不可用");
     return YES;
 }
+static BOOL SPPrivateDirectory(NSURL *URL,BOOL create,NSError **error) {
+    // Do not repair or follow an existing directory owned by another process or
+    // with broader permissions. mkdir never follows a final symlink.
+    if(!SPSafePath(URL))return SPFail(error,@"共享临时目录包含符号链接");
+    if(create && mkdir(URL.fileSystemRepresentation,0700)!=0 && errno!=EEXIST)return SPFail(error,@"无法创建共享临时目录");
+    struct stat st;
+    if(lstat(URL.fileSystemRepresentation,&st)!=0 || !S_ISDIR(st.st_mode) || st.st_uid!=getuid() || (st.st_mode&07777)!=0700)return SPFail(error,@"共享临时目录的所有者或权限无效");
+    return YES;
+}
 static NSDictionary *SPJSON(NSURL *URL) {
     if(!SPSafePath(URL))return nil;
     NSDictionary *attrs=[NSFileManager.defaultManager attributesOfItemAtPath:URL.path error:nil];
@@ -142,23 +151,40 @@ static NSDictionary *SPProject(NSURL *URL,NSError **error) {
 
 @interface SubPopShareReceiver ()
 @property NSURL *bridgeURL;
+@property NSURL *rawExportRootURL;
 @property NSMutableDictionary<NSString *,NSMutableDictionary *> *assets;
 @property NSMutableDictionary<NSString *,NSAppleEventDescriptor *> *metadata;
 @property dispatch_queue_t queue;
 @end
 @implementation SubPopShareReceiver
 - (instancetype)initWithBridgeURL:(NSURL *)bridgeURL {
-    if((self=[super init])){_bridgeURL=bridgeURL.URLByStandardizingPath;_assets=[NSMutableDictionary new];_metadata=[NSMutableDictionary new];_queue=dispatch_queue_create("com.chokamin.SubPop.share-receive",DISPATCH_QUEUE_SERIAL);}return self;
+    // AppGroup containers are protected app data. Returning an AppGroup URL to
+    // FCP causes a SystemPolicyAppDataDetailed denial on current macOS. Only raw
+    // handoff files live in this private temporary root; state/inbox stay private.
+    NSURL *temporary=[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES].URLByResolvingSymlinksInPath;
+    return [self initWithBridgeURL:bridgeURL exportRootURL:[temporary URLByAppendingPathComponent:@"com.chokamin.SubPop.ShareExports" isDirectory:YES]];
+}
+- (instancetype)initWithBridgeURL:(NSURL *)bridgeURL exportRootURL:(NSURL *)exportRootURL {
+    if((self=[super init])){_bridgeURL=bridgeURL.URLByStandardizingPath;_rawExportRootURL=exportRootURL.URLByStandardizingPath;_assets=[NSMutableDictionary new];_metadata=[NSMutableDictionary new];_queue=dispatch_queue_create("com.chokamin.SubPop.share-receive",DISPATCH_QUEUE_SERIAL);}return self;
 }
 - (NSURL *)exportsURL {return [self.bridgeURL URLByAppendingPathComponent:@"share-exports" isDirectory:YES];}
 - (NSURL *)assetURL:(NSString *)ID {return [[self exportsURL] URLByAppendingPathComponent:ID isDirectory:YES];}
-- (NSURL *)exportURL:(NSString *)ID {return [[self assetURL:ID] URLByAppendingPathComponent:@"export" isDirectory:YES];}
+- (NSURL *)exportURL:(NSString *)ID {return [[self.rawExportRootURL URLByAppendingPathComponent:ID isDirectory:YES] URLByAppendingPathComponent:@"export" isDirectory:YES];}
+- (BOOL)validateExportDirectory:(NSString *)ID create:(BOOL)create error:(NSError **)error {
+    NSURL *transaction=[self.rawExportRootURL URLByAppendingPathComponent:ID isDirectory:YES];
+    return SPPrivateDirectory(self.rawExportRootURL.URLByDeletingLastPathComponent,NO,error) && SPPrivateDirectory(self.rawExportRootURL,create,error) && SPPrivateDirectory(transaction,create,error) && SPPrivateDirectory([self exportURL:ID],create,error);
+}
+- (void)removeCompletedExport:(NSString *)ID {
+    // Revalidate before cleanup as well: a replaced ancestor must not redirect
+    // deletion outside this receiver's private staging area.
+    if([self validateExportDirectory:ID create:NO error:nil])[NSFileManager.defaultManager removeItemAtURL:[self exportURL:ID] error:nil];
+}
 - (NSURL *)stateURL:(NSString *)ID {return [[self assetURL:ID] URLByAppendingPathComponent:@"asset.json"];}
 - (NSMutableDictionary *)asset:(NSString *)ID {
     if(!SPUUID(ID))return nil;
     if(self.assets[ID])return self.assets[ID];
     NSDictionary *saved=SPJSON([self stateURL:ID]);
-    if(![saved[@"shareID"] isEqual:ID] || ![saved[@"name"] isKindOfClass:NSString.class] || ![saved[@"state"] isKindOfClass:NSString.class] || ![saved[@"createdAt"] isKindOfClass:NSNumber.class])return nil;
+    if(![saved[@"shareID"] isEqual:ID] || ![saved[@"name"] isKindOfClass:NSString.class] || ![saved[@"state"] isKindOfClass:NSString.class] || ![saved[@"createdAt"] isKindOfClass:NSNumber.class] || ![saved[@"exportRoot"] isEqual:self.rawExportRootURL.path])return nil;
     NSMutableDictionary *asset=saved.mutableCopy;
     // A crash never auto-finishes a transaction. A repeated completion event
     // may retry its own unfinished staging data after this process restarts.
@@ -183,9 +209,9 @@ static NSDictionary *SPProject(NSURL *URL,NSError **error) {
         NSString *ID=NSUUID.UUID.UUIDString;NSAppleEventDescriptor *properties=[event paramDescriptorForKeyword:'prdt'];
         NSString *name=[properties descriptorForKeyword:'pnam'].stringValue;
         if(!name.length || [name lengthOfBytesUsingEncoding:NSUTF8StringEncoding]>180 || [name hasPrefix:@"."] || [name rangeOfCharacterFromSet:[NSCharacterSet characterSetWithCharactersInString:@"/:\n\r\0"]].location!=NSNotFound)name=[@"SubPop-" stringByAppendingString:ID];
-        NSMutableDictionary *asset=[@{@"protocol":@1,@"shareID":ID,@"name":name,@"state":@"pending",@"createdAt":@(NSDate.date.timeIntervalSince1970)} mutableCopy];
+        NSMutableDictionary *asset=[@{@"protocol":@1,@"shareID":ID,@"name":name,@"state":@"pending",@"createdAt":@(NSDate.date.timeIntervalSince1970),@"exportRoot":self.rawExportRootURL.path} mutableCopy];
         NSString *version=SPDescriptionVersion([properties descriptorForKeyword:'dopt']);if(version)asset[@"descriptionVersion"]=version;
-        if(!SPDirectory([self exportURL:ID],YES,&error) || !SPWriteJSON(asset,[self stateURL:ID],&error)){SPReplyError(reply,error.localizedDescription);return;}
+        if(![self validateExportDirectory:ID create:YES error:&error] || !SPDirectory([self assetURL:ID],YES,&error) || !SPWriteJSON(asset,[self stateURL:ID],&error)){SPReplyError(reply,error.localizedDescription);return;}
         self.assets[ID]=asset;NSAppleEventDescriptor *metadata=[properties descriptorForKeyword:'meta'];if(metadata)self.metadata[ID]=metadata;
         [reply setParamDescriptor:SPAssetSpecifier(ID) forKeyword:'----'];
     }
@@ -201,6 +227,7 @@ static NSDictionary *SPProject(NSURL *URL,NSError **error) {
         if(property=='ID  ')value=[NSAppleEventDescriptor descriptorWithString:ID];
         else if(property=='pnam')value=[NSAppleEventDescriptor descriptorWithString:asset[@"name"]];
         else if(property=='locn') {
+            NSError *error=nil;if(![self validateExportDirectory:ID create:NO error:&error]){SPReplyError(reply,error.localizedDescription);return;}
             value=NSAppleEventDescriptor.recordDescriptor;
             [value setDescriptor:[NSAppleEventDescriptor descriptorWithFileURL:[self exportURL:ID]] forKeyword:'asfd'];
             [value setDescriptor:[NSAppleEventDescriptor descriptorWithString:asset[@"name"]] forKeyword:'asbn'];
@@ -217,13 +244,13 @@ static NSDictionary *SPProject(NSURL *URL,NSError **error) {
 }
 - (NSString *)shareIDForURL:(NSURL *)URL {
     if(!URL.isFileURL || !SPSafePath(URL))return nil;
-    NSArray *base=self.exportsURL.path.pathComponents,*parts=URL.URLByStandardizingPath.path.pathComponents;
+    NSArray *base=self.rawExportRootURL.path.pathComponents,*parts=URL.URLByStandardizingPath.path.pathComponents;
     if(parts.count<base.count+3 || ![[parts subarrayWithRange:NSMakeRange(0,base.count)] isEqual:base])return nil;
     NSString *ID=parts[base.count];return SPUUID(ID) && [parts[base.count+1] isEqual:@"export"] ? ID : nil;
 }
 - (NSDictionary *)publishShare:(NSString *)ID URLs:(NSArray<NSURL *> *)URLs error:(NSError **)error {
     NSDictionary *asset=nil;@synchronized(self){asset=[[self asset:ID] copy];}
-    NSURL *folder=[self exportURL:ID];if(!SPDirectory(folder,NO,error))return nil;
+    NSURL *folder=[self exportURL:ID];if(![self validateExportDirectory:ID create:NO error:error])return nil;
     NSMutableArray<NSURL *> *xmls=[NSMutableArray new],*audios=[NSMutableArray new];NSMutableSet *seen=[NSMutableSet new];
     NSSet *audioTypes=[NSSet setWithArray:@[@"wav",@"aif",@"aiff",@"m4a",@"caf"]];
     for(NSURL *URL in URLs) {
@@ -264,7 +291,7 @@ static NSDictionary *SPProject(NSURL *URL,NSError **error) {
     }
     // The canonical inbox now owns both files. Remove only this receiver's raw
     // export directory, never any caller-selected source or project media.
-    [NSFileManager.defaultManager removeItemAtURL:folder error:nil];return manifest;
+    [self removeCompletedExport:ID];return manifest;
 }
 - (BOOL)handleOpenURLs:(NSArray<NSURL *> *)URLs completion:(void (^)(NSDictionary *,NSError *))completion {
     NSMutableDictionary<NSString *,NSMutableArray<NSURL *> *> *groups=[NSMutableDictionary new];
@@ -278,13 +305,13 @@ static NSDictionary *SPProject(NSURL *URL,NSError **error) {
                 // This is a completion callback, so FCP has finished writing.
                 // Cancel alone never removes a directory an exporter may use.
                 if([@[@"cancelled",@"expired",@"failed",@"ready"] containsObject:asset[@"state"]]) {
-                    [NSFileManager.defaultManager removeItemAtURL:[self exportURL:ID] error:nil];[self.metadata removeObjectForKey:ID];
+                    [self removeCompletedExport:ID];[self.metadata removeObjectForKey:ID];
                 }
                 continue; // duplicate and terminal events cannot publish again
             }
             if(NSDate.date.timeIntervalSince1970-[asset[@"createdAt"] doubleValue]>86400) {
                 asset[@"state"]=@"expired";SPWriteJSON(asset,[self stateURL:ID],nil);
-                [NSFileManager.defaultManager removeItemAtURL:[self exportURL:ID] error:nil];[self.metadata removeObjectForKey:ID];
+                [self removeCompletedExport:ID];[self.metadata removeObjectForKey:ID];
                 dispatch_async(dispatch_get_main_queue(),^{completion(nil,SPError(@"这次共享已过期，请重新共享完整项目"));});continue;
             }
             asset[@"state"]=@"receiving";NSError *error=nil;
@@ -298,7 +325,7 @@ static NSDictionary *SPProject(NSURL *URL,NSError **error) {
                 if(!manifest && [asset[@"state"] isEqual:@"receiving"]){asset[@"state"]=@"failed";SPWriteJSON(asset,[self stateURL:ID],nil);}
                 // Open Document is FCP's completion notification. Failure here
                 // is terminal and only this asset's raw output is discarded.
-                [NSFileManager.defaultManager removeItemAtURL:[self exportURL:ID] error:nil];[self.metadata removeObjectForKey:ID];
+                [self removeCompletedExport:ID];[self.metadata removeObjectForKey:ID];
             }
             dispatch_async(dispatch_get_main_queue(),^{completion(manifest,error ?: (manifest ? nil : SPError(@"共享接收失败，请重新共享完整项目")));});
         });

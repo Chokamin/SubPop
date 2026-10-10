@@ -1,5 +1,7 @@
 #import <Cocoa/Cocoa.h>
 #import "ShareReceiver.h"
+#include <sys/stat.h>
+#include <unistd.h>
 
 @interface SubPopShareReceiver (Testing)
 - (void)createAsset:(NSAppleEventDescriptor *)event reply:(NSAppleEventDescriptor *)reply;
@@ -8,6 +10,11 @@
 static NSUInteger checks=0;
 static void Check(BOOL yes,NSString *message){checks++;if(!yes){fprintf(stderr,"FAIL: %s\n",message.UTF8String);exit(1);}}
 static NSAppleEventDescriptor *Event(OSType ID){return [NSAppleEventDescriptor appleEventWithEventClass:'core' eventID:ID targetDescriptor:NSAppleEventDescriptor.nullDescriptor returnID:-1 transactionID:0];}
+static void CreateFails(SubPopShareReceiver *receiver,NSString *message) {
+    NSAppleEventDescriptor *event=Event('crel'),*reply=Event('ansr');
+    [event setParamDescriptor:[NSAppleEventDescriptor descriptorWithTypeCode:'aset'] forKeyword:'kocl'];
+    [receiver createAsset:event reply:reply];Check([reply paramDescriptorForKeyword:'errn']!=nil,message);
+}
 static NSDictionary *Create(SubPopShareReceiver *receiver,NSString *name){
     NSAppleEventDescriptor *event=Event('crel'),*reply=Event('ansr'),*properties=NSAppleEventDescriptor.recordDescriptor;
     [event setParamDescriptor:[NSAppleEventDescriptor descriptorWithTypeCode:'aset'] forKeyword:'kocl'];
@@ -55,9 +62,17 @@ static NSDictionary *Receive(SubPopShareReceiver *receiver,NSArray *files,BOOL s
 }
 int main(void){@autoreleasepool{
     NSURL *root=[[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES] URLByAppendingPathComponent:[@"SubPopShareTests-" stringByAppendingString:NSUUID.UUID.UUIDString] isDirectory:YES];
-    root=root.URLByResolvingSymlinksInPath;SubPopShareReceiver *receiver=[[SubPopShareReceiver alloc] initWithBridgeURL:root];
+    root=root.URLByResolvingSymlinksInPath;
+    [NSFileManager.defaultManager createDirectoryAtURL:root withIntermediateDirectories:NO attributes:@{NSFilePosixPermissions:@0700} error:nil];
+    NSURL *bridge=[root URLByAppendingPathComponent:@"private-bridge" isDirectory:YES],*exportRoot=[root URLByAppendingPathComponent:@"handoff" isDirectory:YES];
+    SubPopShareReceiver *receiver=[[SubPopShareReceiver alloc] initWithBridgeURL:bridge exportRootURL:exportRoot];
     NSString *XML=@"<?xml version='1.0'?><!DOCTYPE fcpxml><fcpxml version='1.14'><resources><format id='r1' frameDuration='1/25s' width='1920' height='1080'/></resources><library><event name='test'><project uid='TEST-UID' name='完整项目'><sequence format='r1' duration='250/25s'><spine><gap duration='10s'/></spine></sequence></project></event></library></fcpxml>";
     NSDictionary *first=Create(receiver,@"同名项目"),*second=Create(receiver,@"同名项目");Check(![first[@"id"] isEqual:second[@"id"]],@"same-name shares remain distinct");
+    Check(![[first[@"folder"] path] hasPrefix:[bridge.path stringByAppendingString:@"/"]],@"FCP raw export directory is outside private bridge data");
+    struct stat exportStat;Check(lstat(exportRoot.fileSystemRepresentation,&exportStat)==0 && exportStat.st_uid==getuid() && (exportStat.st_mode&07777)==0700,@"handoff root is current-user private");
+    NSURL *firstState=[[[bridge URLByAppendingPathComponent:@"share-exports"] URLByAppendingPathComponent:first[@"id"]] URLByAppendingPathComponent:@"asset.json"];
+    NSDictionary *saved=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfURL:firstState] options:0 error:nil];
+    Check([saved[@"exportRoot"] isEqual:exportRoot.path],@"transaction persistently binds its exact handoff root");
     Check([Property(receiver,first,'ID  ').stringValue isEqual:first[@"id"]],@"asset identity matches returned object specifier");
     Check([Property(receiver,first,'pnam').stringValue isEqual:first[@"name"]],@"asset name matches export base");
     NSAppleEventDescriptor *library=Property(receiver,first,'lbry');Check(![library descriptorForKeyword:'lbha'].booleanValue && ![library descriptorForKeyword:'lbhd'].booleanValue,@"never requests library archives or library XML");
@@ -67,7 +82,7 @@ int main(void){@autoreleasepool{
     NSArray *files=Files(first,XML),*otherFiles=Files(second,[XML stringByReplacingOccurrencesOfString:@"TEST-UID" withString:@"SECOND-UID"]);
     NSDictionary *manifest=Receive(receiver,files,YES);
     Check([manifest[@"projectUID"] isEqual:@"TEST-UID"] && [manifest[@"audioSHA256"] length]==64 && [manifest[@"xmlSHA256"] length]==64,@"bound identity and checksums");
-    NSURL *inbox=[[root URLByAppendingPathComponent:@"share-inbox"] URLByAppendingPathComponent:first[@"id"]];
+    NSURL *inbox=[[bridge URLByAppendingPathComponent:@"share-inbox"] URLByAppendingPathComponent:first[@"id"]];
     Check([NSFileManager.defaultManager fileExistsAtPath:[inbox URLByAppendingPathComponent:@"ready.json"].path],@"manifest published");
     Check(![NSFileManager.defaultManager fileExistsAtPath:[first[@"folder"] path]],@"raw export removed only after publication");
     __block NSUInteger repeats=0;Check([receiver handleOpenURLs:files completion:^(NSDictionary *m,NSError *e){repeats++;}],@"duplicate owned callback is handled");
@@ -90,9 +105,24 @@ int main(void){@autoreleasepool{
     NSDictionary *cancel=Create(receiver,@"取消");NSArray *cancelFiles=Files(cancel,XML);Check([receiver cancelShareID:cancel[@"id"] error:nil],@"cancel succeeds");
     __block BOOL cancelledDelivered=NO;[receiver handleOpenURLs:cancelFiles completion:^(NSDictionary *m,NSError *e){cancelledDelivered=YES;}];[NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];Check(!cancelledDelivered,@"late cancelled event stays inert");
     Check(![NSFileManager.defaultManager fileExistsAtPath:[cancel[@"folder"] path]],@"late completion safely cleans cancelled raw files");
-    NSDictionary *restart=Create(receiver,@"重启");NSArray *restartFiles=Files(restart,XML);receiver=[[SubPopShareReceiver alloc] initWithBridgeURL:root];Check([Receive(receiver,restartFiles,YES)[@"shareID"] isEqual:restart[@"id"]],@"asset state survives process restart");
+    NSDictionary *restart=Create(receiver,@"重启");NSArray *restartFiles=Files(restart,XML);receiver=[[SubPopShareReceiver alloc] initWithBridgeURL:bridge exportRootURL:exportRoot];Check([Receive(receiver,restartFiles,YES)[@"shareID"] isEqual:restart[@"id"]],@"asset state survives process restart with staging outside bridge");
     NSDictionary *symbol=Create(receiver,@"链接");NSArray *symbolFiles=Files(symbol,XML);[NSFileManager.defaultManager removeItemAtURL:symbolFiles[1] error:nil];
     [NSFileManager.defaultManager createSymbolicLinkAtURL:symbolFiles[1] withDestinationURL:restartFiles[0] error:nil];Receive(receiver,symbolFiles,NO);
     Check(![receiver handleOpenURLs:@[[NSURL fileURLWithPath:@"/tmp/unrelated.wav"]] completion:^(NSDictionary *m,NSError *e){}],@"ordinary files are not paired automatically");
+    NSURL *weak=[root URLByAppendingPathComponent:@"weak-permissions"];
+    [NSFileManager.defaultManager createDirectoryAtURL:weak withIntermediateDirectories:NO attributes:@{NSFilePosixPermissions:@0755} error:nil];
+    CreateFails([[SubPopShareReceiver alloc] initWithBridgeURL:bridge exportRootURL:weak],@"existing weak-mode handoff root rejected without chmod");
+    Check(lstat(weak.fileSystemRepresentation,&exportStat)==0 && (exportStat.st_mode&07777)==0755,@"unsafe root is not silently repaired");
+    NSURL *link=[root URLByAppendingPathComponent:@"linked-handoff"];
+    [NSFileManager.defaultManager createSymbolicLinkAtURL:link withDestinationURL:exportRoot error:nil];
+    CreateFails([[SubPopShareReceiver alloc] initWithBridgeURL:bridge exportRootURL:link],@"symlink staging root rejected");
+    CreateFails([[SubPopShareReceiver alloc] initWithBridgeURL:bridge exportRootURL:[NSURL fileURLWithPath:@"/private"]],@"root-owned ancestor rejected before staging creation");
+    NSDictionary *swapped=Create(receiver,@"权限改变");NSArray *swappedFiles=Files(swapped,XML);
+    chmod([swapped[@"folder"] fileSystemRepresentation],0755);Receive(receiver,swappedFiles,NO);
+    Check([NSFileManager.defaultManager fileExistsAtPath:[swappedFiles[1] path]],@"unsafe replaced export directory is neither imported nor recursively removed");
+    chmod([swapped[@"folder"] fileSystemRepresentation],0700);
+    NSURL *otherRoot=[root URLByAppendingPathComponent:@"other-root"];
+    SubPopShareReceiver *differentRoot=[[SubPopShareReceiver alloc] initWithBridgeURL:bridge exportRootURL:otherRoot];
+    Check(![differentRoot handleOpenURLs:swappedFiles completion:^(NSDictionary *m,NSError *e){}],@"restart with another handoff root cannot adopt a previous root's files");
     [NSFileManager.defaultManager removeItemAtURL:root error:nil];printf("Share receiver native protocol/transaction tests: %lu checks passed (simulated FCP events, no host verification).\n",(unsigned long)checks);
 }return 0;}
