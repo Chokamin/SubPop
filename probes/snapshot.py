@@ -47,6 +47,64 @@ def title_has_audio(title, resources):
     return False
 
 
+def strip_story_transitions(story, resources, story_tags, visual_only=False):
+    """Keep source clip clocks while omitting verified short transition effects.
+
+    FCP also writes one-sided transitions at a story's first/last clip. They
+    must stay within that clip and meet its edge; a missing neighbor elsewhere
+    is not a reason to silently discard an unknown edit.
+    """
+    children=list(story)
+    remove=[]
+    for index,node in enumerate(children):
+        if node.tag!='transition':continue
+        left=children[index-1] if index else None
+        right=children[index+1] if index+1<len(children) else None
+        try:
+            begin=seconds(node.get('offset',''))
+            length=seconds(node.get('duration',''))
+            end=begin+length
+            if left is None and right is not None:
+                right_begin=seconds(right.get('offset',''))
+                right_end=right_begin+seconds(right.get('duration',''))
+                aligned=right.tag in story_tags and begin==right_begin and end<=right_end
+            elif right is None and left is not None:
+                left_begin=seconds(left.get('offset',''))
+                left_end=left_begin+seconds(left.get('duration',''))
+                aligned=left.tag in story_tags and begin>=left_begin and end==left_end
+            elif left is not None and right is not None:
+                cut=seconds(left.get('offset',''))+seconds(left.get('duration',''))
+                right_begin=seconds(right.get('offset',''))
+                aligned=(left.tag in story_tags and right.tag in story_tags
+                         and cut==right_begin and begin<=cut<=end)
+            else:aligned=False
+        except (ValueError,TypeError,AttributeError):
+            raise ValueError('转场结构无法安全处理；请导入整条时间线音频') from None
+        filters=node.findall('filter-audio')
+        if (not aligned or not 0<length<=2
+                or set(node.attrib)-{'name','offset','duration','enabled'} or len(filters)>1
+                or any(child.tag not in ('filter-video','filter-audio') for child in node)):
+            raise ValueError('转场结构无法安全处理；请导入整条时间线音频')
+        if filters:
+            audio=filters[0];effect=resources.get(audio.get('ref'))
+            if (visual_only or effect is None or effect.tag!='effect' or effect.get('uid')!='FFAudioTransition'
+                    or set(audio.attrib)-{'name','ref','enabled'} or len(audio)):
+                raise ValueError('转场音频无法安全处理；请导入整条时间线音频')
+        if any('audio' in descendant.tag.lower() for visual in node.findall('filter-video')
+               for descendant in visual.iter() if descendant is not visual):
+            raise ValueError('转场模板含其他音频；请导入整条时间线音频')
+        if visual_only:
+            visuals=node.findall('filter-video')
+            if (len(visuals)!=1 or title_has_audio(node,resources)
+                    or any(resources.get(v.get('ref')) is None
+                           or resources[v.get('ref')].tag!='effect'
+                           or not resources[v.get('ref')].get('uid') for v in visuals)):
+                raise ValueError('标题转场无法安全处理；请导入整条时间线音频')
+        remove.append(node)
+    # Validate against the original neighbors, including adjacent transitions.
+    for node in remove:story.remove(node)
+
+
 def prepare(data, generic=False):
     if len(data)>16*1024*1024 or b'<!ENTITY' in data.upper():raise ValueError('Unsafe snapshot size or entity declaration')
     root=ET.fromstring(data)
@@ -63,32 +121,7 @@ def prepare(data, generic=False):
         # A short FCP transition straddles the cut between otherwise contiguous
         # clips. The audio copy uses their original sources as a hard cut; it
         # never pretends to reproduce FCP's crossfade or the visual template.
-        for index,node in reversed(list(enumerate(spine))):
-            if node.tag!='transition':continue
-            left=spine[index-1] if index else None
-            right=spine[index+1] if index+1<len(spine) else None
-            try:
-                begin=seconds(node.get('offset',''))
-                length=seconds(node.get('duration',''))
-                cut=seconds(left.get('offset',''))+seconds(left.get('duration',''))
-                right_begin=seconds(right.get('offset',''))
-            except (ValueError,TypeError,AttributeError):
-                raise ValueError('转场结构无法安全处理；请导入整条时间线音频') from None
-            filters=node.findall('filter-audio')
-            if (left.tag not in story_tags or right.tag not in story_tags or cut!=right_begin
-                    or not begin<=cut<=begin+length or not 0<length<=2
-                    or set(node.attrib)-{'name','offset','duration','enabled'} or len(filters)>1
-                    or any(child.tag not in ('filter-video','filter-audio') for child in node)):
-                raise ValueError('转场结构无法安全处理；请导入整条时间线音频')
-            if filters:
-                audio=filters[0];effect=resources.get(audio.get('ref'))
-                if (effect is None or effect.tag!='effect' or effect.get('uid')!='FFAudioTransition'
-                        or set(audio.attrib)-{'name','ref','enabled'} or len(audio)):
-                    raise ValueError('转场音频无法安全处理；请导入整条时间线音频')
-            if any('audio' in descendant.tag.lower() for visual in node.findall('filter-video')
-                   for descendant in visual.iter() if descendant is not visual):
-                raise ValueError('转场模板含其他音频；请导入整条时间线音频')
-            spine.remove(node)
+        strip_story_transitions(spine,resources,story_tags)
     unsupported={c.tag for c in spine if c.tag not in root_tags}
     if unsupported:
         if not generic:raise ValueError('Consecutive clips/gaps required')
@@ -232,12 +265,23 @@ def prepare(data, generic=False):
                              'start_frame':start_frame.__floor__(),'end_frame':end_frame.__ceil__(),
                              'enabled':title.get('enabled','1')!='0','exactTiming':exact_timing})
         stripped[id(title)]=(parent,title)
+    title_stories=set()
     for parent,title in stripped.values():
         if parent.tag=='spine':
             index=list(parent).index(title)
             gap=ET.Element('gap',offset=title.get('offset','0s'),start='0s',duration=title.get('duration','0s'))
             parent.remove(title);parent.insert(index,gap)
+            title_stories.add(parent)
         else:parent.remove(title)
+    if generic:
+        # A silent title's connected story may have visual intro/outro
+        # transitions. Once the title is a gap these effects have no sound to
+        # process. Keep the gaps and story bounds, and never prune a story
+        # containing an audio source or a gap with connected content.
+        for story in title_stories:
+            if story is not spine and all(child.tag=='transition' or child.tag=='gap' and not len(child)
+                                          for child in story):
+                strip_story_transitions(story,resources,('gap',),visual_only=True)
     return ET.tostring(root,encoding='utf-8'),existing
 
 
