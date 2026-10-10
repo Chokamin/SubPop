@@ -24,7 +24,7 @@ static NSString *SubPopTap5aUID(NSURL *url) {
     if (index==NSNotFound || parts.count<index+4 || ![url.lastPathComponent isEqual:@"Tap5a Autosize Text Background.moti"]) return nil;
     return [@"~/" stringByAppendingString:[[parts subarrayWithRange:NSMakeRange(index,parts.count-index)] componentsJoinedByString:@"/"]];
 }
-static BOOL SubPopValidTap5a(NSURL *url) {
+static inline BOOL SubPopValidTap5a(NSURL *url) {
     if (!SubPopTap5aUID(url)) return NO;
     NSData *data=[NSData dataWithContentsOfURL:url];
     if (!data || data.length>2*1024*1024) return NO;

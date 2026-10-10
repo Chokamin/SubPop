@@ -4,6 +4,7 @@
 @interface SubPopNativeStyleTestController : SubPopProbeViewController
 @end
 @implementation SubPopNativeStyleTestController
+- (NSString *)titleTemplateDisplayNameForNaming {return self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative ? @"Subtitle" : @"基本字幕";}
 - (void)restoreSession {}
 - (void)saveDraft {}
 - (BOOL)workerAvailable {return YES;}
@@ -170,6 +171,10 @@ int main(int argc,const char *argv[]) {
         if (![c.nativeStyle isEqual:style] || [c.titlePayloads isEqual:before]) NSLog(@"Native apply: style=%@ expected=%@ unchanged=%d",c.nativeStyle,style,[c.titlePayloads isEqual:before]);
         check([c.nativeStyle isEqual:style] && ![c.titlePayloads isEqual:before],@"apply loads saved native style onto current captions");
         NSXMLDocument *applied=[[NSXMLDocument alloc] initWithData:c.titlePayloads[@"1.14"] options:0 error:nil];
+        for (NSXMLElement *item in [applied nodesForXPath:@"//title" error:nil]) {
+            NSString *body=[item nodesForXPath:@"text/text-style" error:nil].firstObject.stringValue;
+            check([[item attributeForName:@"name"].stringValue isEqual:[body stringByAppendingString:@" - Subtitle"]],@"applying a native preset preserves automatic title names");
+        }
         check([[applied nodesForXPath:@"//title/param[@name='Background Height']/@value" error:nil].firstObject.stringValue isEqual:@"0.46"],@"applied payload contains native published height");
         check([[applied nodesForXPath:@"//title/param[@name='Position']/@value" error:nil].firstObject.stringValue isEqual:@"37 -125.457 12"],@"saved preset restores the text inspector position into every generated title");
         check([[applied nodesForXPath:@"//text-style-def/text-style/@kerning" error:nil].firstObject.stringValue isEqual:@"8.64"],@"12 percent at size 72 exports the original 8.64 points");

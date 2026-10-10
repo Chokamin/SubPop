@@ -5,6 +5,10 @@
     if (self.exportInProgress || !self.titlePayloads || !self.captionRows.count) return;
     // Commit the active caption edit before taking a snapshot for either format.
     [self.view.window makeFirstResponder:nil];
+    if (!srt && ![self rebuildTitles]) {
+        self.exportStatus.stringValue=@"字幕数据不完整，请重新生成后重试。";
+        [self updateInterface];return;
+    }
     NSError *error=nil;
     NSInteger previous=[NSUserDefaults.standardUserDefaults integerForKey:@"subtitleExportSequence"];
     NSUInteger sequence=(NSUInteger)MAX(0,previous)+1;

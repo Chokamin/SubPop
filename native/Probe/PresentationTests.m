@@ -1,6 +1,15 @@
 // AppKit regression harness. No FCP host, no windows, no timeline writes.
 #import "ProbeViewController.m"
-@interface SubPopDragObserverTests : SubPopProbeViewController
+@interface SubPopPresentationTestController : SubPopProbeViewController
+@property BOOL testNamingUnavailable;
+@end
+@implementation SubPopPresentationTestController
+- (NSString *)titleTemplateDisplayNameForNaming {
+    if (self.testNamingUnavailable || self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateTap5a) return nil;
+    return self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative ? @"Subtitle" : @"基本字幕";
+}
+@end
+@interface SubPopDragObserverTests : SubPopPresentationTestController
 @property NSUInteger snapshotCount;
 @property NSURL *testEvidenceURL;
 @end
@@ -10,13 +19,155 @@
 - (void)updateInterface {}
 - (NSURL *)evidenceDirectory { return self.testEvidenceURL ?: [super evidenceDirectory]; }
 @end
+static void namingCheck(BOOL condition,NSString *message) {
+    if (!condition) { fprintf(stderr,"Title naming check failed: %s\n",message.UTF8String);exit(1); }
+}
+static NSDictionary *titleNamingSemantics(NSDictionary *payloads) {
+    NSMutableDictionary *versions=[NSMutableDictionary new];
+    for (NSString *version in @[@"1.12",@"1.13",@"1.14"]) {
+        NSXMLDocument *doc=[[NSXMLDocument alloc] initWithData:payloads[version] options:NSXMLNodeLoadExternalEntitiesNever error:nil];
+        namingCheck(doc!=nil,@"rebuilt title XML parses for semantic comparison");
+        NSMutableArray *rows=[NSMutableArray new];
+        for (NSXMLElement *title in [doc nodesForXPath:@"/fcpxml/clip/spine/title" error:nil]) {
+            NSMutableDictionary *row=[NSMutableDictionary new];
+            for (NSString *key in @[@"name",@"offset",@"start",@"duration",@"lane",@"ref"]) row[key]=[title attributeForName:key].stringValue ?: NSNull.null;
+            row[@"body"]=[title nodesForXPath:@"text/text-style" error:nil].firstObject.stringValue ?: NSNull.null;
+            [rows addObject:row];
+        }
+        versions[version]=rows;
+    }
+    return versions;
+}
+static void checkNamedOutputs(SubPopProbeViewController *controller,NSString *expectedName,NSString *expectedText,NSDictionary *baseline) {
+    SubPopTitleDragProvider *drag=[[SubPopTitleDragProvider alloc] initWithPayloads:controller.titlePayloads];
+    NSPasteboardItem *item=[drag preparedItem];
+    namingCheck(item!=nil,@"current result supplies a drag snapshot");
+    for (NSString *version in @[@"1.12",@"1.13",@"1.14"]) {
+        NSData *data=controller.titlePayloads[version];
+        NSXMLDocument *doc=[[NSXMLDocument alloc] initWithData:data options:NSXMLNodeLoadExternalEntitiesNever error:nil];
+        NSArray *titles=[doc nodesForXPath:@"/fcpxml/clip/spine/title" error:nil];
+        namingCheck(titles.count==controller.captionRows.count,@"naming preserves title count");
+        NSXMLNode *name=[titles.firstObject attributeForName:@"name"];
+        BOOL expectedNameMatches=expectedName ? [name.stringValue isEqual:expectedName] : name==nil;
+        if (!expectedNameMatches) fprintf(stderr,"Naming mismatch: version=%s template=%ld expected=%s actual=%s expectedBody=%s actualBody=%s\n",version.UTF8String,(long)controller.templatePicker.indexOfSelectedItem,(expectedName ?: @"<omitted>").UTF8String,(name.stringValue ?: @"<omitted>").UTF8String,expectedText.UTF8String,[[titles.firstObject nodesForXPath:@"text/text-style" error:nil] firstObject].stringValue.UTF8String);
+        namingCheck(expectedNameMatches,@"clip name follows the template convention, or is omitted when naming information is unavailable");
+        namingCheck([[[titles.firstObject nodesForXPath:@"text/text-style" error:nil] firstObject].stringValue isEqual:expectedText],@"naming leaves the complete caption text untouched");
+        NSXMLDocument *old=[[NSXMLDocument alloc] initWithData:baseline[version] options:NSXMLNodeLoadExternalEntitiesNever error:nil];
+        NSArray *oldTitles=[old nodesForXPath:@"/fcpxml/clip/spine/title" error:nil];
+        for (NSUInteger i=0;i<titles.count;i++) {
+            if (!expectedName) namingCheck([titles[i] attributeForName:@"name"]==nil,@"unknown naming removes every name attribute instead of writing empty custom names");
+            for (NSString *key in @[@"offset",@"duration",@"ref",@"lane"]) {
+                NSString *a=[titles[i] attributeForName:key].stringValue ?: @"",*b=[oldTitles[i] attributeForName:key].stringValue ?: @"";
+                namingCheck([a isEqual:b],@"naming and template switches preserve placement and duration");
+            }
+            namingCheck([[[titles[i] nodesForXPath:@"text/text-style" error:nil] firstObject].stringValue isEqual:controller.captionRows[i][@"text"]],@"every caption body remains intact");
+        }
+        NSError *error=nil;
+        NSData *export=SubPopTitleExportXML(data,@"名称联动测试",1,&error);
+        NSXMLDocument *exported=[[NSXMLDocument alloc] initWithData:export options:NSXMLNodeLoadExternalEntitiesNever error:nil];
+        NSXMLElement *exportTitle=[exported nodesForXPath:@"/fcpxml/event/clip/spine/title" error:nil].firstObject;
+        NSXMLNode *exportName=[exportTitle attributeForName:@"name"];
+        namingCheck(export!=nil && error==nil && (expectedName ? [exportName.stringValue isEqual:expectedName] : exportName==nil),@"file export preserves the automatic clip name or its deliberate absence");
+        namingCheck([[exportTitle nodesForXPath:@"text/text-style" error:nil].firstObject.stringValue isEqual:expectedText],@"file export preserves the complete body");
+        NSString *type=[@"com.apple.finalcutpro.xml.v" stringByAppendingString:[version stringByReplacingOccurrencesOfString:@"." withString:@"-"]];
+        namingCheck([[item dataForType:type] isEqual:data],@"drag snapshot contains the same named XML for each version");
+    }
+    namingCheck([[item dataForType:@"com.apple.finalcutpro.xml"] isEqual:controller.titlePayloads[@"1.14"]],@"unversioned drag uses the named current payload");
+}
+static void testAutomaticTitleNames(NSDictionary *manifest,NSDictionary *payloads) {
+    SubPopPresentationTestController *c=[SubPopPresentationTestController new];
+    c.resultManifest=manifest;c.captionRows=[NSMutableArray new];
+    for (NSDictionary *row in manifest[@"captions"]) [c.captionRows addObject:row.mutableCopy];
+    c.fontPicker=[[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];[c.fontPicker addItemWithTitle:@"PingFang SC"];
+    c.sizePicker=[[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];[c.sizePicker addItemWithTitle:@"48"];
+    c.templatePicker=[[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];[c.templatePicker addItemsWithTitles:@[@"Basic",@"Native",@"Tap5a"]];
+    c.tap5aURL=[NSURL fileURLWithPath:@"/tmp/Titles.localized/Tap5a/Test/Tap5a Autosize Text Background.moti"];
+    // Migration must work whether an older/draft payload has no name, an empty
+    // name, or a stale user-visible name. These are three independent inputs.
+    NSMutableDictionary *oldPayloads=[NSMutableDictionary new];
+    for (NSString *version in @[@"1.12",@"1.13",@"1.14"]) {
+        NSXMLDocument *doc=[[NSXMLDocument alloc] initWithData:payloads[version] options:NSXMLNodeLoadExternalEntitiesNever error:nil];
+        NSXMLElement *title=[doc nodesForXPath:@"/fcpxml/clip/spine/title" error:nil].firstObject;
+        [title removeAttributeForName:@"name"];
+        if (![version isEqual:@"1.12"]) [title addAttribute:[NSXMLNode attributeWithName:@"name" stringValue:[version isEqual:@"1.13"] ? @"" : @"旧字幕名称"]];
+        oldPayloads[version]=[doc XMLDataWithOptions:0];
+    }
+    c.titlePayloads=oldPayloads;
+    // Expected names are literal observations from the FCP matrix, not values
+    // returned by the production naming helper. Tap5a retains its old behavior:
+    // XML normalizes literal newlines in its full-text name attribute to spaces,
+    // while the caption body's newline must remain untouched.
+    NSArray *cases=@[
+        @[@"校对 & <保留> 😀",@"校对 & <保留> 😀 - 基本字幕",@"校对 & <保留> 😀 - Subtitle",@"校对 & <保留> 😀"],
+        @[@"第一行\n第二行",@"第一行 - 基本字幕",@"第一行 - Subtitle",@"第一行 第二行"],
+        @[@"  保留空格  \n第二行",@"  保留空格   - 基本字幕",@"  保留空格   - Subtitle",@"  保留空格   第二行"],
+        @[@"\n第二行",@"基本字幕",@"Subtitle",@" 第二行"]
+    ];
+    for (NSArray *sample in cases) {
+        c.captionRows[0][@"text"]=sample[0];
+        NSData *srt=SubPopSRTExportData(c.captionRows,manifest[@"frameDuration"],nil);
+        for (NSNumber *template in @[@(SubPopTitleTemplateBasic),@(SubPopTitleTemplateNative),@(SubPopTitleTemplateBasic),@(SubPopTitleTemplateTap5a)]) {
+            [c.templatePicker selectItemAtIndex:template.integerValue];
+            namingCheck([c rebuildTitles],@"rename succeeds while changing templates");
+            NSString *expected=sample[template.integerValue==SubPopTitleTemplateTap5a ? 3 : (template.integerValue==SubPopTitleTemplateNative ? 2 : 1)];
+            checkNamedOutputs(c,expected,sample[0],payloads);
+            // Reapplying style parameters can change serialization whitespace.
+            // Compare caption semantics, while drag snapshots below still need
+            // byte-for-byte immutability after their creation.
+            NSDictionary *once=titleNamingSemantics(c.titlePayloads);
+            namingCheck([c rebuildTitles],@"repeat rebuild succeeds");
+            checkNamedOutputs(c,expected,sample[0],payloads);
+            namingCheck([once isEqual:titleNamingSemantics(c.titlePayloads)],@"rebuilding never duplicates a suffix or changes title body/timing");
+            namingCheck([srt isEqual:SubPopSRTExportData(c.captionRows,manifest[@"frameDuration"],nil)],@"clip naming cannot change SRT content or timestamps");
+        }
+    }
+    [c.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];c.captionRows[0][@"text"]=@"快照原文";
+    namingCheck([c rebuildTitles],@"prepare independent drag snapshot");
+    SubPopTitleDragProvider *snapshot=[[SubPopTitleDragProvider alloc] initWithPayloads:c.titlePayloads];
+    NSTableColumn *column=[[NSTableColumn alloc] initWithIdentifier:@"text"];
+    [c tableView:[NSTableView new] setObjectValue:@"快照修改后" forTableColumn:column row:0];
+    checkNamedOutputs(c,@"快照修改后 - 基本字幕",@"快照修改后",payloads);
+    for (NSString *version in @[@"1.12",@"1.13",@"1.14"]) {
+        NSXMLDocument *doc=[[NSXMLDocument alloc] initWithData:snapshot.payloads[version] options:NSXMLNodeLoadExternalEntitiesNever error:nil];
+        NSXMLElement *title=[doc nodesForXPath:@"/fcpxml/clip/spine/title" error:nil].firstObject;
+        namingCheck([[title attributeForName:@"name"].stringValue isEqual:@"快照原文 - 基本字幕"] && [[title nodesForXPath:@"text/text-style" error:nil].firstObject.stringValue isEqual:@"快照原文"],@"later proofreading leaves a pending drag's matching name and body intact");
+    }
+    // Model the naming information becoming available after an earlier result,
+    // then becoming stale again. A new snapshot rebuilds its names; an already
+    // prepared pasteboard retains the bytes and naming state it was given.
+    c.captionRows[0][@"text"]=@"宿主信息恢复";
+    for (NSNumber *template in @[@(SubPopTitleTemplateBasic),@(SubPopTitleTemplateNative)]) {
+        [c.templatePicker selectItemAtIndex:template.integerValue];c.testNamingUnavailable=YES;
+        namingCheck([c rebuildTitles],@"unknown host naming still produces usable title XML");
+        checkNamedOutputs(c,nil,@"宿主信息恢复",payloads);
+        SubPopTitleDragProvider *unknown=[[SubPopTitleDragProvider alloc] initWithPayloads:c.titlePayloads];
+        NSPasteboardItem *unknownItem=[unknown preparedItem];NSDictionary *unknownPayloads=c.titlePayloads;
+        c.testNamingUnavailable=NO;
+        namingCheck([c rebuildTitles],@"newly available naming information updates existing results");
+        NSString *expected=template.integerValue==SubPopTitleTemplateNative ? @"宿主信息恢复 - Subtitle" : @"宿主信息恢复 - 基本字幕";
+        checkNamedOutputs(c,expected,@"宿主信息恢复",payloads);
+        namingCheck([unknown.payloads isEqual:unknownPayloads],@"restoring naming information cannot mutate a previous unnamed drag snapshot");
+        SubPopTitleDragProvider *known=[[SubPopTitleDragProvider alloc] initWithPayloads:c.titlePayloads];
+        NSPasteboardItem *knownItem=[known preparedItem];NSDictionary *knownPayloads=c.titlePayloads;
+        c.testNamingUnavailable=YES;
+        namingCheck([c rebuildTitles],@"stale naming information clears previously generated suffixes");
+        checkNamedOutputs(c,nil,@"宿主信息恢复",payloads);
+        namingCheck([known.payloads isEqual:knownPayloads],@"invalidating naming information cannot mutate a previous named drag snapshot");
+        for (NSString *version in @[@"1.12",@"1.13",@"1.14"]) {
+            NSString *type=[@"com.apple.finalcutpro.xml.v" stringByAppendingString:[version stringByReplacingOccurrencesOfString:@"." withString:@"-"]];
+            namingCheck([[unknownItem dataForType:type] isEqual:unknownPayloads[version]] && [[knownItem dataForType:type] isEqual:knownPayloads[version]],@"prepared drag bytes survive both naming restoration and invalidation");
+        }
+    }
+    c.testNamingUnavailable=NO;
+    puts("Title naming: Basic/Native automatic names, Tap5a unchanged, old-name migration, multiline bodies, repeated rebuilds, file/drag snapshots and unchanged SRT passed.");
+}
 int main(int argc,const char *argv[]) {
     @autoreleasepool {
         if (argc!=2) return 2;
         [NSApplication sharedApplication];
         NSString *directory=@(argv[1]);
         NSDictionary *manifest=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:[directory stringByAppendingPathComponent:@"captions.json"]] options:0 error:nil];
-        SubPopProbeViewController *controller=[SubPopProbeViewController new];
+        SubPopProbeViewController *controller=[SubPopPresentationTestController new];
         // UI identity guards use one observer-delivered snapshot, without live SDK calls.
         controller.observed=YES;controller.observedProjectUID=@"project-a";controller.dropUID=@"project-a";
         controller.observedProjectDuration=CMTimeMake(111104,12800);controller.dropDuration=CMTimeMake(217,25);
@@ -210,6 +361,7 @@ int main(int argc,const char *argv[]) {
         [controller.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];[controller rebuildTitles];
         if (![plain isEqual:controller.titlePayloads]) return 90;
         printf("Three templates: Basic default, Native/Tap5a conversion, plain round-trip and draft identities passed.\n");
+        testAutomaticTitleNames(manifest,payloads);
         // Delayed pasteboard requests must survive result cleanup and later edits.
         NSMutableData *mutable=[controller.titlePayloads[@"1.14"] mutableCopy];
         NSMutableDictionary *source=[controller.titlePayloads mutableCopy];source[@"1.14"]=mutable;

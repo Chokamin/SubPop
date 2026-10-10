@@ -5,6 +5,7 @@
 #import "ApplicationMenu.h"
 #import "ShareReceiver.h"
 #import "ShareDestination.h"
+#import "TitleNamingBridge.h"
 // Background model runner and independent fullscreen preview host.
 @interface SubPopFullscreenWindow : NSWindow
 @end
@@ -19,6 +20,7 @@
 @property NSWindow *previewWindow;
 @property BOOL showingCloudSettings;
 @property SubPopShareReceiver *shareReceiver;
+@property NSTimer *titleNamingTimer;
 @end
 @implementation SubPopAppDelegate
 - (void)applicationWillFinishLaunching:(NSNotification *)notification {
@@ -54,6 +56,11 @@
 }
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     [NSFileManager.defaultManager removeItemAtPath:[SubPopBridgePath(NSBundle.mainBundle) stringByAppendingPathComponent:@"update-installing.json"] error:nil];
+    SubPopPublishTitleNamingSnapshot();
+    self.titleNamingTimer=[NSTimer timerWithTimeInterval:5 repeats:YES block:^(NSTimer *timer) {
+        SubPopPublishTitleNamingSnapshot();
+    }];
+    [NSRunLoop.mainRunLoop addTimer:self.titleNamingTimer forMode:NSRunLoopCommonModes];
     SubPopWriteCloudStatus();[self startEngine];
 }
 - (void)application:(NSApplication *)application openURLs:(NSArray<NSURL *> *)urls {
@@ -177,6 +184,7 @@
     return NSTerminateNow;
 }
 - (void)applicationWillTerminate:(NSNotification *)notification {
+    [self.titleNamingTimer invalidate];
     if (self.worker.running) {[self.worker terminate];[self.worker waitUntilExit];}
     [self.workspace stopAccessingSecurityScopedResource];
 }

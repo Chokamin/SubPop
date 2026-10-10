@@ -11,6 +11,7 @@
 #import "FeedbackPanel.h"
 #import "TitleDragProvider.h"
 #import "TitleTemplates.h"
+#import "TitleNamingBridge.h"
 #import "Tap5aInstaller.h"
 #import "Tap5aStyle.h"
 #import "NativeSubtitleStyle.h"
@@ -530,8 +531,12 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     if (sender==self.fontPicker) style[@"textFace"]=@"Regular";
     if (basic) self.basicStyle=SubPopNormalizeBasicStyle(style);else self.tap5aStyle=SubPopNormalizeTap5aStyle(style);[self rebuildTitles];
 }
+- (NSString *)titleTemplateDisplayNameForNaming {
+    return SubPopReadTitleTemplateDisplayName(self.templatePicker.indexOfSelectedItem,self.host.bundleIdentifier);
+}
 - (BOOL)rebuildTitles {
     if (!self.titlePayloads) return NO;
+    NSString *templateName=[self titleTemplateDisplayNameForNaming];
     NSMutableDictionary *updated=[NSMutableDictionary new];
     for (NSString *version in self.titlePayloads) {
         NSXMLDocument *doc=[[NSXMLDocument alloc] initWithData:self.titlePayloads[version] options:NSXMLNodeLoadExternalEntitiesNever error:nil];
@@ -544,7 +549,10 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
         if (titles.count!=self.captionRows.count) return NO;
         for (NSUInteger i=0;i<titles.count;i++) {
             NSXMLElement *title=titles[i];NSString *text=self.captionRows[i][@"text"];
-            [title attributeForName:@"name"].stringValue=text;
+            // Keep FCP's automatic naming convention so inspector edits update
+            // both the visible clip name and Timeline Index. Tap5a is unchanged.
+            SubPopSetTitleClipName(title,self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateTap5a
+                ? text : SubPopAutomaticTitleClipName(text,templateName));
             NSXMLNode *node=[title nodesForXPath:@"text/text-style" error:nil].firstObject;node.stringValue=text;
             NSXMLElement *style=[title nodesForXPath:@"text-style-def/text-style" error:nil].firstObject;
             if (!node || !style) return NO;
@@ -1011,6 +1019,9 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     if (self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative && !SubPopNativeSubtitleAvailable()) {
         NSAlert *alert=[NSAlert new];alert.messageText=@"未找到 FCP 原生字幕模板";alert.informativeText=@"请更新 Final Cut Pro，或选择普通字幕、Tap5a 字幕样式。";[alert runModal];return;
     }
+    // The container's host-language snapshot may have arrived since restore.
+    // Rebuild before freezing the drag payload so its names are current too.
+    if (![self rebuildTitles]) { [self record:@{@"reason":@"title-drag-refused",@"status":@"字幕数据不完整，请重新生成后重试。"}];return; }
     SubPopTitleDragProvider *provider=[[SubPopTitleDragProvider alloc] initWithPayloads:self.titlePayloads];
     __weak SubPopProbeViewController *weakSelf=self;
     NSUInteger generation=self.dropGeneration;

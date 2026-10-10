@@ -14,6 +14,10 @@
 - (NSDictionary *)referenceSettings { return self.testReferenceSettings ?: @{}; }
 - (BOOL)workerAvailable { return YES; }
 - (BOOL)isolatedProjectActive { return YES; }
+- (NSString *)titleTemplateDisplayNameForNaming {
+    if (self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateTap5a) return nil;
+    return self.templatePicker.indexOfSelectedItem==SubPopTitleTemplateNative ? @"Subtitle" : @"基本字幕";
+}
 @end
 
 static void check(BOOL condition,NSString *message) {
@@ -65,6 +69,10 @@ static NSDictionary *splitFirstCaptionPayloads(NSDictionary *payloads,NSDictiona
 }
 static void checkOutputs(SubPopChineseScriptTestController *controller,NSDictionary *timings,NSArray *baseline) {
     check([controller referenceRows:controller.captionRows matchTimingOf:baseline],@"display preserves all non-text caption data");
+    // This corpus is single-line text. Keep the expected template labels
+    // independent of the implementation that resolves/names FCP templates.
+    NSInteger template=controller.templatePicker.indexOfSelectedItem;
+    NSString *templateName=template==SubPopTitleTemplateNative ? @"Subtitle" : @"基本字幕";
     for (NSString *version in @[@"1.12",@"1.13",@"1.14"]) {
         NSData *data=controller.titlePayloads[version];
         check([titleTiming(data) isEqual:timings[version]],@"conversion preserves every title timing in all XML versions");
@@ -73,7 +81,8 @@ static void checkOutputs(SubPopChineseScriptTestController *controller,NSDiction
         check(titles.count==controller.captionRows.count,@"conversion preserves subtitle count");
         for (NSUInteger i=0;i<titles.count;i++) {
             NSXMLElement *title=titles[i];NSString *expected=controller.captionRows[i][@"text"];
-            check([[title attributeForName:@"name"].stringValue isEqual:expected],@"XML title name uses current converted text");
+            NSString *expectedName=template==SubPopTitleTemplateTap5a ? expected : [NSString stringWithFormat:@"%@ - %@",expected,templateName];
+            check([[title attributeForName:@"name"].stringValue isEqual:expectedName],@"XML title name uses current converted text with the automatic template suffix, except unchanged Tap5a");
             check([[title nodesForXPath:@"text/text-style" error:nil].firstObject.stringValue isEqual:expected],@"XML text matches display, including escaped characters");
         }
         NSError *error=nil;
@@ -81,6 +90,7 @@ static void checkOutputs(SubPopChineseScriptTestController *controller,NSDiction
         check(export!=nil && error==nil,@"converted payload remains exportable");
         NSXMLDocument *exported=[[NSXMLDocument alloc] initWithData:export options:NSXMLNodeLoadExternalEntitiesNever error:nil];
         check([[exported nodesForXPath:@"//title[1]/text/text-style" error:nil].firstObject.stringValue isEqual:controller.captionRows[0][@"text"]],@"FCPXML file export matches preview/display text");
+        check([[exported nodesForXPath:@"//title[1]/@name" error:nil].firstObject.stringValue isEqual:[titles.firstObject attributeForName:@"name"].stringValue],@"FCPXML file export preserves the converted automatic name");
     }
     NSError *error=nil;
     NSData *srt=SubPopSRTExportData(controller.captionRows,controller.resultManifest[@"frameDuration"],&error);
@@ -239,8 +249,35 @@ int main(int argc,const char *argv[]) {
         check([c restoreChineseTextDraft:draft],@"new draft restores onto verified timing");
         check(c.chineseTextMode==SubPopChineseTextTraditional && [c.captionSourceRows isEqual:corrected] && [c.captionRows[0][@"text"] containsString:@"漢語字幕"],@"restored mode is reapplied to corrected canonical text");
         [c rebuildTitles];checkOutputs(c,timings,baseline);
+        for (NSNumber *template in @[@(SubPopTitleTemplateBasic),@(SubPopTitleTemplateNative)]) {
+            [c.templatePicker selectItemAtIndex:template.integerValue];
+            check([c rebuildTitles],@"prepare converted draft for each automatic-name template");
+            for (NSString *version in c.titlePayloads) timings[version]=titleTiming(c.titlePayloads[version]);
+            [c saveDraft];
+            NSDictionary *namedDraft=[c readJSON:[c.testEvidenceURL URLByAppendingPathComponent:[@"draft-" stringByAppendingString:c.resultRequestID]]];
+            NSString *expectedID=template.integerValue==SubPopTitleTemplateNative ? @"native" : @"basic";
+            check([namedDraft[@"templateID"] isEqual:expectedID],@"draft retains the template that defines automatic naming");
+            NSMutableDictionary *stalePayloads=[NSMutableDictionary new];
+            for (NSString *version in @[@"1.12",@"1.13",@"1.14"]) {
+                NSXMLDocument *xml=[[NSXMLDocument alloc] initWithData:c.titlePayloads[version] options:NSXMLNodeLoadExternalEntitiesNever error:nil];
+                NSXMLElement *first=[xml nodesForXPath:@"/fcpxml/clip/spine/title" error:nil].firstObject;
+                [first removeAttributeForName:@"name"];
+                if (![version isEqual:@"1.12"]) [first addAttribute:[NSXMLNode attributeWithName:@"name" stringValue:[version isEqual:@"1.13"] ? @"" : @"草稿里的旧名称"]];
+                stalePayloads[version]=[xml XMLDataWithOptions:0];
+            }
+            c.titlePayloads=stalePayloads;[c resetChineseText];c.captionRows=copyRows(baseline);
+            // The result loader selects the saved template before restoring
+            // caption text; exercise the same order without a host/worker.
+            [c.templatePicker selectItemAtIndex:SubPopTitleTemplateFromDraft(namedDraft)];
+            check([c restoreChineseTextDraft:namedDraft],@"converted draft restores while rebuilding stale/empty/missing clip names");
+            checkOutputs(c,timings,baseline);
+        }
+        [c.templatePicker selectItemAtIndex:SubPopTitleTemplateBasic];
+        check([c rebuildTitles],@"return to basic before legacy draft migration");
+        for (NSString *version in c.titlePayloads) timings[version]=titleTiming(c.titlePayloads[version]);
         NSDictionary *legacy=@{@"captions":corrected};
         check([c restoreChineseTextDraft:legacy] && c.chineseTextMode==SubPopChineseTextKeep && [c.captionSourceRows isEqual:corrected] && [c.captionRows isEqual:corrected],@"legacy draft keeps previous proofreading and defaults to unchanged script");
+        checkOutputs(c,timings,baseline);
         checkDraftRejected(c,@{@"captions":corrected,@"sourceCaptions":corrected,@"chineseTextMode":@"unknown"},@"unknown saved mode rejected");
         checkDraftRejected(c,@{@"captions":corrected,@"sourceCaptions":corrected,@"chineseTextMode":@1},@"non-string saved mode rejected");
         NSMutableArray *wrongTiming=copyRows(corrected);wrongTiming[0][@"start_frame"]=@([wrongTiming[0][@"start_frame"] longLongValue]+1);
