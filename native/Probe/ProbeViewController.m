@@ -697,7 +697,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     NSUInteger effects=[self.resultManifest[@"bypassedAudioEffects"] unsignedIntegerValue];
     if (hasRows && effects) [notices addObject:[NSString stringWithFormat:@"%lu 处音频效果未参与识别，字幕依据处理前原声生成；请核对文字。",(unsigned long)effects]];
     NSUInteger transitions=[self.resultManifest[@"bypassedAudioTransitions"] count];
-    if (hasRows && transitions) [notices addObject:[NSString stringWithFormat:@"%lu 处转场音频按原片段硬切处理；请核对转场附近的字幕。",(unsigned long)transitions]];
+    if (hasRows && transitions) [notices addObject:@"检测到音频转场设置；直接识别不还原转场淡化，请核对字幕。"];
     if (hasRows && [self.resultManifest[@"audioSource"] isEqual:@"exported-full-timeline"])
         [notices addObject:@"字幕按整条时间线的导出音频生成；请核对音频起点及字幕时间。"];
     if (hasRows && [self.resultManifest[@"existingTitleReview"] isEqual:@"unavailable"])

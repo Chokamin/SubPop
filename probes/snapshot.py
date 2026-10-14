@@ -12,12 +12,9 @@ SILENT_TITLE_EFFECTS={EFFECT,NATIVE_SUBTITLE_EFFECT}
 
 def bypassed_audio_transitions(data):
     """Report audio crossfades omitted from a validated direct-audio copy."""
-    root=ET.fromstring(data)
-    project=root.find('.//project');seq=project.find('sequence')
-    tc=seconds(seq.get('tcStart','0s'))
-    return [{'offset':str(seconds(node.get('offset'))-tc),
-             'duration':str(seconds(node.get('duration')))}
-            for node in seq.find('spine') if node.tag=='transition' and node.find('filter-audio') is not None]
+    result=[]
+    prepare(data,generic=True,bypassed_transitions=result)
+    return result
 
 
 def title_has_audio(title, resources):
@@ -103,9 +100,10 @@ def strip_story_transitions(story, resources, story_tags, visual_only=False):
         remove.append(node)
     # Validate against the original neighbors, including adjacent transitions.
     for node in remove:story.remove(node)
+    return remove
 
 
-def prepare(data, generic=False):
+def prepare(data, generic=False, *, bypassed_transitions=None):
     if len(data)>16*1024*1024 or b'<!ENTITY' in data.upper():raise ValueError('Unsafe snapshot size or entity declaration')
     root=ET.fromstring(data)
     projects=root.findall('.//project')
@@ -117,11 +115,16 @@ def prepare(data, generic=False):
         raise ValueError('暂不支持此时间线结构' if generic else 'Consecutive clips/gaps required')
     resource_root=root.find('resources')
     resources={e.get('id'):e for e in resource_root if e.get('id')} if resource_root is not None else {}
+    transitions=[]
     if generic:
         # A short FCP transition straddles the cut between otherwise contiguous
         # clips. The audio copy uses their original sources as a hard cut; it
         # never pretends to reproduce FCP's crossfade or the visual template.
-        strip_story_transitions(spine,resources,story_tags)
+        removed=strip_story_transitions(spine,resources,story_tags)
+        tc=seconds(seq.get('tcStart','0s'))
+        transitions.extend({'offset':str(seconds(node.get('offset'))-tc),
+                            'duration':str(seconds(node.get('duration')))}
+                           for node in removed if node.find('filter-audio') is not None)
     unsupported={c.tag for c in spine if c.tag not in root_tags}
     if unsupported:
         if not generic:raise ValueError('Consecutive clips/gaps required')
@@ -133,6 +136,13 @@ def prepare(data, generic=False):
     fmt=root.find(f"resources/format[@id='{seq.get('format')}']")
     fps=1/seconds(fmt.get('frameDuration','1/25s')) if generic and fmt is not None else Fraction(25)
     title_budget=0
+    # Collect only containers reached through this project's selected sources.
+    # A media resource can be used more than once: normalize it once, but keep
+    # each use in the crossfade warning count. Unused resources stay untouched.
+    stories={}
+    def remember_story(story):
+        if generic and story is not spine:
+            stories[story]=stories.get(story,0)+1
     def titles(nodes,origin,parent_start,parent,bounds,media_stack=(),warps=(),unmapped=False,clock_frame=None):
         nonlocal title_budget
         if clock_frame is None:clock_frame=1/fps
@@ -151,6 +161,7 @@ def prepare(data, generic=False):
                 yield clip,visible,parent,bool(warps)
                 continue
             if clip.tag not in story_tags:continue
+            if clip.tag=='spine':remember_story(clip)
             asset=resources.get(clip.get('ref')) if clip.tag in ('asset-clip','audio') else None
             media=resources.get(clip.get('ref')) if clip.tag in ('ref-clip','mc-clip') else None
             media_seq=media.find('sequence') if media is not None and media.tag=='media' else None
@@ -220,6 +231,7 @@ def prepare(data, generic=False):
                 media_frame=seconds(media_format.get('frameDuration','0s')) if media_format is not None else child_frame
                 branches=[(inner_spine,None)] if clip.tag!='mc-clip' else selected_angles
                 for branch,source in branches:
+                    remember_story(branch)
                     audio_only=source is not None and source.get('srcEnable','all')=='audio'
                     if retime:
                         mapping,_=retime
@@ -282,6 +294,24 @@ def prepare(data, generic=False):
             if story is not spine and all(child.tag=='transition' or child.tag=='gap' and not len(child)
                                           for child in story):
                 strip_story_transitions(story,resources,('gap',),visual_only=True)
+        for story,uses in stories.items():
+            # Keep the stricter title-only checks above and the existing
+            # fallback for mixed title stories or unrelated gap-only stories.
+            # Ordinary media stories use exactly the root transition rules;
+            # no clip clock, selection, gain, or connected item is rewritten.
+            if story in title_stories or not any(child.tag in story_tags
+                                                  and child.tag not in ('gap','spine') for child in story):
+                continue
+            removed=strip_story_transitions(story,resources,story_tags)
+            for _ in range(uses):
+                transitions.extend({'scope':'nested',
+                                    'sourceOffset':str(seconds(node.get('offset'))),
+                                    'sourceDuration':str(seconds(node.get('duration')))}
+                                   for node in removed if node.find('filter-audio') is not None)
+    # Nested offsets belong to their source story, not necessarily the project
+    # clock (trim, repeated compound uses and retimes may change the mapping).
+    # The result UI uses the count; never invent a project position for it.
+    if bypassed_transitions is not None:bypassed_transitions.extend(transitions)
     return ET.tostring(root,encoding='utf-8'),existing
 
 

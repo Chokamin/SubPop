@@ -47,6 +47,52 @@ class JobTests(unittest.TestCase):
         self.assertEqual(snapshot['bypassedAudioTransitions'],[{'offset':'19/5','duration':'2/5'}])
         self.assertEqual(len(snapshot['segments']),2)
 
+    def test_direct_job_preserves_nested_warning_for_each_compound_use(self):
+        # Real snapshot/preflight/job orchestration with a stub decoder and
+        # stub ASR only; this is not FCP rendering or end-to-end recognition.
+        root=ET.parse(Path(__file__).parent/'fixtures/fcp-12.3-native-drop.fcpxml').getroot()
+        seq=root.find('.//project/sequence');main=seq.find('spine');first=main.find('asset-clip')
+        for child in list(first):first.remove(child)
+        main.remove(first);seq.set('duration','16s')
+        first.set('offset','100s');first.set('start','0s');first.set('duration','4s')
+        resources=root.find('resources')
+        media=ET.SubElement(resources,'media',id='nested-compound')
+        inner=ET.SubElement(media,'sequence',format=seq.get('format'),duration='8s',tcStart='100s')
+        story=ET.SubElement(inner,'spine');story.append(first)
+        transition=ET.SubElement(story,'transition',offset='519/5s',duration='2/5s')
+        ET.SubElement(resources,'effect',id='nested-crossfade',uid='FFAudioTransition')
+        ET.SubElement(transition,'filter-audio',ref='nested-crossfade')
+        second=ET.fromstring(ET.tostring(first))
+        second.set('offset','104s');second.set('start','4s');story.append(second)
+        for offset in ('3600s','3608s'):
+            ET.SubElement(main,'ref-clip',ref='nested-compound',offset=offset,start='100s',duration='8s')
+        original=ET.tostring(root)
+        with tempfile.TemporaryDirectory() as temp:
+            directory=Path(temp);xml=directory/'input.fcpxml';xml.write_bytes(original)
+            decoded_inputs=[]
+            def decoded(audio_xml,job,*args):
+                normalized=ET.parse(audio_xml).getroot()
+                self.assertFalse(normalized.findall('.//transition'))
+                self.assertEqual((job/'input.fcpxml').read_bytes(),original)
+                decoded_inputs.append(audio_xml)
+                (job/'timeline.f32le').write_bytes(b'\0\0\0\0')
+                return {'silent':False,'pcmFile':'timeline.f32le','pcmSHA256':'synthetic-pcm'}
+            def recognized(*args,**kwargs):
+                return {'snapshot':kwargs['snapshot_override'],'pcm_sha256':'synthetic-pcm',
+                        'device':'test','results':[]}
+            with patch.object(run_job,'WORK',directory/'jobs'),patch.object(run_job,'render',side_effect=decoded),\
+                 patch('probes.recognize_fixture.run',side_effect=recognized),\
+                 patch.object(run_job,'finalize',side_effect=lambda job,state,result,existing:result['snapshot']):
+                snapshots=[run_job.run(xml,None,None) for _ in range(2)]
+            self.assertEqual(xml.read_bytes(),original)
+            self.assertEqual(len({p.parent for p in decoded_inputs}),2)
+        self.assertEqual(snapshots[0],snapshots[1])
+        self.assertEqual(snapshots[0]['bypassedAudioTransitions'],[
+            {'scope':'nested','sourceOffset':'519/5','sourceDuration':'2/5'},
+            {'scope':'nested','sourceOffset':'519/5','sourceDuration':'2/5'},
+        ])
+        self.assertEqual([s['offset'] for s in snapshots[0]['segments']],['0','4','8','12'])
+
     def test_preflight_uses_selected_audio_mode_for_component_roles(self):
         root=ET.parse(Path(__file__).parent/'fixtures/component-clips.fcpxml').getroot()
         root.findall('.//audio-channel-source')[1].set('role','music.music-1')

@@ -14,7 +14,7 @@ from fractions import Fraction
 from .caption_fixture import captions, srt
 from .editorial import optimized_captions, RULES_VERSION
 from .title_fixture import payload, UID
-from .snapshot import prepare, collision, bypassed_audio_transitions
+from .snapshot import prepare, collision
 from .models import DEFAULT_MODEL_ID, model_spec, resolve_model
 from .vocabulary import validate as validate_vocabulary
 from .reference_script import validate as validate_reference, digest as reference_digest
@@ -134,10 +134,11 @@ def run(xml,asr,aligner,model_id=DEFAULT_MODEL_ID,audio_mode='dialogue',vocabula
                 existing=[];state['existingTitleReview']='unavailable'
             audioXML=frozen
         else:
-            normalized,existing=prepare(frozen.read_bytes(),generic=True)
+            transitions=[]
+            normalized,existing=prepare(frozen.read_bytes(),generic=True,bypassed_transitions=transitions)
             audioXML=directory/'audio-input.fcpxml';audioXML.write_bytes(normalized)
             snapshot=preflight(audioXML,asr,aligner,audio_mode)
-            snapshot['bypassedAudioTransitions']=bypassed_audio_transitions(original) if b'<transition' in original else []
+            snapshot['bypassedAudioTransitions']=transitions
         state['projectUID']=snapshot['uid']
         recovered=None if audio_file is not None else cached_recognition(state,snapshot)
         if recovered:
