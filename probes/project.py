@@ -618,8 +618,15 @@ def inspect(path, audio_mode='dialogue'):
             if url.scheme!='file' or url.netloc not in ('','localhost'):raise ValueError('需要本机原始媒体')
             asset_start=seconds(asset.get('start','0s'))
             asset_duration=seconds(asset.get('duration','0s'))
+            rate_text=asset.get('audioRate','')
+            asset_rate=int(rate_text) if rate_text.isdigit() and int(rate_text)>0 else 48000
             def add_segment(out_begin,out_end,source_begin,source_end,preserve_pitch=None):
                 source_begin-=asset_start;source_end-=asset_start
+                # FCP rounds clip durations to the project timebase, which can
+                # overshoot an asset at another sample rate by a fraction of one
+                # source sample. That is not a real out-of-range edit.
+                if asset_duration<source_end<=asset_duration+Fraction(1,asset_rate):
+                    source_end=asset_duration
                 if source_begin<0 or source_end>asset_duration or source_end<=source_begin:
                     raise ValueError('源音频范围无效')
                 segment=dict(assetRef=node.get('ref'),media=str(Path(unquote(url.path))),offset=str(out_begin),duration=str(out_end-out_begin),source_start=str(source_begin),startSample=sample(out_begin),sampleCount=sample(out_end)-sample(out_begin),gain=gain,role=role)

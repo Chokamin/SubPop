@@ -49,7 +49,9 @@ def strip_story_transitions(story, resources, story_tags, visual_only=False):
 
     FCP also writes one-sided transitions at a story's first/last clip. They
     must stay within that clip and meet its edge; a missing neighbor elsewhere
-    is not a reason to silently discard an unknown edit.
+    is not a reason to silently discard an unknown edit. Such an edge fade
+    (e.g. a long fade to black at the end) only shapes one clip's own range,
+    so it is not held to the two-second limit for interior cut points.
     """
     children=list(story)
     remove=[]
@@ -78,7 +80,8 @@ def strip_story_transitions(story, resources, story_tags, visual_only=False):
         except (ValueError,TypeError,AttributeError):
             raise ValueError('转场结构无法安全处理；请导入整条时间线音频') from None
         filters=node.findall('filter-audio')
-        if (not aligned or not 0<length<=2
+        edge=left is None or right is None
+        if (not aligned or not 0<length or (not edge and length>2)
                 or set(node.attrib)-{'name','offset','duration','enabled'} or len(filters)>1
                 or any(child.tag not in ('filter-video','filter-audio') for child in node)):
             raise ValueError('转场结构无法安全处理；请导入整条时间线音频')

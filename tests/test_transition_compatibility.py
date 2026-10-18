@@ -155,7 +155,6 @@ class TransitionCompatibilityTests(unittest.TestCase):
             ('trailing-not-at-end', False, Fraction(3607), Fraction(1, 2), 8),
             ('trailing-past-end', False, Fraction(3608), Fraction(1, 2), 8),
             ('trailing-before-clip', False, Fraction(7199, 2), Fraction(1), Fraction(1, 2)),
-            ('long', False, Fraction(3605), Fraction(3), 8),
             ('zero', False, Fraction(3608), Fraction(0), 8),
             ('negative', False, Fraction(7217, 2), Fraction(-1, 2), 8),
         )
@@ -168,6 +167,36 @@ class TransitionCompatibilityTests(unittest.TestCase):
         root, _, spine, clip = fixture()
         spine.remove(clip)
         spine.append(transition(3600))
+        self.assert_refused(root)
+
+    def test_long_edge_fades_keep_audio_plan_and_report_hard_cut(self):
+        # A long fade at the project's head or tail only shapes its own clip.
+        for leading in (False, True):
+            with self.subTest(leading=leading):
+                root, _, spine, _ = fixture()
+                baseline = self.plan(root)
+                if leading:
+                    spine.insert(0, transition(3600, Fraction(5)))
+                else:
+                    spine.append(transition(3603, Fraction(5)))
+                original = ET.tostring(root)
+                normalized, _ = self.prepared(root)
+                self.assertEqual(self.plan(normalized), baseline)
+                self.assertEqual(bypassed_audio_transitions(original), [
+                    {'offset': '0' if leading else '3', 'duration': '5'}])
+        root, _, spine, _ = fixture()
+        spine.append(transition(3600, Fraction(8)))
+        normalized, _ = self.prepared(root)
+        self.assertEqual(self.plan(normalized), self.plan(fixture()[0]))
+
+    def test_long_interior_crossfade_is_still_refused(self):
+        root, _, spine, clip = fixture()
+        clip.set('duration', '4s')
+        second = deepcopy(clip)
+        second.set('offset', '3604s')
+        second.set('start', '6s')
+        spine.append(second)
+        spine.insert(1, transition(Fraction(7205, 2), Fraction(5, 2)))
         self.assert_refused(root)
 
     def test_adjacent_transition_chain_cannot_become_valid_by_removal_order(self):
@@ -287,7 +316,7 @@ class TransitionCompatibilityTests(unittest.TestCase):
                 self.assert_refused(root)
 
     def test_silent_title_storyline_requires_valid_timing_and_transition_geometry(self):
-        for variant in ('misaligned-leading', 'misaligned-trailing', 'too-long',
+        for variant in ('misaligned-leading', 'misaligned-trailing', 'past-title',
                         'missing-duration', 'adjacent-transitions', 'unknown-attribute'):
             with self.subTest(variant=variant):
                 root, _, _, clip = fixture()
@@ -296,8 +325,9 @@ class TransitionCompatibilityTests(unittest.TestCase):
                     nested[0].set('offset', '1s')
                 elif variant == 'misaligned-trailing':
                     nested[-1].set('offset', '3s')
-                elif variant == 'too-long':
-                    nested[0].set('duration', '3s')
+                elif variant == 'past-title':
+                    # Edge fades may be long, but never beyond their own title.
+                    nested[0].set('duration', '5s')
                 elif variant == 'missing-duration':
                     del nested[0].attrib['duration']
                 elif variant == 'adjacent-transitions':

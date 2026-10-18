@@ -43,6 +43,26 @@ class ProjectTests(unittest.TestCase):
         mixed=self.inspect(root,'all');self.assertEqual(len(mixed['segments']),2)
         self.assertEqual(mixed['segments'][0]['startSample'],mixed['segments'][1]['startSample'])
 
+    def test_subsample_rounding_past_asset_end_is_clamped_not_refused(self):
+        # FCP writes a 44.1kHz song's clip length in a 720000 timebase; the
+        # rounded length can pass the asset end by less than one source sample.
+        for asset_duration,accepted in (('705599/88200s',True),('352799/44100s',True),('352798/44100s',False)):
+            with self.subTest(asset_duration=asset_duration):
+                root,_,_,clip=basic()
+                song=ET.SubElement(root.find('resources'),'asset',id='song',start='0s',duration=asset_duration,
+                                   hasAudio='1',audioSources='1',audioChannels='1',audioRate='44100')
+                ET.SubElement(song,'media-rep',kind='original-media',src='file:///SYNTHETIC_TEST_MEDIA/song.mp3')
+                ET.SubElement(clip,'asset-clip',ref='song',lane='-1',offset='0s',name='Song',
+                              duration='5760000/720000s',audioRole='music')
+                if not accepted:
+                    with self.assertRaisesRegex(ValueError,'源音频范围无效'):self.inspect(root,'all')
+                    continue
+                plan=self.inspect(root,'all')
+                music=[s for s in plan['segments'] if s['assetRef']=='song']
+                self.assertEqual(len(music),1)
+                self.assertEqual((music[0]['source_start'],music[0]['duration']),('0','8'))
+                self.assertEqual(self.inspect(root)['segments'],[s for s in plan['segments'] if s['assetRef']!='song'])
+
     def test_short_fcp_audio_crossfade_keeps_direct_audio_as_hard_cut(self):
         root,_,seq,first=basic()
         first.set('duration','4s')
