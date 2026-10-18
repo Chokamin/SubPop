@@ -62,6 +62,8 @@ int main(void) {
         UpdatePanelFixture *panel=[UpdatePanelFixture new];
         __block NSUInteger closes=0;panel.onClose=^{closes++;};
         [panel showForWindow:host bundle:NSBundle.mainBundle];CheckInitialFocus(panel,host);
+        Check(panel.sourcePicker.indexOfSelectedItem==2,@"a new install defaults to mirror first");
+        Check([FixtureDefaults objectForKey:@"updateSourcePreference"]==nil,@"opening and checking do not record a source choice");
 
         Check(panel.mirrorEditButton.target==panel && panel.mirrorEditButton.action==@selector(editMirror:),@"edit button invokes the explicit editing action");
         [panel.mirrorEditButton performClick:nil];Settle();
@@ -93,7 +95,7 @@ int main(void) {
         [(NSTextView *)editor insertText:@"https://restored.test/" replacementRange:NSMakeRange(0,editor.string.length)];
         [panel editMirror:panel.mirrorEditButton];
         Check(!panel.editingMirror && [panel.mirrorField.stringValue isEqual:@"https://restored.test/"],@"user can correct the invalid address after switching sources");
-        Check([FixtureDefaults integerForKey:@"updateSourceMode"]==0,@"finishing also saves the current update source");
+        Check([[FixtureDefaults objectForKey:@"updateSourcePreference"] isEqual:@0],@"an explicit source choice is remembered");
         [panel setBusy:YES downloading:YES];
         Check(!panel.mirrorEditButton.enabled && !panel.mirrorField.editable,@"download blocks mirror editing");
         [panel setBusy:NO downloading:NO];
@@ -107,7 +109,20 @@ int main(void) {
         [panel close];Settle();
         Check(closes==2 && host.attachedSheet==nil,@"close during editing completes normally");
         [panel showForWindow:host bundle:NSBundle.mainBundle];CheckInitialFocus(panel,host);
-        [panel close];Settle();[host close];
+        Check(panel.sourcePicker.indexOfSelectedItem==0,@"reopening keeps the explicit source choice");
+        [panel close];Settle();
+        // Legacy key: 0 was written by merely opening the panel, 1/2 only by choice.
+        [FixtureDefaults removeObjectForKey:@"updateSourcePreference"];
+        for(NSNumber *legacy in @[@0,@1,@2]) {
+            [FixtureDefaults setObject:legacy forKey:@"updateSourceMode"];
+            NSInteger expected=legacy.integerValue==0 ? 2 : legacy.integerValue;
+            Check(SubPopStoredUpdateMode(FixtureDefaults)==expected,@"legacy source preference migrates without keeping the old automatic default");
+        }
+        [FixtureDefaults setObject:@0 forKey:@"updateSourcePreference"];
+        Check(SubPopStoredUpdateMode(FixtureDefaults)==0,@"an explicit new choice outranks the legacy value");
+        [FixtureDefaults setObject:@7 forKey:@"updateSourcePreference"];[FixtureDefaults removeObjectForKey:@"updateSourceMode"];
+        Check(SubPopStoredUpdateMode(FixtureDefaults)==2,@"an invalid stored value falls back to mirror first");
+        [host close];
         [FixtureDefaults removePersistentDomainForName:suite];
         puts("Update panel: read-only opening, deferred focus, explicit editing, async result, validation, source changes, download, close and reopen passed.");
     }

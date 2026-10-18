@@ -3,6 +3,18 @@
 #import <CommonCrypto/CommonDigest.h>
 
 static NSString * const SubPopDefaultUpdateMirror=@"https://gh-proxy.org/";
+// 0 GitHub first, 1 GitHub only, 2 mirror first. Mirror first is the default:
+// a slow GitHub download is not an error and never fell back to the mirror.
+static const NSInteger SubPopDefaultUpdateMode=2;
+static inline NSInteger SubPopStoredUpdateMode(NSUserDefaults *defaults) {
+    id chosen=[defaults objectForKey:@"updateSourcePreference"];
+    if([chosen isKindOfClass:NSNumber.class] && [chosen integerValue]>=0 && [chosen integerValue]<=2) return [chosen integerValue];
+    // Before 1.5.14 opening the panel stored 0 without a choice; only the
+    // non-default legacy values are known to be the user's own selection.
+    id legacy=[defaults objectForKey:@"updateSourceMode"];
+    if([legacy isKindOfClass:NSNumber.class] && ([legacy integerValue]==1 || [legacy integerValue]==2)) return [legacy integerValue];
+    return SubPopDefaultUpdateMode;
+}
 static NSError *SubPopUpdateError(NSString *message) {
     return [NSError errorWithDomain:@"SubPop.Updates" code:1 userInfo:@{NSLocalizedDescriptionKey:message}];
 }

@@ -32,8 +32,7 @@
     NSTextField *sourceLabel=[NSTextField labelWithString:@"更新来源"];sourceLabel.frame=NSMakeRect(0,147,76,22);[content addSubview:sourceLabel];
     self.sourcePicker=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(78,145,350,26) pullsDown:NO];
     [self.sourcePicker addItemsWithTitles:@[@"自动切换（GitHub 优先）",@"仅 GitHub",@"镜像优先（GitHub 备用）"]];
-    NSInteger mode=[NSUserDefaults.standardUserDefaults integerForKey:@"updateSourceMode"];
-    [self.sourcePicker selectItemAtIndex:mode>=0 && mode<=2 ? mode : 0];self.sourcePicker.target=self;self.sourcePicker.action=@selector(check:);[self.sourcePicker setAccessibilityLabel:@"更新来源"];[content addSubview:self.sourcePicker];
+    [self.sourcePicker selectItemAtIndex:SubPopStoredUpdateMode(NSUserDefaults.standardUserDefaults)];self.sourcePicker.target=self;self.sourcePicker.action=@selector(check:);[self.sourcePicker setAccessibilityLabel:@"更新来源"];[content addSubview:self.sourcePicker];
     NSTextField *mirrorLabel=[NSTextField labelWithString:@"镜像地址"];mirrorLabel.frame=NSMakeRect(0,112,76,22);[content addSubview:mirrorLabel];
     self.editingMirror=NO;self.downloading=NO;
     self.mirrorField=[[NSTextField alloc] initWithFrame:NSMakeRect(80,110,284,25)];
@@ -101,7 +100,6 @@
         NSString *mirror=[self mirror];if(!mirror)return;
         self.mirrorField.stringValue=mirror;
         [NSUserDefaults.standardUserDefaults setObject:mirror forKey:@"updateMirrorURL"];
-        [NSUserDefaults.standardUserDefaults setInteger:self.sourcePicker.indexOfSelectedItem forKey:@"updateSourceMode"];
         self.editingMirror=NO;[self updateMirrorControls];
     } else {
         self.editingMirror=YES;[self updateMirrorControls];
@@ -121,13 +119,14 @@
     };
 }
 - (void)check:(id)sender {
+    // Remember only an explicit source choice, so a later default still applies.
+    if(sender==self.sourcePicker)[NSUserDefaults.standardUserDefaults setInteger:self.sourcePicker.indexOfSelectedItem forKey:@"updateSourcePreference"];
     if(self.sourcePicker.indexOfSelectedItem==1)self.editingMirror=NO;
     // Restore the edit action before validation, including after leaving
     // GitHub-only mode with an invalid, unfinished mirror address.
     [self updateMirrorControls];
     NSString *mirror=[self mirror];if(!mirror)return;
     [NSUserDefaults.standardUserDefaults setObject:mirror forKey:@"updateMirrorURL"];
-    [NSUserDefaults.standardUserDefaults setInteger:self.sourcePicker.indexOfSelectedItem forKey:@"updateSourceMode"];
     [self.client cancel];self.releaseInfo=nil;self.downloadButton.title=@"立即更新";
     self.alert.messageText=@"正在检查更新…";self.alert.informativeText=@"连接公开更新源，不会上传项目或音频。";[self setBusy:YES downloading:NO];
     SubPopUpdateClient *client=[SubPopUpdateClient new];self.client=client;[self attachProgress:client];
