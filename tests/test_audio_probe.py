@@ -10,8 +10,14 @@ import unittest
 import wave
 import xml.etree.ElementTree as ET
 
+import numpy as np
+
 ROOT = Path(__file__).resolve().parents[1]
 UID = '0D11EC79-ED11-4688-97A9-CB78621857DD'
+# macOS 27.2 AVAssetReader decodes AAC with float-level run-to-run noise
+# (at most 1.5e-7, about -125 dB below peak); lossless sources stay bit-exact.
+# 1e-6 still exposes offset, tail-replacement and gain errors.
+COMPRESSED_TOLERANCE = 1e-6
 
 
 class AudioProbeTests(unittest.TestCase):
@@ -65,7 +71,10 @@ class AudioProbeTests(unittest.TestCase):
         self.assertEqual(result['sourceStartSeconds'],4)
         self.assertEqual(result['sampleCount'],74880)
         # A sample-for-sample comparison catches silently decoding from zero.
-        self.assertEqual((self.directory/result['pcmFile']).read_bytes(),whole_bytes[64000*4:])
+        tail=np.frombuffer((self.directory/result['pcmFile']).read_bytes(),dtype='<f4').astype(np.float64)
+        expected=np.frombuffer(whole_bytes[64000*4:],dtype='<f4').astype(np.float64)
+        self.assertEqual(len(tail),len(expected))
+        self.assertLessEqual(float(np.abs(tail-expected).max()),COMPRESSED_TOLERANCE)
 
     def test_aac_packet_boundaries_trim_to_requested_audio_range(self):
         media=self.directory/'packet-boundary.m4a'

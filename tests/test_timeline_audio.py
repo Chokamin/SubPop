@@ -4,12 +4,17 @@ import tempfile
 import unittest
 from unittest.mock import patch
 import xml.etree.ElementTree as ET
+import numpy as np
 from probes.snapshot import prepare,collision
 from probes.timeline_audio import inspect,render
 from probes.title_fixture import UID
 
 ROOT=Path(__file__).resolve().parents[1]
 FIX=ROOT/'tests/fixtures'
+# macOS 27.2 AVAssetReader decodes AAC with float-level run-to-run noise
+# (at most 1.5e-7, about -125 dB below peak); lossless sources stay bit-exact.
+# 1e-6 still exposes offset, tail-replacement and gain errors.
+COMPRESSED_TOLERANCE=1e-6
 
 class TimelineAudioTests(unittest.TestCase):
     def setUp(self):
@@ -30,12 +35,18 @@ class TimelineAudioTests(unittest.TestCase):
         values=array('f');values.frombytes(data)
         return result,data,values
 
+    def assert_pcm_close(self,actual,expected):
+        # The mandarin.mp4 fixture is AAC; separate decodes are compared within tolerance.
+        a=np.frombuffer(bytes(actual),dtype='<f4').astype(np.float64);b=np.frombuffer(bytes(expected),dtype='<f4').astype(np.float64)
+        self.assertEqual(len(a),len(b))
+        self.assertLessEqual(float(np.abs(a-b).max()),COMPRESSED_TOLERANCE)
+
     def test_real_gain_and_cut_preserve_entire_source(self):
         _,whole,values=self.decode('mix-restored')
         result,data,mixed=self.decode('mix-split-gain')
         self.assertEqual(len(mixed),138880)
-        self.assertEqual(data[64000*4:],whole[64000*4:])
-        self.assertEqual(mixed[:64000],array('f',(v*10**(-6/20) for v in values[:64000])))
+        self.assert_pcm_close(data[64000*4:],whole[64000*4:])
+        self.assert_pcm_close(mixed[:64000],array('f',(v*10**(-6/20) for v in values[:64000])))
         self.assertEqual(len(result['segments']),2)
 
     def test_real_muted_segment_and_gap_keep_later_timing(self):
@@ -44,7 +55,7 @@ class TimelineAudioTests(unittest.TestCase):
             with self.subTest(name=name):
                 result,data,_=self.decode(name)
                 self.assertEqual(data[:64000*4],bytes(64000*4))
-                self.assertEqual(data[64000*4:],whole[64000*4:])
+                self.assert_pcm_close(data[64000*4:],whole[64000*4:])
                 self.assertEqual(result['segments'][0]['sourceStart'],'4')
 
     def test_whole_disabled_or_component_disabled_skips_decoder(self):

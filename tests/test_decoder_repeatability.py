@@ -16,6 +16,10 @@ import xml.etree.ElementTree as ET
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
+# macOS 27.2 AVAssetReader decodes AAC with float-level run-to-run noise
+# (at most 1.5e-7, about -125 dB below peak); lossless sources stay bit-exact.
+# 1e-6 still exposes offset, tail-replacement and gain errors.
+COMPRESSED_TOLERANCE = 1e-6
 BINARY = ROOT / '.subloom/build/SubPopAudioProbeCLI'
 UID = 'SYNTHETIC-DECODER-REPEATABILITY'
 RATE = 16000
@@ -119,15 +123,21 @@ class DecoderRepeatabilityTests(unittest.TestCase):
         self.assertTrue(np.isfinite(values).all())
         return decoded, pcm, data
 
-    def repeated(self, media, repetitions, **kwargs):
+    def repeated(self, media, repetitions, tolerance=0, **kwargs):
         media_digest = sha(media.read_bytes())
         outputs = [self.native(media, **kwargs) for _ in range(repetitions)]
         self.assertEqual(sha(media.read_bytes()), media_digest)
         self.assertEqual(sha(self.binary.read_bytes()), self.binary_digest)
         self.assertEqual(len({sha(xml) for _, _, xml in outputs}), 1)
         hashes = [sha(pcm) for _, pcm, _ in outputs]
-        self.assertEqual(len(set(hashes)), 1,
-                         f'Identical native input decoded different PCM hashes: {hashes}')
+        if tolerance == 0:
+            self.assertEqual(len(set(hashes)), 1,
+                             f'Identical native input decoded different PCM hashes: {hashes}')
+        first = np.frombuffer(outputs[0][1], dtype='<f4')
+        for _, pcm, _ in outputs[1:]:
+            values = np.frombuffer(pcm, dtype='<f4')
+            self.assertLessEqual(float(np.abs(values - first).max()), tolerance,
+                                 f'Identical native input decoded different PCM: {hashes}')
         return outputs[0][0], np.frombuffer(outputs[0][1], dtype='<f4')
 
     def assert_source_clock(self, actual, source, source_rate, start=START):
@@ -180,7 +190,7 @@ class DecoderRepeatabilityTests(unittest.TestCase):
         media = self.directory / 'packet-fraction.m4a'
         subprocess.run([self.ffmpeg, '-v', 'error', '-nostdin', '-y', '-i', str(self.mono48),
                         '-c:a', 'aac', '-b:a', '192k', str(media)], check=True, capture_output=True)
-        _, actual = self.repeated(media, 8)
+        _, actual = self.repeated(media, 8, tolerance=COMPRESSED_TOLERANCE)
         _, whole, _ = self.native(media, start=0, count=8 * RATE)
         expected = np.frombuffer(whole, dtype='<f4')[31498:31498 + COUNT]
         # Compressed packet priming can differ at the edges; the interior must
