@@ -6,6 +6,7 @@
 #import "ShareReceiver.h"
 #import "ShareDestination.h"
 #import "TitleNamingBridge.h"
+#import "ExtensionRegistration.h"
 // Background model runner and independent fullscreen preview host.
 @interface SubPopFullscreenWindow : NSWindow
 @end
@@ -62,6 +63,24 @@
     }];
     [NSRunLoop.mainRunLoop addTimer:self.titleNamingTimer forMode:NSRunLoopCommonModes];
     SubPopWriteCloudStatus();[self startEngine];
+    [self checkExtensionRegistration];
+}
+- (void)checkExtensionRegistration {
+    // Development builds and copies elsewhere must not replace the installed record.
+    if (![NSBundle.mainBundle.bundleURL.URLByResolvingSymlinksInPath.path isEqual:SubPopInstalledAppPath]) return;
+    NSString *extension=[NSBundle.mainBundle.builtInPlugInsPath stringByAppendingPathComponent:@"SubPopProbe.appex"];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
+        SubPopExtensionRegistration state=SubPopEnsureExtensionRegistered(extension,^NSString *(NSArray<NSString *> *arguments) {return SubPopRunPluginKit(arguments);},^{usleep(500000);});
+        if (state!=SubPopExtensionRegistered) NSLog(@"SubPop extension registration: %ld",(long)state);
+        dispatch_async(dispatch_get_main_queue(),^{
+            BOOL running=NO;
+            for (NSString *identifier in @[@"com.apple.FinalCut",@"com.apple.FinalCutApp"]) if ([NSRunningApplication runningApplicationsWithBundleIdentifier:identifier].count) running=YES;
+            NSString *detail=nil,*title=SubPopExtensionRegistrationAlert(state,running,&detail);
+            if (!title) return;
+            NSAlert *alert=[NSAlert new];alert.messageText=title;alert.informativeText=detail;[alert addButtonWithTitle:@"好"];
+            [NSApp activateIgnoringOtherApps:YES];[alert runModal];
+        });
+    });
 }
 - (void)application:(NSApplication *)application openURLs:(NSArray<NSURL *> *)urls {
     [self.shareReceiver handleOpenURLs:urls completion:^(NSDictionary *manifest,NSError *error) {
