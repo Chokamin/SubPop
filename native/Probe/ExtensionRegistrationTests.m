@@ -61,6 +61,10 @@ int main(void) {
         check([title containsString:@"重新打开 Final Cut Pro"] && [detail containsString:@"窗口 → 扩展 → SubPop"],@"running FCP asks for a restart");
         title=SubPopExtensionRegistrationAlert(SubPopExtensionRepairFailed,NO,&detail);
         check([title containsString:@"未能登记"] && [detail containsString:@"重新安装"],@"failure explains the next step");
+        title=SubPopLaunchGuideAlert(YES,&detail);
+        check([title containsString:@"Final Cut Pro"] && [detail containsString:@"没有独立窗口"] && [detail containsString:@"窗口 → 扩展 → SubPop"] && ![detail containsString:@"请打开 Final Cut Pro"],@"guide points a running FCP user to the panel");
+        SubPopLaunchGuideAlert(NO,&detail);
+        check([detail containsString:@"请打开 Final Cut Pro"],@"guide asks to open FCP when it is not running");
         NSLog(@"Extension registration checks passed");
     }
     return 0;

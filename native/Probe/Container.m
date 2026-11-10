@@ -22,6 +22,7 @@
 @property BOOL showingCloudSettings;
 @property SubPopShareReceiver *shareReceiver;
 @property NSTimer *titleNamingTimer;
+@property BOOL showingLaunchAlert;
 @end
 @implementation SubPopAppDelegate
 - (void)applicationWillFinishLaunching:(NSNotification *)notification {
@@ -56,31 +57,44 @@
     return YES;
 }
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
-    [NSFileManager.defaultManager removeItemAtPath:[SubPopBridgePath(NSBundle.mainBundle) stringByAppendingPathComponent:@"update-installing.json"] error:nil];
+    NSString *updating=[SubPopBridgePath(NSBundle.mainBundle) stringByAppendingPathComponent:@"update-installing.json"];
+    // FCP and the extension open SubPop with a URL or file; a default launch is the user.
+    BOOL manual=[notification.userInfo[NSApplicationLaunchIsDefaultLaunchKey] boolValue] && ![NSFileManager.defaultManager fileExistsAtPath:updating];
+    [NSFileManager.defaultManager removeItemAtPath:updating error:nil];
     SubPopPublishTitleNamingSnapshot();
     self.titleNamingTimer=[NSTimer timerWithTimeInterval:5 repeats:YES block:^(NSTimer *timer) {
         SubPopPublishTitleNamingSnapshot();
     }];
     [NSRunLoop.mainRunLoop addTimer:self.titleNamingTimer forMode:NSRunLoopCommonModes];
     SubPopWriteCloudStatus();[self startEngine];
-    [self checkExtensionRegistration];
+    [self checkExtensionRegistrationShowingGuide:manual];
 }
-- (void)checkExtensionRegistration {
+- (void)checkExtensionRegistrationShowingGuide:(BOOL)guide {
     // Development builds and copies elsewhere must not replace the installed record.
-    if (![NSBundle.mainBundle.bundleURL.URLByResolvingSymlinksInPath.path isEqual:SubPopInstalledAppPath]) return;
+    BOOL installed=[NSBundle.mainBundle.bundleURL.URLByResolvingSymlinksInPath.path isEqual:SubPopInstalledAppPath];
     NSString *extension=[NSBundle.mainBundle.builtInPlugInsPath stringByAppendingPathComponent:@"SubPopProbe.appex"];
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
-        SubPopExtensionRegistration state=SubPopEnsureExtensionRegistered(extension,^NSString *(NSArray<NSString *> *arguments) {return SubPopRunPluginKit(arguments);},^{usleep(500000);});
-        if (state!=SubPopExtensionRegistered) NSLog(@"SubPop extension registration: %ld",(long)state);
-        dispatch_async(dispatch_get_main_queue(),^{
-            BOOL running=NO;
-            for (NSString *identifier in @[@"com.apple.FinalCut",@"com.apple.FinalCutApp"]) if ([NSRunningApplication runningApplicationsWithBundleIdentifier:identifier].count) running=YES;
-            NSString *detail=nil,*title=SubPopExtensionRegistrationAlert(state,running,&detail);
-            if (!title) return;
-            NSAlert *alert=[NSAlert new];alert.messageText=title;alert.informativeText=detail;[alert addButtonWithTitle:@"好"];
-            [NSApp activateIgnoringOtherApps:YES];[alert runModal];
-        });
+        SubPopExtensionRegistration state=installed ? SubPopEnsureExtensionRegistered(extension,^NSString *(NSArray<NSString *> *arguments) {return SubPopRunPluginKit(arguments);},^{usleep(500000);}) : SubPopExtensionUnchecked;
+        if (installed && state!=SubPopExtensionRegistered) NSLog(@"SubPop extension registration: %ld",(long)state);
+        dispatch_async(dispatch_get_main_queue(),^{[self showLaunchAlertForRegistration:state guide:guide];});
     });
+}
+- (void)showLaunchAlertForRegistration:(SubPopExtensionRegistration)state guide:(BOOL)guide {
+    if (self.showingLaunchAlert) return;
+    NSURL *finalCut=nil;BOOL running=NO;
+    for (NSString *identifier in @[@"com.apple.FinalCutApp",@"com.apple.FinalCut"]) {
+        if ([NSRunningApplication runningApplicationsWithBundleIdentifier:identifier].count) running=YES;
+        if (!finalCut) finalCut=[NSWorkspace.sharedWorkspace URLForApplicationWithBundleIdentifier:identifier];
+    }
+    NSString *detail=nil,*title=SubPopExtensionRegistrationAlert(state,running,&detail);
+    if (!title && guide) title=SubPopLaunchGuideAlert(running,&detail);
+    if (!title) return;
+    NSAlert *alert=[NSAlert new];alert.messageText=title;alert.informativeText=detail;[alert addButtonWithTitle:@"好"];
+    BOOL offerFinalCut=!running && finalCut && state!=SubPopExtensionRepairFailed;
+    if (offerFinalCut) [alert addButtonWithTitle:@"打开 Final Cut Pro"];
+    self.showingLaunchAlert=YES;[NSApp activateIgnoringOtherApps:YES];
+    NSModalResponse response=[alert runModal];self.showingLaunchAlert=NO;
+    if (offerFinalCut && response==NSAlertSecondButtonReturn) [NSWorkspace.sharedWorkspace openApplicationAtURL:finalCut configuration:[NSWorkspaceOpenConfiguration configuration] completionHandler:nil];
 }
 - (void)application:(NSApplication *)application openURLs:(NSArray<NSURL *> *)urls {
     [self.shareReceiver handleOpenURLs:urls completion:^(NSDictionary *manifest,NSError *error) {
@@ -163,7 +177,12 @@
     [self.previewWindow orderOut:nil];[self.previewWindow close];self.previewWindow=nil;
     [[NSRunningApplication runningApplicationsWithBundleIdentifier:@"com.apple.FinalCut"].firstObject activateWithOptions:NSApplicationActivateIgnoringOtherApps];
 }
-- (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)flag { [self startEngine]; return NO; }
+- (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)flag {
+    [self startEngine];
+    // Opening the already running agent again is the clearest sign of a lost user.
+    if (!flag) [self checkExtensionRegistrationShowingGuide:YES];
+    return NO;
+}
 - (void)startEngine {
     if (self.worker.running) return;
     NSString *root=SubPopWorkspace(NSBundle.mainBundle);

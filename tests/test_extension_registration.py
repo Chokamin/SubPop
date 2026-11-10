@@ -14,9 +14,16 @@ class ExtensionRegistrationTests(unittest.TestCase):
 
     def test_container_checks_only_its_installed_copy_after_launch(self):
         source=(ROOT/'native/Probe/Container.m').read_text()
-        self.assertIn('[self checkExtensionRegistration];',source)
-        self.assertIn('isEqual:SubPopInstalledAppPath]) return;',source)
+        self.assertIn('[self checkExtensionRegistrationShowingGuide:manual];',source)
+        self.assertIn('installed ? SubPopEnsureExtensionRegistered(',source)
         self.assertIn('dispatch_get_global_queue(QOS_CLASS_UTILITY,0)',source)
+        # A user's own open explains where the panel lives; FCP/URL launches, the
+        # post-update relaunch and dev copies keep their silent behavior.
+        self.assertIn('NSApplicationLaunchIsDefaultLaunchKey',source)
+        self.assertIn('update-installing.json',source)
+        self.assertIn('if (!flag) [self checkExtensionRegistrationShowingGuide:YES];',source)
+        self.assertIn('if (!title && guide) title=SubPopLaunchGuideAlert(running,&detail);',source)
+        self.assertIn('if (self.showingLaunchAlert) return;',source)
         header=(ROOT/'native/Probe/ExtensionRegistration.h').read_text()
         self.assertEqual(header.count('@"-a"'),1)
         self.assertNotIn('@"-e"',header)

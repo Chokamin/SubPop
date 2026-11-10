@@ -56,6 +56,15 @@ static inline NSString *SubPopExtensionRegistrationAlert(SubPopExtensionRegistra
     return nil;
 }
 
+// SubPop has no window of its own. A manual open (Finder, Launchpad or a
+// second double-click) otherwise looks like nothing happened.
+static inline NSString *SubPopLaunchGuideAlert(BOOL finalCutRunning,NSString **detail) {
+    if (detail) *detail=finalCutRunning
+        ? @"SubPop 没有独立窗口，已在后台运行。请在 Final Cut Pro 中点击工具栏的扩展按钮，或选择「窗口 → 扩展 → SubPop」打开面板。"
+        : @"SubPop 没有独立窗口，已在后台运行。请打开 Final Cut Pro，点击工具栏的扩展按钮，或选择「窗口 → 扩展 → SubPop」打开面板。";
+    return @"SubPop 在 Final Cut Pro 中使用";
+}
+
 static inline NSString *SubPopRunPluginKit(NSArray<NSString *> *arguments) {
     NSTask *task=[NSTask new];task.executableURL=[NSURL fileURLWithPath:@"/usr/bin/pluginkit"];task.arguments=arguments;
     NSPipe *output=[NSPipe pipe];task.standardOutput=output;task.standardError=NSFileHandle.fileHandleWithNullDevice;
