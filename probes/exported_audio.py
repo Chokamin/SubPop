@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 from .project import RATE, sample
 from .readback import seconds
 
-SUPPORTED={'.wav','.aif','.aiff','.m4a','.caf'}
+SUPPORTED={'.wav','.aif','.aiff','.m4a','.caf','.mp3'}
 MAX_AUDIO_BYTES=4*1024*1024*1024
 MAX_PROJECT_SECONDS=4*60*60
 
@@ -48,7 +48,7 @@ def project_context(xml):
 
 def validate_file(path, expected_sha=None):
     if path.is_symlink() or not path.is_file() or path.suffix.lower() not in SUPPORTED:
-        raise ValueError('请拖入 WAV、AIFF、M4A 或 CAF 音频文件')
+        raise ValueError('请拖入 WAV、AIFF、M4A、CAF 或 MP3 音频文件')
     if not 0<path.stat().st_size<=MAX_AUDIO_BYTES:raise ValueError('音频文件为空或超过 4 GB')
     digest=hashlib.sha256()
     with path.open('rb') as source:

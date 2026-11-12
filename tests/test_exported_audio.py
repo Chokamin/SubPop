@@ -8,8 +8,11 @@ import tempfile
 import unittest
 import uuid
 import wave
+import shutil
 import xml.etree.ElementTree as ET
 from unittest.mock import patch
+
+import numpy as np
 
 from probes import exported_audio
 from probes import run_job
@@ -17,7 +20,9 @@ from probes.snapshot import prepare
 from probes.paths import AUDIO_BINARY
 from probes.worker import request_input, job_command
 
-FALLBACK_BINARY=Path(__file__).resolve().parents[1]/'.subloom/build/SubPopFallbackAudioTests'
+ROOT=Path(__file__).resolve().parents[1]
+FALLBACK_BINARY=ROOT/'.subloom/build/SubPopFallbackAudioTests'
+FFMPEG=shutil.which('ffmpeg') or ('/opt/homebrew/bin/ffmpeg' if Path('/opt/homebrew/bin/ffmpeg').is_file() else None)
 
 def project_xml(duration='2s', node='unhandled-compound'):
     root=ET.Element('fcpxml',version='1.14')
@@ -122,6 +127,43 @@ class ExportedAudioTests(unittest.TestCase):
             self.assertEqual(manifest['captions'][0]['start_frame'],5)
             self.assertEqual(manifest['captions'][0]['end_frame'],25)
             self.assertTrue((output/'TitleProbe-1.14.fcpxml').is_file())
+
+
+    def test_every_audio_entry_accepts_the_same_formats_including_mp3(self):
+        # FCP's audio-only share offers MP3; all intake paths must agree.
+        native='@[@"wav",@"aif",@"aiff",@"m4a",@"caf",@"mp3"]'
+        self.assertEqual(exported_audio.SUPPORTED,{'.wav','.aif','.aiff','.m4a','.caf','.mp3'})
+        for name,count in (('ShareReceiver.m',1),('ShareInbox.h',1),('ProbeViewController.m',2)):
+            self.assertEqual((ROOT/'native/Probe'/name).read_text().count(native),count,name)
+        with tempfile.TemporaryDirectory() as temp:
+            other=Path(temp)/'mix.ogg';other.write_bytes(b'x')
+            with self.assertRaisesRegex(ValueError,'MP3'):exported_audio.validate_file(other)
+
+    @unittest.skipUnless(AUDIO_BINARY.is_file() and FFMPEG,'native decoder and ffmpeg are needed')
+    def test_mp3_export_keeps_the_project_clock(self):
+        # Clicks every second; MP3 encoder delay must not shift subtitle timing.
+        with tempfile.TemporaryDirectory() as temp:
+            directory=Path(temp);xml=directory/'input.fcpxml';xml.write_bytes(project_xml('10s'))
+            snapshot=exported_audio.project_context(xml)
+            source=directory/'clicks.wav'
+            subprocess.run([FFMPEG,'-v','error','-nostdin','-y','-f','lavfi','-i','sine=frequency=1000:sample_rate=48000:duration=0.05',
+                            '-af','apad=pad_dur=0.95,aloop=loop=9:size=48000','-t','10','-ac','2',str(source)],check=True,capture_output=True)
+            def clicks(path):
+                decoded=exported_audio.render(path,directory,AUDIO_BINARY,snapshot)
+                self.assertEqual(decoded['sampleCount'],160000)
+                values=np.fromfile(directory/'timeline.f32le',dtype='<f4')
+                loud=np.convolve(np.abs(values),np.ones(32)/32,'same')>.05
+                return np.nonzero(loud & ~np.r_[False,loud[:-1]])[0]
+            reference=clicks(source)
+            self.assertEqual(len(reference),10)
+            for name,options,limit in (('gapless.mp3',[],16),('no-header.mp3',['-write_xing','0'],400)):
+                with self.subTest(name=name):
+                    mp3=directory/name
+                    subprocess.run([FFMPEG,'-v','error','-nostdin','-y','-i',str(source),'-c:a','libmp3lame','-b:a','192k',*options,str(mp3)],check=True,capture_output=True)
+                    onsets=clicks(mp3)
+                    self.assertEqual(len(onsets),10)
+                    # 16 samples is 1 ms; 400 samples (25 ms) stays under one frame.
+                    self.assertLessEqual(int(np.abs(onsets-reference).max()),limit)
 
 
 if __name__=='__main__':unittest.main()

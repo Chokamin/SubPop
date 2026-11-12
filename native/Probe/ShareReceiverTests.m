@@ -104,6 +104,12 @@ int main(void){@autoreleasepool{
     [NSFileManager.defaultManager createDirectoryAtURL:package withIntermediateDirectories:NO attributes:nil error:nil];
     [NSFileManager.defaultManager moveItemAtURL:bundleFiles[0] toURL:[package URLByAppendingPathComponent:@"Info.fcpxml"] error:nil];
     Check([Receive(receiver,@[package,bundleFiles[1]],YES)[@"projectUID"] isEqual:@"TEST-UID"],@"bundled FCPXML accepted without any original media lookup");
+    // FCP's audio-only share also offers MP3; other containers stay refused.
+    NSDictionary *mp3=Create(receiver,@"MP3");NSArray *mp3Files=Files(mp3,XML);NSURL *mp3URL=[[mp3Files[1] URLByDeletingPathExtension] URLByAppendingPathExtension:@"mp3"];
+    [NSFileManager.defaultManager moveItemAtURL:mp3Files[1] toURL:mp3URL error:nil];
+    Check([Receive(receiver,@[mp3Files[0],mp3URL],YES)[@"audioFile"] isEqual:@"audio.mp3"],@"MP3 share accepted as audio.mp3");
+    NSDictionary *ogg=Create(receiver,@"OGG");NSArray *oggFiles=Files(ogg,XML);NSURL *oggURL=[[oggFiles[1] URLByDeletingPathExtension] URLByAppendingPathExtension:@"ogg"];
+    [NSFileManager.defaultManager moveItemAtURL:oggFiles[1] toURL:oggURL error:nil];Receive(receiver,@[oggFiles[0],oggURL],NO);
     NSDictionary *missing=Create(receiver,@"缺 XML");NSArray *missingFiles=Files(missing,XML);Receive(receiver,@[missingFiles[1]],NO);
     NSDictionary *role=Create(receiver,@"分角色");NSArray *roleFiles=Files(role,XML);NSURL *roleURL=[role[@"folder"] URLByAppendingPathComponent:@"分角色 - Dialogue.wav"];
     [NSFileManager.defaultManager moveItemAtURL:roleFiles[1] toURL:roleURL error:nil];Receive(receiver,@[roleFiles[0],roleURL],NO);

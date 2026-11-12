@@ -252,7 +252,7 @@ static NSDictionary *SPProject(NSURL *URL,NSError **error) {
     NSDictionary *asset=nil;@synchronized(self){asset=[[self asset:ID] copy];}
     NSURL *folder=[self exportURL:ID];if(![self validateExportDirectory:ID create:NO error:error])return nil;
     NSMutableArray<NSURL *> *xmls=[NSMutableArray new],*audios=[NSMutableArray new];NSMutableSet *seen=[NSMutableSet new];
-    NSSet *audioTypes=[NSSet setWithArray:@[@"wav",@"aif",@"aiff",@"m4a",@"caf"]];
+    NSSet *audioTypes=[NSSet setWithArray:@[@"wav",@"aif",@"aiff",@"m4a",@"caf",@"mp3"]];
     for(NSURL *receivedURL in URLs) {
         if(![[self shareIDForURL:receivedURL] isEqual:ID]){SPFail(error,@"共享结果不能混合不同项目的文件");return nil;}
         // Validate the original URL first so a real symlink is still rejected.
@@ -268,7 +268,7 @@ static NSDictionary *SPProject(NSURL *URL,NSError **error) {
         else if([extension isEqual:@"fcpxmld"]) {
             if(!SPDirectory(URL,NO,error))return nil;[xmls addObject:[URL URLByAppendingPathComponent:@"Info.fcpxml"]];
         } else if([audioTypes containsObject:extension])[audios addObject:URL];
-        else {SPFail(error,@"请使用「仅音频」共享，选择 WAV、AIFF、M4A 或 CAF");return nil;}
+        else {SPFail(error,@"请使用「仅音频」共享，选择 WAV、AIFF、M4A、CAF 或 MP3");return nil;}
     }
     if(xmls.count!=1 || audios.count!=1){SPFail(error,@"需要同一次共享的一份完整项目 XML 和一份混合音频，请重新共享完整项目");return nil;}
     NSURL *inbox=[self.bridgeURL URLByAppendingPathComponent:@"share-inbox" isDirectory:YES];

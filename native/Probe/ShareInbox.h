@@ -42,7 +42,7 @@ static NSDictionary *SubPopShareManifest(NSURL *directory) {
         if ([value[key] length]!=64 || [value[key] rangeOfCharacterFromSet:hex].location!=NSNotFound) return nil;
     if (![value[@"xmlFile"] isEqual:@"input.fcpxml"]) return nil;
     NSString *audio=value[@"audioFile"];
-    if (![audio isEqual:audio.lastPathComponent] || ![audio hasPrefix:@"audio."] || ![@[@"wav",@"aif",@"aiff",@"m4a",@"caf"] containsObject:audio.pathExtension.lowercaseString]) return nil;
+    if (![audio isEqual:audio.lastPathComponent] || ![audio hasPrefix:@"audio."] || ![@[@"wav",@"aif",@"aiff",@"m4a",@"caf",@"mp3"] containsObject:audio.pathExtension.lowercaseString]) return nil;
     CMTime duration=SubPopShareTime(value[@"duration"]),frame=SubPopShareTime(value[@"frameDuration"]);
     if (!CMTIME_IS_NUMERIC(duration) || CMTimeGetSeconds(duration)>14400 || !CMTIME_IS_NUMERIC(frame) || CMTimeGetSeconds(frame)>=1) return nil;
     if (!SubPopShareRegularFile([directory URLByAppendingPathComponent:audio],4ULL*1024*1024*1024) || !SubPopShareRegularFile([directory URLByAppendingPathComponent:@"input.fcpxml"],16*1024*1024)) return nil;

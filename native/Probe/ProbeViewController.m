@@ -1290,7 +1290,7 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
     if (![self canReceiveExportedAudio]) return;
     NSOpenPanel *panel=[NSOpenPanel openPanel];panel.canChooseDirectories=NO;panel.allowsMultipleSelection=NO;
     NSMutableArray<UTType *> *types=[NSMutableArray new];
-    for (NSString *extension in @[@"wav",@"aif",@"aiff",@"m4a",@"caf"]) {
+    for (NSString *extension in @[@"wav",@"aif",@"aiff",@"m4a",@"caf",@"mp3"]) {
         UTType *type=[UTType typeWithFilenameExtension:extension];if (type) [types addObject:type];
     }
     panel.allowedContentTypes=types;
@@ -1302,8 +1302,8 @@ static NSString *SubPopSkippedAudioSummary(NSArray *items) {
 - (BOOL)importFallbackAudioURL:(NSURL *)source {
     if (![self canReceiveExportedAudio] || !source.isFileURL) return NO;
     NSString *extension=source.pathExtension.lowercaseString;
-    if (![@[@"wav",@"aif",@"aiff",@"m4a",@"caf"] containsObject:extension]) {
-        self.visibleError=@"请选择 WAV、AIFF、M4A 或 CAF 音频文件";self.displayState=@"error";[self updateInterface];return NO;
+    if (![@[@"wav",@"aif",@"aiff",@"m4a",@"caf",@"mp3"] containsObject:extension]) {
+        self.visibleError=@"请选择 WAV、AIFF、M4A、CAF 或 MP3 音频文件";self.displayState=@"error";[self updateInterface];return NO;
     }
     NSUInteger generation=self.dropGeneration;
     self.fallbackImporting=YES;[self updateInterface];
