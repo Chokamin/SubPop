@@ -22,6 +22,8 @@ def timed_row(words, duration):
 
 def load_backend(engine,path,hints):
     if engine=='mlx-whisper':
+        from .mlx_select import select
+        select()
         import mlx_whisper
         def transcribe(samples):
             output=mlx_whisper.transcribe(samples,path_or_hf_repo=str(path),language='zh',word_timestamps=True,

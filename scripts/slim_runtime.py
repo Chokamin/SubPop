@@ -40,8 +40,10 @@ def slim(runtime):
     # Remove local/debug symbols only. Exported symbols required by Python/dlopen remain intact.
     stripped=[]
     for relative in ('torch/lib/libtorch_cpu.dylib','torch/lib/libtorch_python.dylib',
-                     'llvmlite/binding/libllvmlite.dylib','mlx/lib/libmlx.dylib'):
-        path=site/relative
+                     'llvmlite/binding/libllvmlite.dylib','mlx/lib/libmlx.dylib',
+                     '../../../../mlx-macos26/mlx/lib/libmlx.dylib'):
+        path=(site/relative).resolve()
+        if not path.is_relative_to(runtime):raise ValueError('Path outside staged runtime')
         if path.is_file():
             old=path.stat().st_size
             subprocess.run(['strip','-x',str(path)],check=True,capture_output=True)

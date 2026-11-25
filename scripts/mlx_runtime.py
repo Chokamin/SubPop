@@ -4,7 +4,10 @@ pip on the release Mac picks the newest MLX wheels for that Mac. Those carry a
 Metal 4.0 metallib and dylibs that need macOS 26.2, which fail on macOS 15 with
 "Metal language version 4.0 incompatible with this OS". The packaged runtime
 therefore swaps in the official macOS 15 wheels of the same locked version.
-The development venv is left untouched.
+The macOS 26 wheels are also shipped, outside site-packages, in ALTERNATE; the
+worker imports them only on a macOS that meets ALTERNATE/selection.json
+(probes/mlx_select.py), so newer Macs keep MLX's Metal 4 kernels. The
+development venv is left untouched.
 """
 import hashlib
 import json
@@ -29,6 +32,17 @@ WHEELS = (
          sha256='55a369250d220b2cf10213a87a2ac1b1a420608c5b35b1df4e7147ac8e32f121',
          url='https://files.pythonhosted.org/packages/79/ec/34f37376e26d537fadffb99af3a760d6545e37f5e1a30a552baadf237fc5/'
              f'mlx_metal-{VERSION}-py3-none-macosx_15_0_arm64.whl'),
+)
+ALTERNATE = 'mlx-macos26'
+NEWER_WHEELS = (
+    dict(distribution='mlx', file=f'mlx-{VERSION}-cp312-cp312-macosx_26_0_arm64.whl', size=619488,
+         sha256='68560fd648c5bb900aa6f6765cd74c5a8abaf092d97d73584a57b7545966c227',
+         url='https://files.pythonhosted.org/packages/0b/eb/af6b1a8b45f24d22e4735c52e0696c66233bd477e1b9e9dbbef225bdf88b/'
+             f'mlx-{VERSION}-cp312-cp312-macosx_26_0_arm64.whl'),
+    dict(distribution='mlx_metal', file=f'mlx_metal-{VERSION}-py3-none-macosx_26_0_arm64.whl', size=64367860,
+         sha256='e6abeac9ac5265830c9c1541b6f96e9be37a85c2446763a46ad466c63a3837ab',
+         url='https://files.pythonhosted.org/packages/dd/cd/4e50bf325100e7165e13d025f264362bf0009196269f9eaf87f2c6e738a2/'
+             f'mlx_metal-{VERSION}-py3-none-macosx_26_0_arm64.whl'),
 )
 MACHO = {bytes.fromhex(v) for v in ('feedface', 'feedfacf', 'cefaedfe', 'cffaedfe', 'cafebabe', 'bebafeca', 'cafebabf', 'bfbafeca')}
 METAL_TARGET = re.compile(rb'apple-macosx(\d+)\.(\d+)')
@@ -101,6 +115,31 @@ def install(site, wheels=WHEELS, cache=CACHE):
     return [{'file': wheel['file'], 'sha256': wheel['sha256']} for wheel in wheels]
 
 
+def install_alternate(runtime, wheels=NEWER_WHEELS, cache=CACHE):
+    """Ship the newer-macOS MLX beside site-packages with the macOS it requires."""
+    runtime = Path(runtime)
+    target = runtime / ALTERNATE
+    if target.exists():
+        raise ValueError('Alternate MLX directory already exists')
+    archives = [fetch(wheel, cache) for wheel in wheels]
+    for wheel, archive in zip(wheels, archives):
+        validate(archive, wheel['distribution'])
+    target.mkdir()
+    for wheel, archive in zip(wheels, archives):
+        extract(archive, target, wheel['distribution'])
+    # Headers and CMake files are build-time only, as in slim_runtime for site-packages.
+    for name in ('include', 'share'):
+        shutil.rmtree(target / 'mlx' / name, ignore_errors=True)
+    required = max(filter(None, (file_requirement(path) for path in target.rglob('*')
+                                 if path.is_file() and not path.is_symlink())), default=None)
+    if not required or required <= MINIMUM_MACOS:
+        raise ValueError('Alternate MLX does not need a newer macOS; nothing to select')
+    manifest = {'minimumMacOS': list(required), 'version': VERSION,
+                'wheels': [{'file': wheel['file'], 'sha256': wheel['sha256']} for wheel in wheels]}
+    (target / 'selection.json').write_text(json.dumps(manifest, indent=2) + '\n')
+    return manifest
+
+
 def version_tuple(text):
     return tuple(int(part) for part in text.split('.')[:2])
 
@@ -126,19 +165,48 @@ def macho_minimum(path):
     return max(versions) if versions else None
 
 
+def file_requirement(path):
+    """macOS a file needs: a Metal library's compile target or a Mach-O minimum."""
+    path = Path(path)
+    if path.suffix == '.metallib':
+        targets = {(int(a), int(b)) for a, b in METAL_TARGET.findall(path.read_bytes())}
+        if not targets:
+            raise ValueError('Metal library without a recorded macOS target: ' + str(path))
+        return max(targets)
+    return macho_minimum(path)
+
+
+def alternate_limit(path, limits):
+    for directory, limit in limits.items():
+        if path.is_relative_to(directory):
+            return limit
+    return None
+
+
 def check_minimum(root, minimum=MINIMUM_MACOS):
-    """Refuse binaries or Metal libraries that need a newer macOS than the package allows."""
+    """Refuse binaries or Metal libraries that need a newer macOS than the package allows.
+
+    Only an ALTERNATE directory with selection.json may go higher, and never
+    beyond the macOS recorded there, which the worker checks before use.
+    """
     violations = []
+    limits = {}
+    for directory in Path(root).rglob(ALTERNATE):
+        if directory.is_dir() and not directory.is_symlink():
+            try:
+                limits[directory] = tuple(json.loads((directory / 'selection.json').read_text())['minimumMacOS'])
+            except (OSError, ValueError, KeyError, TypeError):
+                violations.append({'path': str(directory), 'error': 'missing or invalid selection.json'})
     for path in sorted(Path(root).rglob('*')):
         if path.is_symlink() or not path.is_file():
             continue
-        if path.suffix == '.metallib':
-            targets = {(int(a), int(b)) for a, b in METAL_TARGET.findall(path.read_bytes())}
-            if not targets or max(targets) > minimum:
-                violations.append({'path': str(path), 'metalTarget': sorted(targets)})
+        limit = alternate_limit(path, limits) or minimum
+        try:
+            found = file_requirement(path)
+        except ValueError as error:
+            violations.append({'path': str(path), 'error': str(error)})
             continue
-        found = macho_minimum(path)
-        if found and found > minimum:
+        if found and found > limit:
             violations.append({'path': str(path), 'minimumMacOS': '.'.join(map(str, found))})
     if violations:
         raise RuntimeError('Packaged files require a newer macOS than '

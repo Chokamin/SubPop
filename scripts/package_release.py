@@ -60,9 +60,11 @@ def build(application_identity=None, installer_identity=None):
     shutil.copytree(source,RUNTIME/'.venv/lib/python3.12/site-packages',dirs_exist_ok=True,symlinks=True,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
     # The release Mac's pip picks MLX built for its own macOS (Metal 4.0, macOS 26.2+).
     # Ship the official wheels of the same version built for the package minimum.
-    from mlx_runtime import install as install_minimum_mlx
+    # Newer Macs select the macOS 26 build at runtime (probes/mlx_select.py).
+    from mlx_runtime import install as install_minimum_mlx, install_alternate
     mlx_wheels=install_minimum_mlx(RUNTIME/'.venv/lib/python3.12/site-packages')
-    print(json.dumps({'mlxWheels':mlx_wheels}),flush=True)
+    mlx_alternate=install_alternate(RUNTIME)
+    print(json.dumps({'mlxWheels':mlx_wheels,'mlxAlternate':mlx_alternate}),flush=True)
     for name in ('probes','config'):
         shutil.copytree(ROOT/name,RUNTIME/name,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
     (RUNTIME/'.subloom/build').mkdir(parents=True)
