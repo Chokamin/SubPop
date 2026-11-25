@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import plistlib
 import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 source = ROOT / '.subloom/package/payload/Applications/SubPop.app'
@@ -47,6 +48,9 @@ for name in ('SubPop.icns','Assets.car'):
 assert not any(actual.rglob('*.moti')), 'Third-party templates must be downloaded from the author, not bundled'
 assert not (actual / 'Contents/Resources/Runtime/.subloom/models').exists()
 assert not (actual / 'Contents/Resources/Runtime/.subloom/verification').exists()
+sys.path.insert(0, str(ROOT / 'scripts'))
+from mlx_runtime import check_minimum
+check_minimum(actual)
 subprocess.run(['codesign', '--verify', '--deep', '--strict', str(actual)], check=True)
 signature = subprocess.run(['codesign', '-dvv', str(actual)], capture_output=True, text=True, check=True).stderr
 print(json.dumps({'filesVerified': len(packaged), 'payloadMatches': True, 'externalSymlinks': False,

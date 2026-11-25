@@ -201,6 +201,8 @@ X 正值向右，Y 正值向上；偏移以项目像素为单位，支持正负�
 | Whisper Large v3 Turbo | MLX | 1.61 GB |
 | SenseVoiceSmall | CPU | 0.94 GB |
 
+Whisper 使用的 MLX 运行库按 macOS 15 构建，1.5.18 起在 macOS 15 上不再出现「Metal language version 4.0 incompatible」错误。
+
 两个 Qwen 模型还需要约 **1.84 GB** 的共用时间对齐模型，首次下载会自动补齐，之后无需重复下载。处理速度取决于模型、项目长度和设备性能。
 
 模型管理支持下载进度、续传和 SHA-256 文件校验。默认优先尝试第三方 **HF-Mirror 国内镜像**，失败后尝试 Hugging Face 官方源；也可选择仅使用官方源。网络环境不同，速度和可访问性可能不同。
